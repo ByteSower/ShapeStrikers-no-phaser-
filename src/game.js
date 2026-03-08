@@ -624,8 +624,9 @@ const Game = (() => {
   function startGame() {
     // Remove title music listeners before stopping so bubbling click doesn't restart it
     if (_titleMusicHandler) {
-      ['click', 'keydown', 'touchstart', 'pointerdown'].forEach(evt =>
-        document.removeEventListener(evt, _titleMusicHandler));
+      const titleEl = document.getElementById('screen-title');
+      titleEl?.removeEventListener('click', _titleMusicHandler);
+      titleEl?.removeEventListener('keydown', _titleMusicHandler);
       _titleMusicHandler = null;
     }
     Audio.stopMusic();
@@ -906,15 +907,17 @@ const Game = (() => {
 
     UI.showScreen('screen-title');
 
-    // Play title music — try autoplay first, fall back to first user interaction anywhere
+    // Play title music — try autoplay first, fall back to first title-screen interaction
     Audio.playMusic('ss_title_music_full.mp3');
-    const _interactionEvents = ['click', 'keydown', 'touchstart', 'pointerdown'];
+    const titleEl = document.getElementById('screen-title');
     _titleMusicHandler = () => {
       Audio.playMusic('ss_title_music_full.mp3');
-      _interactionEvents.forEach(evt => document.removeEventListener(evt, _titleMusicHandler));
+      titleEl.removeEventListener('click', _titleMusicHandler);
+      titleEl.removeEventListener('keydown', _titleMusicHandler);
       _titleMusicHandler = null;
     };
-    _interactionEvents.forEach(evt => document.addEventListener(evt, _titleMusicHandler, { once: true }));
+    titleEl.addEventListener('click', _titleMusicHandler);
+    titleEl.addEventListener('keydown', _titleMusicHandler);
   }
 
   return {
