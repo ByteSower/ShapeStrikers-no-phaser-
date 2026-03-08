@@ -18,6 +18,7 @@ class BattleSystem {
     this.onScreenShake = null;  // (intensity)          — visual: screen shake
     this.onUnitMove    = null;  // (unit, fromRow, fromCol, toRow, toCol) — visual: unit slides
     this.onStatusChange = null; // (unit) — visual: status icons update
+    this.onActionDone  = null;  // () → Promise<void> — resolves when current animation finishes
 
     this._running = false;
     this._actionDelay = 500; // ms between individual unit actions
@@ -132,13 +133,20 @@ class BattleSystem {
       this._moveTowardEnemy(unit, targets);
     }
 
-    // Check mid-action for battle end
-    const pAlive2 = this._playerUnits.filter(alive);
-    const eAlive2 = this._enemyUnits.filter(alive);
-    if (pAlive2.length === 0 || eAlive2.length === 0) {
-      this._turnTimer = setTimeout(() => this._endBattle(eAlive2.length === 0), this._actionDelay);
+    // Wait for attack/ability animation to finish before scheduling next action
+    const proceed = () => {
+      const pAlive2 = this._playerUnits.filter(alive);
+      const eAlive2 = this._enemyUnits.filter(alive);
+      if (pAlive2.length === 0 || eAlive2.length === 0) {
+        this._turnTimer = setTimeout(() => this._endBattle(eAlive2.length === 0), this._actionDelay);
+      } else {
+        this._turnTimer = setTimeout(() => this._processNextAction(), this._actionDelay);
+      }
+    };
+    if (this.onActionDone) {
+      this.onActionDone().then(proceed);
     } else {
-      this._turnTimer = setTimeout(() => this._processNextAction(), this._actionDelay);
+      proceed();
     }
   }
 

@@ -218,8 +218,40 @@ const Grid = (() => {
 
   // ── Animations ────────────────────────────────────────────────────────────
 
-  function animateAttack(row, col) { _flashClass(row, col, 'anim-attack'); }
-  function animateHit(row, col)    { _flashClass(row, col, 'anim-hit'); }
+  /** Active animation tracking for await support */
+  let _pendingAnimations = 0;
+  let _animResolve = null;
+
+  function _trackAnim() { _pendingAnimations++; }
+  function _releaseAnim() {
+    _pendingAnimations--;
+    if (_pendingAnimations <= 0 && _animResolve) {
+      _pendingAnimations = 0;
+      const r = _animResolve; _animResolve = null; r();
+    }
+  }
+
+  /**
+   * Returns a Promise that resolves once all currently-running attack/hit
+   * animations have finished (or immediately if none are in progress).
+   */
+  function waitForAnimations() {
+    if (_pendingAnimations <= 0) return Promise.resolve();
+    return new Promise(resolve => {
+      _animResolve = resolve;
+      // Safety timeout: resolve even if animationend events get lost
+      setTimeout(() => {
+        if (_pendingAnimations > 0) {
+          _pendingAnimations = 0;
+          const r = _animResolve; _animResolve = null;
+          if (r) r();
+        }
+      }, 1200);
+    });
+  }
+
+  function animateAttack(row, col) { _flashClass(row, col, 'anim-attack', true); }
+  function animateHit(row, col)    { _flashClass(row, col, 'anim-hit', true); }
 
   function animateDamageNumber(row, col, dmg) {
     const tile = getTileEl(row, col);
@@ -242,19 +274,26 @@ const Grid = (() => {
     const tile = getTileEl(row, col);
     const unit = tile?.querySelector('.unit-on-tile');
     if (unit) {
+      // Release any tracked animations on this element before death anim
+      if (unit.classList.contains('anim-hit'))  { unit.classList.remove('anim-hit');  _releaseAnim(); }
+      if (unit.classList.contains('anim-attack')) { unit.classList.remove('anim-attack'); _releaseAnim(); }
       unit.classList.add('anim-death');
       unit.addEventListener('animationend', () => { removeUnitFromTile(row, col); if (cb) cb(); }, { once: true });
     } else if (cb) cb();
   }
 
-  function _flashClass(row, col, cls) {
+  function _flashClass(row, col, cls, tracked = false) {
     const tile = getTileEl(row, col);
     const unit = tile?.querySelector('.unit-on-tile');
     if (!unit) return;
     unit.classList.remove(cls);
     void unit.offsetWidth; // reflow
     unit.classList.add(cls);
-    unit.addEventListener('animationend', () => unit.classList.remove(cls), { once: true });
+    if (tracked) _trackAnim();
+    unit.addEventListener('animationend', () => {
+      unit.classList.remove(cls);
+      if (tracked) _releaseAnim();
+    }, { once: true });
   }
 
   /**
@@ -351,6 +390,7 @@ const Grid = (() => {
     animateDeath,
     moveUnit,
     animateAbilityName,
+    waitForAnimations,
     set onClick(fn)      { _onClick = fn; },
     set onRightClick(fn) { _onRightClick = fn; },
   };

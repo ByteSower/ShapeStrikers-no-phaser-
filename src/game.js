@@ -11,6 +11,7 @@ const Game = (() => {
   let battle = null;
   let nextUnitId = 1;
   let _currentWaveDef = null; // cached generated wave for bonusGold lookup
+  let _titleMusicHandler = null; // reference for cleanup on Start
 
   function _freshState() {
     return {
@@ -152,6 +153,7 @@ const Game = (() => {
 
     // Mark slot as selected (gold deducted only on placement)
     state.selectedShopIdx = index;
+    Audio.play('buy');
 
     // Highlight empty player-side tiles
     const empties = [];
@@ -172,6 +174,7 @@ const Game = (() => {
     state.gold += sellValue;
     state.playerUnits = state.playerUnits.filter(u => u !== unit);
     Grid.removeUnitFromTile(unit.row, unit.col);
+    Audio.play('sell');
     UI.showMessage(`Sold ${unit.definition.name} for ${sellValue}g`);
     UI.clearUnitDetail();
     state.selectedUnit = null;
@@ -244,6 +247,7 @@ const Game = (() => {
       Grid.placeUnit(unit, targetRow, col);
       Grid.clearHighlights();
       Grid.clearSelection();
+      Audio.play('place');
       UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
       UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
       UI.updateSynergies(state.playerUnits);
@@ -389,6 +393,9 @@ const Game = (() => {
     battle.onScreenShake = _onScreenShake;
     battle.onUnitMove    = _onUnitMove;
     battle.onStatusChange = _onStatusChange;
+    battle.onActionDone  = () => Grid.waitForAnimations();
+
+    Audio.play('waveStart');
 
     battle.start([...state.playerUnits], [...state.enemyUnits]);
 
@@ -400,10 +407,12 @@ const Game = (() => {
 
   function _onUnitAttack(attacker, target) {
     Grid.animateAttack(attacker.row, attacker.col);
+    Audio.play('attack');
   }
 
   function _onUnitMove(unit, fromRow, fromCol, toRow, toCol) {
     Grid.moveUnit(fromRow, fromCol, toRow, toCol);
+    Audio.play('move');
   }
 
   function _onStatusChange(unit) {
@@ -413,6 +422,7 @@ const Game = (() => {
   function _onUnitHit(target, dmg) {
     if (dmg > 0) {
       Grid.animateHit(target.row, target.col);
+      Audio.play('hit');
     }
     Grid.updateUnitHp(target.row, target.col, target.hp, target.maxHp);
     Grid.animateDamageNumber(target.row, target.col, dmg);
@@ -420,6 +430,7 @@ const Game = (() => {
 
   function _onAbilityUsed(unit, abilityName) {
     Grid.animateAttack(unit.row, unit.col);
+    Audio.play('ability');
     // Elemental flash on the unit's tile
     const tile = Grid.getTileEl(unit.row, unit.col);
     if (tile) {
@@ -445,9 +456,8 @@ const Game = (() => {
   }
 
   function _onUnitDeath(unit) {
-    Grid.animateDeath(unit.row, unit.col);
-    setTimeout(() => {
-      Grid.removeUnitFromTile(unit.row, unit.col);
+    Audio.play(unit.isEnemy ? 'enemyDeath' : 'death');
+    Grid.animateDeath(unit.row, unit.col, () => {
       if (unit.isEnemy) {
         state.enemyUnits = state.enemyUnits.filter(u => u !== unit);
         state.score += unit.definition.cost * 10;
@@ -455,7 +465,7 @@ const Game = (() => {
         state.playerUnits = state.playerUnits.filter(u => u !== unit);
       }
       _refreshHUD();
-    }, 350);
+    });
   }
 
   function _onBattleEnd(playerWon) {
@@ -463,6 +473,7 @@ const Game = (() => {
     battle = null;
 
     if (playerWon) {
+      Audio.play('waveClear');
       const goldBase = (GAME_CONFIG.goldPerWave ?? 7) + (_currentWaveDef?.bonusGold ?? 0);
       const victoryBonusUpg = UPGRADES.find(u => u.id === 'victory_bonus');
       const victoryBonus = (victoryBonusUpg?.effect?.value || 2) * (state.upgradeLevels['victory_bonus'] || 0);
@@ -537,6 +548,7 @@ const Game = (() => {
 
   function _handleGameOver() {
     state.phase = 'gameover';
+    Audio.play('gameOver');
     UI.showGameOver(state.wave, state.score);
 
     // Clear enemy units from grid
@@ -592,6 +604,11 @@ const Game = (() => {
 
   // ── Refresh Button State ──────────────────────────────────────────────────
 
+  function _updateMuteBtn() {
+    const btn = document.getElementById('btn-mute');
+    if (btn) btn.textContent = Audio.isMuted() ? '🔇' : '🔊';
+  }
+
   function _updateRefreshBtn() {
     const costEl = document.getElementById('refresh-cost');
     if (costEl) costEl.textContent = getRefreshCost();
@@ -605,6 +622,14 @@ const Game = (() => {
   // ── Public startGame ──────────────────────────────────────────────────────
 
   function startGame() {
+    // Remove title music listeners before stopping so bubbling click doesn't restart it
+    if (_titleMusicHandler) {
+      const titleEl = document.getElementById('screen-title');
+      titleEl?.removeEventListener('click', _titleMusicHandler);
+      titleEl?.removeEventListener('keydown', _titleMusicHandler);
+      _titleMusicHandler = null;
+    }
+    Audio.stopMusic();
     state = _freshState();
     battle = null;
     nextUnitId = 1;
@@ -672,6 +697,27 @@ const Game = (() => {
       });
     }
 
+    // Mute toggle (title screen checkbox)
+    const muteToggle = document.getElementById('opt-mute');
+    if (muteToggle) {
+      muteToggle.checked = Audio.isMuted();
+      muteToggle.addEventListener('change', () => {
+        Audio.toggleMute();
+        _updateMuteBtn();
+      });
+    }
+
+    // Mute button (in-game top bar)
+    const muteBtn = document.getElementById('btn-mute');
+    if (muteBtn) {
+      _updateMuteBtn();
+      muteBtn.addEventListener('click', () => {
+        Audio.toggleMute();
+        _updateMuteBtn();
+        if (muteToggle) muteToggle.checked = Audio.isMuted();
+      });
+    }
+
     // How to Play overlay (on title screen)
     document.getElementById('btn-how-to-play')?.addEventListener('click', () => {
       document.getElementById('overlay-help')?.classList.remove('hidden');
@@ -692,6 +738,7 @@ const Game = (() => {
     document.getElementById('btn-quit')?.addEventListener('click', () => {
       if (battle) battle.stop();
       UI.showScreen('screen-title');
+      Audio.playMusic('ss_title_music_full.mp3');
       _updateTitleUnlocks();
     });
 
@@ -845,6 +892,7 @@ const Game = (() => {
 
   function init() {
     preloadSprites(); // fire-and-forget — sprites ready before user enters game
+    Audio.init();
     _wireDOMButtons();
     _updateTitleUnlocks();
 
@@ -858,6 +906,18 @@ const Game = (() => {
     });
 
     UI.showScreen('screen-title');
+
+    // Play title music — try autoplay first, fall back to first title-screen interaction
+    Audio.playMusic('ss_title_music_full.mp3');
+    const titleEl = document.getElementById('screen-title');
+    _titleMusicHandler = () => {
+      Audio.playMusic('ss_title_music_full.mp3');
+      titleEl.removeEventListener('click', _titleMusicHandler);
+      titleEl.removeEventListener('keydown', _titleMusicHandler);
+      _titleMusicHandler = null;
+    };
+    titleEl.addEventListener('click', _titleMusicHandler);
+    titleEl.addEventListener('keydown', _titleMusicHandler);
   }
 
   return {

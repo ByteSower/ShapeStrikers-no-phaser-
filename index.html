@@ -24,6 +24,7 @@
       <label class="option-label"><input type="checkbox" id="opt-tutorial" checked> Show Tutorial</label>
       <label class="option-label"><input type="checkbox" id="opt-speed"> Enable Speed Controls</label>
       <label class="option-label"><input type="checkbox" id="opt-dark-mode"> 🌙 Dark Mode</label>
+      <label class="option-label"><input type="checkbox" id="opt-mute"> 🔇 Mute Audio</label>
     </div>
     <div class="title-unlocks" id="title-unlocks"></div>
   </div>
@@ -39,6 +40,7 @@
     <span id="hud-score">🏆 <span id="score-val">0</span></span>
     <span id="hud-units">⚔️ <span id="units-val">0</span> / <span id="max-units-val">7</span></span>
     <span id="hud-phase" class="phase-badge shop">SHOP</span>
+    <button class="btn btn-secondary btn-sm" id="btn-mute" title="Toggle Audio">🔊</button>
     <button class="btn btn-secondary btn-sm" id="btn-help" title="Help">❓</button>
   </div>
 
@@ -221,6 +223,7 @@
 
 <!-- SCRIPTS (order matters — config first) -->
 <script src="src/config.js"></script>
+<script src="src/audio.js"></script>
 <script src="src/battle.js"></script>
 <script src="src/grid.js"></script>
 <script src="src/ui.js"></script>

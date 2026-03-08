@@ -765,14 +765,14 @@ html, body {
 .tutorial-spotlight {
   position: relative;
   z-index: 150 !important;
-  box-shadow: 0 0 0 4px #3399ff, 0 0 20px rgba(51,153,255,0.5) !important;
+  box-shadow: 0 0 0 2px #3399ff, 0 0 8px rgba(51,153,255,0.4) !important;
   border-radius: 10px;
   animation: tutorial-pulse 1.5s ease-in-out infinite;
   pointer-events: none;
 }
 @keyframes tutorial-pulse {
-  0%, 100% { box-shadow: 0 0 0 4px #3399ff, 0 0 20px rgba(51,153,255,0.5); }
-  50%      { box-shadow: 0 0 0 6px #55bbff, 0 0 30px rgba(85,187,255,0.7); }
+  0%, 100% { box-shadow: 0 0 0 2px #3399ff, 0 0 8px rgba(51,153,255,0.4); }
+  50%      { box-shadow: 0 0 0 3px #55bbff, 0 0 14px rgba(85,187,255,0.5); }
 }
 .tutorial-box {
   position: fixed;
