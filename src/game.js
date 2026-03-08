@@ -31,7 +31,7 @@ const Game = (() => {
   function getRefreshCost() {
     const base = GAME_CONFIG.shopRefreshCost || 2;
     const bargainLevel = state?.upgradeLevels?.['bargain_hunter'] || 0;
-    return Math.max(1, base - bargainLevel);
+    return Math.max(0, base - bargainLevel);
   }
 
   // ── Helper: effective max units (accounting for Army Expansion upgrade) ────
@@ -83,6 +83,7 @@ const Game = (() => {
     state.selectedShopIdx = null;
     Grid.clearSelection();
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
+    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
     _refreshHUD();
     _updateRefreshBtn();
     _checkSoftLock();
@@ -154,6 +155,7 @@ const Game = (() => {
     state.selectedUnit = null;
     UI.updateSynergies(state.playerUnits);
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
+    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
     _refreshHUD();
     _checkSoftLock();
   }
@@ -221,6 +223,7 @@ const Game = (() => {
       Grid.clearHighlights();
       Grid.clearSelection();
       UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
+      UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
       UI.updateSynergies(state.playerUnits);
       UI.showUnitDetail(unit);
       UI.showMessage('');
@@ -438,6 +441,7 @@ const Game = (() => {
 
       UI.showMessage('');
       UI.showResult(true, state.wave, earnedGold);
+      UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
       _refreshHUD();
     } else {
       _handleGameOver();
@@ -526,14 +530,19 @@ const Game = (() => {
     if (!upg) return;
     const level = state.upgradeLevels[id] || 0;
     if (level >= upg.maxLevel) { UI.showMessage('Already maxed!'); return; }
-    if (state.gold < upg.cost)  { UI.showMessage('Not enough gold!'); return; }
-    state.gold -= upg.cost;
+    const cost = upg.cost + level * 5;
+    if (state.gold < cost)  { UI.showMessage('Not enough gold!'); return; }
+    state.gold -= cost;
     state.upgradeLevels[id] = level + 1;
-    UI.showMessage(`${upg.name} upgraded to level ${level + 1}!`);
-    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
-    _refreshHUD();
 
-    // Re-apply synergies to existing units if relevant
+    // Immediate effects (match Phaser original)
+    if (id === 'refresh_master') state.refreshesLeft += (upg.effect.value || 1);
+
+    UI.showMessage(`${upg.name} upgraded to level ${level + 1}!`);
+    UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
+    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
+    _updateRefreshBtn();
+    _refreshHUD();
     UI.updateSynergies(state.playerUnits);
   }
 

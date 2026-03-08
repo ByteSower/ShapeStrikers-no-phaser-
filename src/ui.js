@@ -86,7 +86,8 @@ const UI = (() => {
     for (const upg of UPGRADES) {
       const level = upgradeLevels[upg.id] || 0;
       const maxed = level >= upg.maxLevel;
-      const canAfford = gold >= upg.cost;
+      const cost  = upg.cost + level * 5;
+      const canAfford = gold >= cost;
 
       const row = document.createElement('div');
       row.className = 'upgrade-row';
@@ -94,7 +95,7 @@ const UI = (() => {
         <span class="upgrade-name" title="${upg.description}">${upg.name}</span>
         <span class="upgrade-level">${level}/${upg.maxLevel}</span>
         <button class="upgrade-buy" ${maxed || !canAfford ? 'disabled' : ''} data-id="${upg.id}">
-          ${maxed ? '✓' : upg.cost + 'g'}
+          ${maxed ? '✓' : cost + 'g'}
         </button>`;
       row.querySelector('.upgrade-buy').addEventListener('click', () => onBuy(upg.id));
       container.appendChild(row);
