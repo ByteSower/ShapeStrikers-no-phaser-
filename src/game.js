@@ -11,7 +11,6 @@ const Game = (() => {
   let battle = null;
   let nextUnitId = 1;
   let _currentWaveDef = null; // cached generated wave for bonusGold lookup
-  let _titleMusicHandler = null; // reference for cleanup on Start
 
   function _freshState() {
     return {
@@ -622,12 +621,9 @@ const Game = (() => {
   // ── Public startGame ──────────────────────────────────────────────────────
 
   function startGame() {
-    // Remove title music listeners before stopping so bubbling click doesn't restart it
-    if (_titleMusicHandler) {
-      ['mouseenter', 'click', 'keydown', 'touchstart'].forEach(evt =>
-        document.removeEventListener(evt, _titleMusicHandler));
-      _titleMusicHandler = null;
-    }
+    // Remove splash if still visible
+    const splashEl = document.getElementById('splash-overlay');
+    if (splashEl) splashEl.remove();
     Audio.stopMusic();
     state = _freshState();
     battle = null;
@@ -906,15 +902,17 @@ const Game = (() => {
 
     UI.showScreen('screen-title');
 
-    // Play title music — try autoplay, then mouseenter (hover), then click/key as fallback
-    Audio.playMusic('ss_title_music_full.mp3');
-    const _musicEvents = ['mouseenter', 'click', 'keydown', 'touchstart'];
-    _titleMusicHandler = () => {
-      Audio.playMusic('ss_title_music_full.mp3');
-      _musicEvents.forEach(evt => document.removeEventListener(evt, _titleMusicHandler));
-      _titleMusicHandler = null;
-    };
-    _musicEvents.forEach(evt => document.addEventListener(evt, _titleMusicHandler, { once: true }));
+    // Show splash overlay — dismissing it is the user interaction that unlocks audio
+    const splashEl = document.getElementById('splash-overlay');
+    if (splashEl) {
+      splashEl.classList.remove('hidden');
+      document.getElementById('btn-splash-dismiss')?.addEventListener('click', () => {
+        splashEl.classList.add('hidden');
+        Audio.playMusic('ss_title_music_full.mp3');
+        // Clean up after fade
+        setTimeout(() => splashEl.remove(), 600);
+      }, { once: true });
+    }
   }
 
   return {
