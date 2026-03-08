@@ -17,6 +17,7 @@ class BattleSystem {
     this.onAbilityUsed = null;  // (unit, abilityName)  — visual: ability effect
     this.onScreenShake = null;  // (intensity)          — visual: screen shake
     this.onUnitMove    = null;  // (unit, fromRow, fromCol, toRow, toCol) — visual: unit slides
+    this.onStatusChange = null; // (unit) — visual: status icons update
 
     this._running = false;
     this._actionDelay = 500; // ms between individual unit actions
@@ -444,13 +445,27 @@ class BattleSystem {
 
     const colDir = closest.col > unit.col ? 1 : closest.col < unit.col ? -1 : 0;
 
-    // If already at the battle line, only move horizontally toward target
+    // If already at the battle line, move horizontally toward target (or find any open lane)
     if (preferredRow === unit.row) {
       if (colDir !== 0) {
         const newCol = unit.col + colDir;
         if (newCol >= 0 && newCol < GRID_CONFIG.cols && !isOccupied(unit.row, newCol)) {
           unit.col = newCol;
           moved = true;
+        }
+      }
+      // Fallback: if same column or blocked, try moving toward ANY reachable enemy
+      if (!moved) {
+        for (const t of alive) {
+          const dir = t.col > unit.col ? 1 : t.col < unit.col ? -1 : 0;
+          if (dir !== 0) {
+            const nc = unit.col + dir;
+            if (nc >= 0 && nc < GRID_CONFIG.cols && !isOccupied(unit.row, nc)) {
+              unit.col = nc;
+              moved = true;
+              break;
+            }
+          }
         }
       }
     } else {
@@ -469,12 +484,16 @@ class BattleSystem {
         }
       }
       // Priority 3: diagonal other direction (just to advance row)
-      if (!moved && colDir !== 0) {
-        const oppCol = unit.col - colDir;
-        if (oppCol >= 0 && oppCol < GRID_CONFIG.cols && !isOccupied(preferredRow, oppCol)) {
-          unit.row = preferredRow;
-          unit.col = oppCol;
-          moved = true;
+      if (!moved) {
+        const dirs = colDir !== 0 ? [-colDir, colDir] : [-1, 1];
+        for (const d of dirs) {
+          const tryCol = unit.col + d;
+          if (tryCol >= 0 && tryCol < GRID_CONFIG.cols && !isOccupied(preferredRow, tryCol)) {
+            unit.row = preferredRow;
+            unit.col = tryCol;
+            moved = true;
+            break;
+          }
         }
       }
     }
@@ -490,6 +509,7 @@ class BattleSystem {
     if (NEGATIVE.includes(type) && unit.statusEffects.find(s => s.type === 'barrier')) return;
     unit.statusEffects = unit.statusEffects.filter(s => s.type !== type);
     unit.statusEffects.push({ type, duration, stacks });
+    if (this.onStatusChange) this.onStatusChange(unit);
   }
 
   _tickStatus(unit) {
@@ -503,6 +523,7 @@ class BattleSystem {
       eff.duration--;
     }
     unit.statusEffects = unit.statusEffects.filter(e => e.duration > 0);
+    if (this.onStatusChange) this.onStatusChange(unit);
   }
 
   _killUnit(unit) {
@@ -515,9 +536,11 @@ class BattleSystem {
   // ── Synergies ────────────────────────────────────────────────────────────
 
   _applyElementSynergies(units) {
-    // Save base stats before applying synergies
+    // Save base stats before applying synergies (including hp/maxHp for HP synergies)
     for (const u of units) {
       u._baseStats = { ...u.stats };
+      u._baseHp = u.hp;
+      u._baseMaxHp = u.maxHp;
     }
 
     const counts = {};
@@ -534,6 +557,13 @@ class BattleSystem {
     for (const syn of Object.values(byElement)) {
       for (const u of units.filter(u2 => u2.definition.element === syn.element)) {
         u.stats[syn.bonus.stat] = Math.floor(u._baseStats[syn.bonus.stat] * syn.bonus.multiplier);
+        // HP synergies must also update the live hp/maxHp fields
+        if (syn.bonus.stat === 'hp') {
+          const newMaxHp = Math.floor(u._baseMaxHp * syn.bonus.multiplier);
+          const hpGain = newMaxHp - u.maxHp;
+          u.maxHp = newMaxHp;
+          u.hp = Math.min(u.hp + hpGain, u.maxHp);
+        }
       }
       this._log(`✨ Synergy: ${syn.description}`, 'ability');
     }
@@ -544,6 +574,13 @@ class BattleSystem {
       if (u._baseStats) {
         Object.assign(u.stats, u._baseStats);
         delete u._baseStats;
+      }
+      // Restore live hp/maxHp from pre-synergy values
+      if (u._baseMaxHp !== undefined) {
+        u.maxHp = u._baseMaxHp;
+        u.hp = Math.min(u.hp, u.maxHp);
+        delete u._baseHp;
+        delete u._baseMaxHp;
       }
     }
   }

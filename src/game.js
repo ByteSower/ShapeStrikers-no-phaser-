@@ -59,7 +59,9 @@ const Game = (() => {
   // ── Generate shop based on current wave ───────────────────────────────────
 
   function _rollableUnits() {
-    const maxTier = Math.min(4, 1 + Math.floor((state.wave - 1) / 4));
+    // Match Phaser original + wave generator: Math.min(3, Math.ceil(wave/3))
+    // T1 at W1-3, T2 at W4-6, T3 at W7+
+    const maxTier = Math.min(3, Math.ceil(state.wave / 3));
     const arcaneUnlocked = localStorage.getItem('shape_strikers_arcane_unlocked') === '1';
     return UNIT_DEFINITIONS.filter(d => {
       if (d.isBoss) return false;
@@ -79,7 +81,19 @@ const Game = (() => {
       state.refreshesLeft--;
     }
     const pool = _rollableUnits();
-    state.shopUnits = Array.from({ length: 5 }, () => pool[Math.floor(Math.random() * pool.length)]);
+    const maxTier = Math.min(3, Math.ceil(state.wave / 3));
+    state.shopUnits = Array.from({ length: 5 }, () => {
+      // Tier weighting matching Phaser original: T1=60%, T2=30%, T3=10%
+      const weights = { 1: 60, 2: 30, 3: 10 };
+      const roll = Math.random() * 100;
+      let tier = 1;
+      if (roll > weights[1]) tier = 2;
+      if (roll > weights[1] + weights[2]) tier = 3;
+      tier = Math.min(tier, maxTier);
+      const tierPool = pool.filter(d => d.tier === tier);
+      const pick = tierPool.length > 0 ? tierPool : pool;
+      return pick[Math.floor(Math.random() * pick.length)];
+    });
     state.selectedShopIdx = null;
     Grid.clearSelection();
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
@@ -115,9 +129,21 @@ const Game = (() => {
   function _buyShopUnit(index) {
     const def = state.shopUnits[index];
     if (!def) return;
+
+    // Always show unit detail when clicking a shop card (even if can't buy)
+    UI.showUnitDetail({ definition: def, hp: def.stats.hp, maxHp: def.stats.hp, stats: { ...def.stats }, statusEffects: [] });
+
     if (state.phase !== 'prep') { UI.showMessage('Can only buy during prep phase.'); return; }
     if (state.playerUnits.length >= _maxUnits()) { UI.showMessage('Army is full! Upgrade Army Expansion.'); return; }
     if (state.gold < def.cost) { UI.showMessage('Not enough gold!'); return; }
+
+    // Clicking the same shop card again cancels the pending purchase
+    if (state.selectedShopIdx === index) {
+      state.selectedShopIdx = null;
+      Grid.clearHighlights();
+      UI.showMessage('');
+      return;
+    }
 
     // Cancel any previous pending purchase
     if (state.selectedShopIdx !== null) {
@@ -126,10 +152,6 @@ const Game = (() => {
 
     // Mark slot as selected (gold deducted only on placement)
     state.selectedShopIdx = index;
-
-    // Show unit preview in detail panel
-    UI.showUnitDetail({ definition: def, hp: def.stats.hp, maxHp: def.stats.hp, stats: { ...def.stats }, statusEffects: [] });
-    UI.switchTab('unit');
 
     // Highlight empty player-side tiles
     const empties = [];
@@ -303,9 +325,16 @@ const Game = (() => {
           }
         }
         if (!placed) {
-          // Fall into next row
+          // Fall into next row — also nudge within that row
           const r2 = (row + 1) % GRID_CONFIG.battleLineRow;
           enemy.row = r2;
+          for (let dc2 = 0; dc2 < GRID_CONFIG.cols; dc2++) {
+            const tryCol2 = (enemy.col + dc2) % GRID_CONFIG.cols;
+            if (!enemies.find(e => e.row === r2 && e.col === tryCol2)) {
+              enemy.col = tryCol2;
+              break;
+            }
+          }
         }
 
         enemies.push(enemy);
@@ -359,6 +388,7 @@ const Game = (() => {
     battle.onAbilityUsed = _onAbilityUsed;
     battle.onScreenShake = _onScreenShake;
     battle.onUnitMove    = _onUnitMove;
+    battle.onStatusChange = _onStatusChange;
 
     battle.start([...state.playerUnits], [...state.enemyUnits]);
 
@@ -374,6 +404,10 @@ const Game = (() => {
 
   function _onUnitMove(unit, fromRow, fromCol, toRow, toCol) {
     Grid.moveUnit(fromRow, fromCol, toRow, toCol);
+  }
+
+  function _onStatusChange(unit) {
+    Grid.updateStatusIcons(unit.row, unit.col, unit.statusEffects);
   }
 
   function _onUnitHit(target, dmg) {
@@ -430,12 +464,13 @@ const Game = (() => {
 
     if (playerWon) {
       const goldBase = (GAME_CONFIG.goldPerWave ?? 7) + (_currentWaveDef?.bonusGold ?? 0);
-      const interest = _calcInterest(state.gold);
       const victoryBonusUpg = UPGRADES.find(u => u.id === 'victory_bonus');
       const victoryBonus = (victoryBonusUpg?.effect?.value || 2) * (state.upgradeLevels['victory_bonus'] || 0);
+      // Add base gold first, then calculate interest on new total (matches Phaser)
+      state.gold += goldBase + victoryBonus;
+      const interest = _calcInterest(state.gold);
+      state.gold += interest;
       const earnedGold = goldBase + interest + victoryBonus;
-
-      state.gold += earnedGold;
       state.score += state.wave * 100;
       _healPlayerUnits();
 
@@ -623,6 +658,19 @@ const Game = (() => {
     document.getElementById('btn-tutorial')?.addEventListener('click', () => {
       UI.showMessage('Place units in the bottom rows, then press Fight! Same-element units grant bonuses.', 0);
     });
+
+    // Dark mode toggle
+    const darkToggle = document.getElementById('opt-dark-mode');
+    if (darkToggle) {
+      const savedDark = localStorage.getItem('shape_strikers_dark_mode') === '1';
+      darkToggle.checked = savedDark;
+      if (savedDark) document.documentElement.setAttribute('data-theme', 'dark');
+      darkToggle.addEventListener('change', () => {
+        const on = darkToggle.checked;
+        document.documentElement.setAttribute('data-theme', on ? 'dark' : '');
+        localStorage.setItem('shape_strikers_dark_mode', on ? '1' : '0');
+      });
+    }
 
     // How to Play overlay (on title screen)
     document.getElementById('btn-how-to-play')?.addEventListener('click', () => {

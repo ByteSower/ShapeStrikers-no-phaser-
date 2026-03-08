@@ -132,6 +132,48 @@ const Grid = (() => {
     fill.className = 'unit-hp-fill' + (pct < 25 ? ' critical' : pct < 60 ? ' wounded' : '');
   }
 
+  // ── Status Effect Icons on Tiles ──────────────────────────────────────────
+
+  const STATUS_ICONS = {
+    burn:         '🔥',
+    poison:       '☠️',
+    freeze:       '🧊',
+    slow:         '🐌',
+    weaken:       '⬇️',
+    wound:        '🩸',
+    shield:       '🛡️',
+    barrier:      '✨',
+    untargetable: '👻',
+  };
+
+  function updateStatusIcons(row, col, statusEffects) {
+    const tile = getTileEl(row, col);
+    if (!tile) return;
+    let container = tile.querySelector('.status-icons');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'status-icons';
+      tile.appendChild(container);
+    }
+    container.innerHTML = '';
+    if (!statusEffects || statusEffects.length === 0) return;
+    for (const eff of statusEffects) {
+      const icon = STATUS_ICONS[eff.type];
+      if (!icon) continue;
+      const el = document.createElement('span');
+      el.className = 'status-icon';
+      el.textContent = icon;
+      if (eff.stacks > 0) {
+        const stack = document.createElement('span');
+        stack.className = 'status-stack';
+        stack.textContent = eff.stacks;
+        el.appendChild(stack);
+      }
+      el.title = `${eff.type} (${eff.duration}t)`;
+      container.appendChild(el);
+    }
+  }
+
   // ── Selection & Highlights ────────────────────────────────────────────────
 
   function selectTile(row, col) {
@@ -297,6 +339,7 @@ const Grid = (() => {
     placeUnit,
     removeUnitFromTile,
     updateUnitHp,
+    updateStatusIcons,
     selectTile,
     clearSelection,
     highlightTiles,
