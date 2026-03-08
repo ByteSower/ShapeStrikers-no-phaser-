@@ -867,36 +867,44 @@ html, body {
 @media (max-width: 640px) {
   html, body { overflow: auto; }
 
-  #screen-game { overflow: auto; height: auto; min-height: 100vh; }
+  #screen-game { overflow: auto; height: auto; min-height: 100vh; min-height: 100dvh; }
 
   /* Stack layout vertically */
   #layout { flex-direction: column; overflow: visible; }
 
-  /* Grid area */
-  #grid-area { padding: 6px; gap: 4px; }
-  #grid-container { --tile-size: calc((100vw - 60px) / 6 - 4px); gap: 3px; padding: 4px; }
-  .unit-canvas { width: 42px; height: 42px; }
+  /* Grid area — centred, no side labels */
+  #grid-area { padding: 6px 4px; gap: 0; }
+  #grid-container { --tile-size: calc((100vw - 52px) / 6 - 4px); gap: 3px; padding: 4px; }
+  .unit-canvas { width: 40px; height: 40px; }
   #grid-labels-left, #grid-labels-right { display: none; }
 
-  /* Right panel → full width below grid */
+  /* Right panel → full width, collapsed with open/close toggle */
   #right-panel {
     width: 100%; border-left: none; border-top: 2px solid var(--border);
-    max-height: 300px; min-height: 180px;
-    box-shadow: none;
+    max-height: 160px; min-height: 0;
+    box-shadow: none; overflow-y: auto;
   }
+  .tab-content { padding: 8px; }
 
-  /* Top bar */
-  #top-bar { gap: 8px; padding: 0 8px; flex-wrap: wrap; height: auto; min-height: var(--top-bar-h); }
-  #top-bar span { font-size: 12px; }
+  /* Top bar — compact, wrap items */
+  #top-bar { gap: 6px; padding: 4px 8px; flex-wrap: wrap; height: auto; min-height: 36px; }
+  #top-bar span { font-size: 11px; }
+  .phase-badge { padding: 3px 8px; font-size: 10px; }
 
-  /* Bottom bar / shop */
-  #bottom-bar { padding: 6px 8px 4px; min-height: 100px; }
-  #shop-units { gap: 5px; }
-  .shop-card { min-width: 100px; max-width: 140px; }
+  /* Bottom bar / shop — stack vertically so cards + controls don't overlap */
+  #bottom-bar { padding: 6px 6px 4px; min-height: 0; max-height: none; }
+  #shop-area { flex-direction: column; gap: 6px; }
+  #shop-units { gap: 5px; overflow-x: auto; flex-shrink: 0; }
+  .shop-card { min-width: 105px; max-width: 150px; flex: 0 0 auto; }
   .shop-card .card-name { font-size: 11px; }
+  .card-body { padding: 5px 7px; gap: 2px; }
   .card-preview { display: none; }
-  #shop-controls { min-width: 150px; max-width: 180px; gap: 4px; }
-  #shop-controls .btn { padding: 6px 10px; font-size: 11px; }
+  #shop-controls {
+    min-width: unset; max-width: unset; width: 100%;
+    flex-direction: row; flex-wrap: wrap; gap: 4px;
+    justify-content: center;
+  }
+  #shop-controls .btn { padding: 6px 10px; font-size: 11px; flex: 0 0 auto; }
 
   /* Buttons */
   .btn-lg { padding: 10px 20px; font-size: 15px; min-width: 140px; }
@@ -907,24 +915,30 @@ html, body {
   .title-buttons { flex-direction: column; gap: 8px; }
 
   /* Overlays */
-  .overlay-box { padding: 20px 18px; width: 95%; }
-  .glossary-box { padding: 14px 12px; width: 98%; }
-  #glossary-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+  .overlay-box { padding: 20px 16px; width: 95%; }
+  .glossary-box { padding: 14px 10px; width: 98%; max-height: 85vh; max-height: 85dvh; }
+  #glossary-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
 
   /* Tab text size */
-  .tab-btn { font-size: 11px; padding: 8px 2px; }
+  .tab-btn { font-size: 11px; padding: 6px 2px; }
 
   /* Status icons smaller on mobile */
   .status-icon { font-size: 9px; }
 
   /* Enemy badge */
   .enemy-badge { font-size: 10px; }
+
+  /* Message bar */
+  #message-bar { font-size: 11px; }
 }
 
 /* ── Very small screens (phone portrait tight) ─────────────────────────────── */
 @media (max-width: 380px) {
-  #grid-container { --tile-size: calc((100vw - 48px) / 6 - 3px); gap: 2px; padding: 3px; }
-  .unit-canvas { width: 34px; height: 34px; }
-  .shop-card { min-width: 85px; }
+  #grid-container { --tile-size: calc((100vw - 40px) / 6 - 3px); gap: 2px; padding: 3px; }
+  .unit-canvas { width: 32px; height: 32px; }
+  .shop-card { min-width: 85px; max-width: 120px; }
   .btn-lg { padding: 8px 14px; font-size: 13px; min-width: 110px; }
+  #top-bar span { font-size: 10px; }
+  .tab-btn { font-size: 10px; }
+  #right-panel { max-height: 140px; }
 }
