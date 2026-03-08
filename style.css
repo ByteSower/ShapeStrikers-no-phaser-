@@ -67,14 +67,14 @@ html, body {
 #screen-title {
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, #b8d8f8 0%, #e0f0ff 40%, #f0f8ff 100%);
+  background: url('public/sstitle3.png') center center / cover no-repeat;
   position: relative; overflow: hidden;
 }
 #screen-title::before {
   content: '';
   position: absolute; inset: 0;
-  background: url('public/bg_grass.png') center bottom / cover no-repeat;
-  opacity: 0.2; pointer-events: none;
+  background: rgba(0, 0, 0, 0.35);
+  pointer-events: none;
 }
 .title-content {
   display: flex; flex-direction: column; align-items: center; gap: 18px;
@@ -91,15 +91,17 @@ html, body {
   letter-spacing: 2px;
 }
 .game-subtitle {
-  font-size: 18px; color: #5a7a9a; letter-spacing: 5px;
+  font-size: 18px; color: #d0e0f0; letter-spacing: 5px;
   text-transform: uppercase; font-weight: 700;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
 }
 .title-buttons { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
 .option-label {
   display: flex; align-items: center; gap: 6px;
-  font-size: 13px; color: var(--text-dim); font-weight: 600; cursor: pointer;
+  font-size: 13px; color: #c8d8e8; font-weight: 600; cursor: pointer;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
 }
-.option-label:hover { color: var(--text); }
+.option-label:hover { color: #fff; }
 @keyframes titleGradient { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
 
 /* ── Game Screen Background ────────────────────────────────────────────────── */

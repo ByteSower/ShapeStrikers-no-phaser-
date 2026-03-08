@@ -4,7 +4,7 @@ A tactical lane-based auto-battler built with **vanilla HTML, CSS, and JavaScrip
 
 🎮 **[Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)**
 
-![Shape Strikers](public/SSTitle2.png)
+![Shape Strikers](public/sstitle3.png)
 
 ---
 
