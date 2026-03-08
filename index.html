@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shape Strikers</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════ SCREENS ══ -->
+
+<!-- TITLE SCREEN -->
+<div id="screen-title" class="screen active">
+  <div class="title-content">
+    <h1 class="game-title">⚔️ Shape Strikers</h1>
+    <p class="game-subtitle">Tactical Auto-Battler Rogue-like Game By ByteSower</p>
+    <div class="title-buttons">
+      <button class="btn btn-lg btn-fire" id="btn-start">▶ Start Game</button>
+      <button class="btn btn-lg btn-secondary" onclick="UI.showGlossary()">📖 Unit Glossary</button>
+      <button class="btn btn-lg btn-secondary" id="btn-how-to-play">❓ How to Play</button>
+    </div>
+    <div class="title-options">
+      <label class="option-label"><input type="checkbox" id="opt-tutorial" checked> Show Tutorial</label>
+      <label class="option-label"><input type="checkbox" id="opt-speed"> Enable Speed Controls</label>
+    </div>
+    <div class="title-unlocks" id="title-unlocks"></div>
+  </div>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="screen-game" class="screen">
+
+  <!-- TOP BAR -->
+  <div id="top-bar">
+    <span id="hud-wave">Wave 1 / 15</span>
+    <span id="hud-gold">💰 <span id="gold-val">10</span></span>
+    <span id="hud-score">🏆 <span id="score-val">0</span></span>
+    <span id="hud-units">⚔️ <span id="units-val">0</span> / <span id="max-units-val">7</span></span>
+    <span id="hud-phase" class="phase-badge shop">SHOP</span>
+    <button class="btn btn-secondary btn-sm" id="btn-help" title="Help">❓</button>
+  </div>
+
+  <!-- MAIN LAYOUT -->
+  <div id="layout">
+
+    <!-- GRID AREA -->
+    <div id="grid-area">
+      <div id="grid-labels-left">
+        <span class="zone-label enemy-label">👾 ENEMY</span>
+        <span class="zone-label battle-label">⚡ LINE</span>
+        <span class="zone-label player-label">⚔️ YOUR</span>
+      </div>
+      <div id="grid-container">
+        <!-- 6×5 grid built by grid.js -->
+      </div>
+      <div id="grid-labels-right">
+        <span class="zone-label enemy-label">👾</span>
+        <span class="zone-label battle-label">⚡</span>
+        <span class="zone-label player-label">⚔️</span>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div id="right-panel">
+
+      <!-- TABS -->
+      <div id="info-tabs">
+        <button class="tab-btn active" data-tab="stats">📊 Stats</button>
+        <button class="tab-btn" data-tab="unit">🔍 Unit</button>
+        <button class="tab-btn" data-tab="log">📜 Log</button>
+      </div>
+
+      <!-- STATS TAB -->
+      <div id="tab-stats" class="tab-content active">
+        <div class="stat-row"><span>Wave</span><span id="tp-wave">1 / 15</span></div>
+        <div class="stat-row"><span>Gold</span><span id="tp-gold" class="gold">10</span></div>
+        <div class="stat-row"><span>Units</span><span id="tp-units" class="blue">0 / 7</span></div>
+        <div class="stat-row"><span>Score</span><span id="tp-score" class="green">0</span></div>
+        <hr class="divider" />
+        <div class="section-title">SYNERGIES</div>
+        <div id="synergy-list"></div>
+        <hr class="divider" />
+        <div class="section-title">UPGRADES</div>
+        <div id="upgrade-list"></div>
+      </div>
+
+      <!-- UNIT TAB -->
+      <div id="tab-unit" class="tab-content">
+        <div id="unit-detail-empty" class="empty-hint">Click a unit on the grid to inspect it.</div>
+        <div id="unit-detail" style="display:none"></div>
+        <button class="btn btn-secondary btn-sm" id="btn-sell-unit" style="display:none">🪙 Sell Unit</button>
+      </div>
+
+      <!-- LOG TAB -->
+      <div id="tab-log" class="tab-content">
+        <div id="battle-log"></div>
+        <div id="log-empty" class="empty-hint">Battle events appear here.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- BOTTOM CONTROLS -->
+  <div id="bottom-bar">
+    <div id="shop-area">
+      <div id="shop-units"></div>
+      <div id="shop-controls">
+        <button class="btn btn-secondary btn-sm" id="btn-refresh">🔄 Refresh (<span id="refresh-cost">2</span>g)</button>
+        <button class="btn btn-secondary btn-sm" id="btn-glossary">📖 Glossary</button>
+        <button class="btn btn-primary" id="btn-battle">⚔️ Fight!</button>
+        <div id="speed-controls">
+          <span>Speed:</span>
+          <button class="btn btn-secondary btn-speed active" data-speed="1">1×</button>
+          <button class="btn btn-secondary btn-speed" data-speed="2">2×</button>
+          <button class="btn btn-secondary btn-speed" data-speed="0.5">½×</button>
+        </div>
+      </div>
+    </div>
+    <div id="message-bar"></div>
+  </div>
+
+</div>
+
+<!-- BATTLE RESULT OVERLAY -->
+<div id="overlay-result" class="overlay hidden">
+  <div class="overlay-box">
+    <div id="result-title"></div>
+    <div id="result-body"></div>
+    <button class="btn btn-primary btn-lg" id="btn-next-wave">Continue →</button>
+  </div>
+</div>
+
+<!-- GAME OVER OVERLAY -->
+<div id="overlay-gameover" class="overlay hidden">
+  <div class="overlay-box">
+    <h2>💀 Smoked!</h2>
+    <p id="gameover-wave"></p>
+    <p id="gameover-score"></p>
+    <button class="btn btn-fire btn-lg" id="btn-gameover-restart">↺ Play Again</button>
+  </div>
+</div>
+
+<!-- WIN OVERLAY -->
+<div id="overlay-win" class="overlay hidden">
+  <div class="overlay-box win-box">
+    <h2>🏆 Victory!</h2>
+    <p>You defeated the Chaos Overlord!</p>
+    <p id="win-score"></p>
+    <button class="btn btn-primary btn-lg" id="btn-win-restart">↺ Play Again</button>
+  </div>
+</div>
+
+<!-- GLOSSARY OVERLAY -->
+<div id="overlay-glossary" class="overlay hidden">
+  <div class="overlay-box glossary-box">
+    <div class="overlay-header">
+      <h2>📖 Unit Glossary</h2>
+      <button class="btn btn-secondary btn-sm" id="btn-glossary-close">✕ Close</button>
+    </div>
+    <div id="glossary-filters">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="fire">🔥 Fire</button>
+      <button class="filter-btn" data-filter="ice">🧊 Ice</button>
+      <button class="filter-btn" data-filter="lightning">⚡ Lightning</button>
+      <button class="filter-btn" data-filter="earth">🌍 Earth</button>
+      <button class="filter-btn" data-filter="arcane">✨ Arcane</button>
+    </div>
+    <div id="glossary-grid"></div>
+  </div>
+</div>
+
+<!-- HELP OVERLAY -->
+<div id="overlay-help" class="overlay hidden">
+  <div class="overlay-box help-box">
+    <div class="overlay-header">
+      <h2>❓ How to Play</h2>
+      <button class="btn btn-secondary btn-sm" id="btn-help-close">✕ Close</button>
+    </div>
+    <div class="help-content">
+      <div class="help-section">
+        <h3>🎯 Goal</h3>
+        <p>Defeat 15 waves of enemies and 3 bosses to win! Build an army of elemental units and use synergies to gain the advantage.</p>
+      </div>
+      <div class="help-section">
+        <h3>🛒 Shop Phase</h3>
+        <p><b>Buy units</b> from the shop, then <b>click a tile</b> in your zone (bottom 2 rows) to place them. <b>Refresh</b> the shop for new units. <b>Right-click</b> a placed unit to sell it.</p>
+      </div>
+      <div class="help-section">
+        <h3>⚔️ Battle Phase</h3>
+        <p>Units auto-battle! They move toward enemies and attack within their range. Faster units act first. Abilities trigger automatically when off cooldown.</p>
+      </div>
+      <div class="help-section">
+        <h3>🔥 Elements & Synergies</h3>
+        <p>Each unit has an element: <span class="fire">Fire</span>, <span class="ice">Ice</span>, <span class="lightning">Lightning</span>, <span class="earth">Earth</span>, <span class="arcane">Arcane</span>. Having 2+ units of the same element activates synergy bonuses!</p>
+      </div>
+      <div class="help-section">
+        <h3>⬆️ Upgrades</h3>
+        <p>Use gold to buy upgrades in the Stats tab: Army Expansion (+slots), Field Medic (healing), War Chest (interest), and more.</p>
+      </div>
+      <div class="help-section">
+        <h3>🎮 Controls</h3>
+        <p><b>Click</b> shop cards to buy → click tile to place. <b>Click</b> your unit → click empty tile to move. <b>Right-click</b> to sell. <b>Click</b> enemy units during battle to inspect.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TUTORIAL OVERLAY -->
+<div id="overlay-tutorial" class="overlay hidden">
+  <div class="tutorial-box" id="tutorial-box">
+    <div class="tutorial-step" id="tutorial-content"></div>
+    <div class="tutorial-nav">
+      <span id="tutorial-progress"></span>
+      <button class="btn btn-primary btn-sm" id="btn-tutorial-next">Next →</button>
+      <button class="btn btn-secondary btn-sm" id="btn-tutorial-skip">Skip Tutorial</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCRIPTS (order matters — config first) -->
+<script src="src/config.js"></script>
+<script src="src/battle.js"></script>
+<script src="src/grid.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/game.js"></script>
+
+</body>
+</html>
