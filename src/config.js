@@ -229,7 +229,7 @@ const UNIT_DEFINITIONS = [
   {
     id: 'boss_flame_tyrant', name: '🔥 FLAME TYRANT', element: 'fire', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'red', shape: 'squircle' },
-    stats: { hp: 425, maxHp: 425, attack: 32, defense: 14, speed: 5, range: 2 },
+    stats: { hp: 425, maxHp: 425, attack: 32, defense: 14, speed: 5, range: 4 },
     ability: { name: "Tyrant's Wrath", description: 'AoE fire damage to all enemies', cooldown: 4 },
     bossPhases: [
       { hpThreshold: 1.0, name: 'Burning Fury',   statModifiers: {},                description: 'The Flame Tyrant burns with fury!' },
@@ -239,7 +239,7 @@ const UNIT_DEFINITIONS = [
   {
     id: 'boss_frost_colossus', name: '🧊 FROST COLOSSUS', element: 'ice', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'blue', shape: 'circle' },
-    stats: { hp: 675, maxHp: 675, attack: 30, defense: 22, speed: 3, range: 2 },
+    stats: { hp: 675, maxHp: 675, attack: 30, defense: 22, speed: 3, range: 4 },
     ability: { name: 'Absolute Zero', description: 'Freezes all enemies for 2 turns + self-heal 80 HP', cooldown: 5, freezeDuration: 2, healAmount: 80 },
     bossPhases: [
       { hpThreshold: 1.0, name: "Frozen Fortress",  statModifiers: {},                                    description: 'The Frost Colossus raises its icy defenses!' },
@@ -249,7 +249,7 @@ const UNIT_DEFINITIONS = [
   {
     id: 'boss_chaos_overlord', name: '⚡ CHAOS OVERLORD', element: 'arcane', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'purple', shape: 'square' },
-    stats: { hp: 300, maxHp: 300, attack: 35, defense: 15, speed: 6, range: 3 },
+    stats: { hp: 300, maxHp: 300, attack: 35, defense: 15, speed: 6, range: 4 },
     ability: { name: 'Elemental Cataclysm', description: 'Unleashes all elements + enrage at low HP', cooldown: 4 },
     bossPhases: [
       { hpThreshold: 1.0, phaseHp: 300, name: 'Awakening',   statModifiers: {},                                        description: 'The Chaos Overlord awakens!' },

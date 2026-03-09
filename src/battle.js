@@ -179,7 +179,8 @@ class BattleSystem {
     this._log(`✨ ${this._n(unit)} uses ${ab.name}!`, 'ability', this._side(unit));
     if (this.onAbilityUsed) this.onAbilityUsed(unit, ab.name);
 
-    const aliveEnemies = enemies.filter(u => u.hp > 0);
+    const unitRange = unit.stats.range || 1;
+    const aliveEnemies = enemies.filter(u => u.hp > 0 && Math.abs(unit.row - u.row) <= unitRange);
     const aliveAllies  = allies.filter(u => u.hp > 0);
 
     // ── Per-unit ability dispatch ─────────────────────────────────────────

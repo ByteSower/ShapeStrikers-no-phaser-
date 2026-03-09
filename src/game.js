@@ -228,14 +228,14 @@ const Game = (() => {
     if (state.selectedShopIdx !== null) {
       const def = state.shopUnits[state.selectedShopIdx];
       const targetRow = row;
-      if (targetRow <= GRID_CONFIG.battleLineRow) {
-        UI.showMessage('Place units in the bottom rows only!');
-        return;
-      }
-      if (clickedUnit) {
-        UI.showMessage('Tile is occupied!');
-        return;
-      }
+      if (targetRow <= GRID_CONFIG.battleLineRow || clickedUnit) {
+        // Cancel shop selection and fall through to select/deselect logic
+        state.selectedShopIdx = null;
+        Grid.clearHighlights();
+        UI.showMessage('');
+        // If they clicked an existing unit, select it (fall through to C)
+        if (!clickedUnit) return;
+      } else {
 
       // Deduct gold NOW on actual placement
       state.gold -= def.cost;
@@ -254,6 +254,7 @@ const Game = (() => {
       UI.showMessage('');
       _refreshHUD();
       return;
+      }
     }
 
     // (B) Moving a selected unit
@@ -635,6 +636,20 @@ const Game = (() => {
 
     UI.showScreen('screen-game');
     UI.hideAllOverlays();
+
+    // Escape key cancels shop selection or unit selection
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && state?.phase === 'prep') {
+        if (state.selectedShopIdx !== null || state.selectedUnit) {
+          state.selectedShopIdx = null;
+          state.selectedUnit = null;
+          Grid.clearSelection();
+          Grid.clearHighlights();
+          UI.showMessage('');
+          UI.clearUnitDetail();
+        }
+      }
+    });
     UI.clearLog();
     UI.clearUnitDetail();
     UI.switchTab('stats');
