@@ -271,13 +271,21 @@ const Game = (() => {
       return;
     }
 
-    // (C) Select a unit
+    // (C) Select a unit (or deselect if already selected)
     if (clickedUnit) {
+      if (state.selectedUnit === clickedUnit) {
+        state.selectedUnit = null;
+        Grid.clearSelection();
+        Grid.clearHighlights();
+        UI.showMessage('');
+        UI.clearUnitDetail();
+        return;
+      }
       state.selectedUnit = clickedUnit;
       Grid.clearSelection();
       Grid.selectTile(row, col);
       UI.showUnitDetail(clickedUnit);
-      UI.showMessage(`${clickedUnit.definition.name} — Right-click to sell | Click empty tile to move`);
+      UI.showMessage(`${clickedUnit.definition.name} — Click again to deselect | Right-click to sell | Click empty tile to move`);
 
       // Highlight moveable tiles
       const empties = [];
