@@ -11,6 +11,8 @@ const Game = (() => {
   let battle = null;
   let nextUnitId = 1;
   let _currentWaveDef = null; // cached generated wave for bonusGold lookup
+  let _battleStats = null;    // per-battle performance tracking
+  let _gameStats = null;      // cumulative game-wide stats
 
   function _freshState() {
     return {
@@ -54,6 +56,94 @@ const Game = (() => {
       maxUnits: _maxUnits(),
       phase:    state.phase,
     });
+  }
+
+  // ── Wave Preview ──────────────────────────────────────────────────────────
+
+  function _updateWavePreview() {
+    const el = document.getElementById('wave-preview');
+    if (!el || !_currentWaveDef) { if (el) el.classList.add('hidden'); return; }
+    const enemies = _currentWaveDef.enemies || [];
+    let html = `<div class="wave-preview-title">🔍 Wave ${state.wave} Scout</div>`;
+    let total = 0;
+    for (const e of enemies) {
+      const def = UNIT_MAP[e.unitId];
+      if (!def) continue;
+      const emoji = ELEMENT_EMOJI[def.element] || '❓';
+      const bossTag = def.isBoss ? ' <b style="color:#ff4422">BOSS</b>' : '';
+      html += `<div class="wave-preview-row"><span class="wp-icon">${emoji}</span><span class="wp-name">${def.name}${bossTag}</span><span class="wp-count">×${e.count}</span></div>`;
+      total += e.count;
+    }
+    html += `<div style="margin-top:4px;font-weight:700;color:#8899aa;font-size:11px">Total: ${total} enemies</div>`;
+    el.innerHTML = html;
+    el.classList.remove('hidden');
+  }
+
+  // ── Battle Stats Tracking ─────────────────────────────────────────────────
+
+  function _initBattleStats() {
+    _battleStats = { damageDealt: {}, damageTaken: {}, kills: {}, healed: {} };
+  }
+
+  function _initGameStats() {
+    _gameStats = { totalDamage: 0, totalKills: 0, totalHealed: 0, wavesCleared: 0, bossesKilled: 0, unitStats: {} };
+  }
+
+  function _trackDamage(unitId, dmg, isHealing) {
+    if (!_battleStats || !unitId) return;
+    if (isHealing) {
+      _battleStats.healed[unitId] = (_battleStats.healed[unitId] || 0) + Math.abs(dmg);
+    } else if (dmg > 0) {
+      _battleStats.damageDealt[unitId] = (_battleStats.damageDealt[unitId] || 0) + dmg;
+    }
+  }
+
+  function _trackKill(killedUnit) {
+    if (!_battleStats) return;
+    // Attribute to last attacker — we'll just track total enemy kills per unit
+  }
+
+  function _accumulateGameStats() {
+    if (!_gameStats || !_battleStats) return;
+    const totalDmg = Object.values(_battleStats.damageDealt).reduce((s, v) => s + v, 0);
+    const totalHeal = Object.values(_battleStats.healed).reduce((s, v) => s + v, 0);
+    _gameStats.totalDamage += totalDmg;
+    _gameStats.totalHealed += totalHeal;
+    _gameStats.totalKills += _battleStats.totalEnemyKills || 0;
+    _gameStats.bossesKilled += _battleStats.bossKills || 0;
+    _gameStats.wavesCleared++;
+  }
+
+  function _buildStatsHTML(battleStats, units, isFinalScreen) {
+    if (!battleStats) return '';
+    // Merge all player units info
+    const rows = [];
+    for (const u of units) {
+      const name = u.definition?.name || u.id;
+      const dealt = battleStats.damageDealt[u.id] || 0;
+      const healed = battleStats.healed[u.id] || 0;
+      if (dealt > 0 || healed > 0) rows.push({ name, dealt, healed, elem: u.definition?.element });
+    }
+    if (rows.length === 0) return '';
+    rows.sort((a, b) => b.dealt - a.dealt);
+
+    // MVP = highest damage
+    const mvpName = rows[0]?.name || '';
+    let html = `<div class="stat-label">⚔️ Battle Performance</div>`;
+    html += `<table><tr><th>Unit</th><th>Dmg</th><th>Heal</th></tr>`;
+    for (const r of rows) {
+      const isMvp = r.name === mvpName && r.dealt > 0;
+      html += `<tr${isMvp ? ' class="stat-mvp"' : ''}>`;
+      html += `<td>${ELEMENT_EMOJI[r.elem] || ''} ${r.name}${isMvp ? ' 🌟' : ''}</td>`;
+      html += `<td>${r.dealt}</td><td>${r.healed || '-'}</td></tr>`;
+    }
+    html += `</table>`;
+
+    if (isFinalScreen && _gameStats) {
+      html += `<div class="stat-label" style="margin-top:8px">📊 Campaign Summary</div>`;
+      html += `<div>Waves cleared: ${_gameStats.wavesCleared} | Total damage: ${_gameStats.totalDamage} | Bosses defeated: ${_gameStats.bossesKilled}</div>`;
+    }
+    return html;
   }
 
   // ── Generate shop based on current wave ───────────────────────────────────
@@ -309,7 +399,34 @@ const Game = (() => {
 
   function _handleTileRightClick(row, col) {
     const unit = _unitAt(row, col);
-    if (unit) _sellUnit(unit);
+    if (unit && state.phase === 'prep') {
+      const sellValue = Math.max(GAME_CONFIG.minSellValue || 1, Math.floor(unit.definition.cost * (GAME_CONFIG.sellRefundPercent || 0.5)));
+      _showSellConfirm(unit, sellValue, row, col);
+    }
+  }
+
+  function _showSellConfirm(unit, sellValue, row, col) {
+    // Remove any existing confirm
+    document.querySelector('.sell-confirm')?.remove();
+    const tile = Grid.getTileEl(row, col);
+    if (!tile) return;
+
+    const popup = document.createElement('div');
+    popup.className = 'sell-confirm';
+    popup.innerHTML = `<span>Sell for ${sellValue}g?</span><button class="sell-yes">✓</button><button class="sell-no">✕</button>`;
+    tile.appendChild(popup);
+
+    popup.querySelector('.sell-yes').addEventListener('click', (e) => {
+      e.stopPropagation();
+      popup.remove();
+      _sellUnit(unit);
+    });
+    popup.querySelector('.sell-no').addEventListener('click', (e) => {
+      e.stopPropagation();
+      popup.remove();
+    });
+    // Auto-dismiss after 3 seconds
+    setTimeout(() => popup.remove(), 3000);
   }
 
   // ── Spawn wave enemies ────────────────────────────────────────────────────
@@ -365,8 +482,8 @@ const Game = (() => {
     if (state.playerUnits.length === 0) { UI.showMessage('Place at least one unit before battling!'); return; }
 
     if (state.wave > (GAME_CONFIG.waveCount || 15)) { _handleGameWin(); return; }
-    const waveDef = WaveGenerator.generate(state.wave);
-    _currentWaveDef = waveDef;
+    if (!_currentWaveDef) _currentWaveDef = WaveGenerator.generate(state.wave);
+    const waveDef = _currentWaveDef;
 
     state.phase = 'battle';
     state.selectedUnit = null;
@@ -391,6 +508,7 @@ const Game = (() => {
     }
 
     battle = new BattleSystem();
+    _initBattleStats();
     battle.onUnitDeath   = _onUnitDeath;
     battle.onBattleEnd   = _onBattleEnd;
     battle.onLogMessage  = _onLogMsg;
@@ -402,10 +520,21 @@ const Game = (() => {
     battle.onUnitMove    = _onUnitMove;
     battle.onStatusChange = _onStatusChange;
     battle.onActionDone  = () => Grid.waitForAnimations();
+    battle.onSynergyActivated = (element) => {
+      Grid.animateSynergyPulse(state.playerUnits, element);
+    };
 
     Audio.play('waveStart');
 
-    battle.start([...state.playerUnits], [...state.enemyUnits]);
+    // Boss intro cinematic
+    const boss = enemies.find(e => e.definition.isBoss);
+    if (boss) {
+      _showBossIntro(boss, () => {
+        battle.start([...state.playerUnits], [...state.enemyUnits]);
+      });
+    } else {
+      battle.start([...state.playerUnits], [...state.enemyUnits]);
+    }
 
     document.getElementById('btn-battle').disabled = true;
     document.getElementById('btn-refresh').disabled = true;
@@ -416,6 +545,10 @@ const Game = (() => {
   function _onUnitAttack(attacker, target) {
     Grid.animateAttack(attacker.row, attacker.col);
     Audio.play('attack');
+    // Ranged projectile for units with range > 1
+    if ((attacker.stats.range || 1) > 1) {
+      Grid.animateProjectile(attacker.row, attacker.col, target.row, target.col, attacker.definition.element);
+    }
   }
 
   function _onUnitMove(unit, fromRow, fromCol, toRow, toCol) {
@@ -428,7 +561,7 @@ const Game = (() => {
     Grid.updateStatusAuras(unit.row, unit.col, unit.statusEffects);
   }
 
-  function _onUnitHit(target, dmg) {
+  function _onUnitHit(target, dmg, element, sourceId) {
     if (dmg > 0) {
       Grid.animateHit(target.row, target.col);
       Audio.play('hit');
@@ -436,7 +569,16 @@ const Game = (() => {
       Grid.animateHealBurst(target.row, target.col);
     }
     Grid.updateUnitHp(target.row, target.col, target.hp, target.maxHp);
-    Grid.animateDamageNumber(target.row, target.col, dmg);
+    const elemColor = element ? ELEMENT_COLORS[element] : null;
+    Grid.animateDamageNumber(target.row, target.col, dmg, elemColor);
+    // Track stats
+    if (sourceId && _battleStats) {
+      if (dmg < 0) {
+        _battleStats.healed[sourceId] = (_battleStats.healed[sourceId] || 0) + Math.abs(dmg);
+      } else if (dmg > 0) {
+        _battleStats.damageDealt[sourceId] = (_battleStats.damageDealt[sourceId] || 0) + dmg;
+      }
+    }
   }
 
   function _onAbilityUsed(unit, abilityName) {
@@ -453,9 +595,11 @@ const Game = (() => {
     Grid.animateAbilityName(unit.row, unit.col, abilityName, unit.definition.element);
   }
 
+  let _shaking = false;
   function _onScreenShake(intensity) {
     const grid = document.getElementById('grid-container');
-    if (!grid) return;
+    if (!grid || _shaking) return;
+    _shaking = true;
     grid.classList.remove('anim-shake');
     void grid.offsetWidth;
     grid.style.setProperty('--shake-x', intensity + 'px');
@@ -463,11 +607,44 @@ const Game = (() => {
     grid.addEventListener('animationend', () => {
       grid.classList.remove('anim-shake');
       grid.style.removeProperty('--shake-x');
+      _shaking = false;
     }, { once: true });
+  }
+
+  // ── Boss Intro Cinematic ──────────────────────────────────────────────────
+
+  function _showBossIntro(boss, onDone) {
+    const color = ELEMENT_COLORS[boss.definition.element] || '#ff4422';
+    const overlay = document.createElement('div');
+    overlay.className = 'boss-intro-overlay';
+    overlay.style.setProperty('--boss-color', color);
+    overlay.innerHTML = `
+      <div class="boss-intro-icon">${ELEMENT_EMOJI[boss.definition.element] || '💀'}</div>
+      <div class="boss-intro-name">${boss.definition.name}</div>
+      <div class="boss-intro-sub">Boss Battle!</div>
+    `;
+    document.getElementById('grid-container').appendChild(overlay);
+    Audio.play('ability');
+    _onScreenShake(10);
+
+    setTimeout(() => {
+      overlay.classList.add('boss-intro-exit');
+      overlay.addEventListener('animationend', () => {
+        overlay.remove();
+        if (onDone) onDone();
+      }, { once: true });
+      // Safety fallback
+      setTimeout(() => { if (overlay.parentNode) { overlay.remove(); if (onDone) onDone(); } }, 600);
+    }, 1400);
   }
 
   function _onUnitDeath(unit) {
     Audio.play(unit.isEnemy ? 'enemyDeath' : 'death');
+    // Track kills for stats (enemy deaths = player kills)
+    if (_battleStats && unit.isEnemy) {
+      _battleStats.totalEnemyKills = (_battleStats.totalEnemyKills || 0) + 1;
+      if (unit.definition.isBoss) _battleStats.bossKills = (_battleStats.bossKills || 0) + 1;
+    }
     Grid.animateDeath(unit.row, unit.col, () => {
       if (unit.isEnemy) {
         state.enemyUnits = state.enemyUnits.filter(u => u !== unit);
@@ -498,6 +675,11 @@ const Game = (() => {
 
       UI.showMessage('');
       UI.showResult(true, state.wave, earnedGold);
+      // Populate post-battle stats
+      const rsEl = document.getElementById('result-stats');
+      if (rsEl && _battleStats) rsEl.innerHTML = _buildStatsHTML(_battleStats, state.playerUnits, false);
+      // Accumulate game-wide stats
+      _accumulateGameStats();
       UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
       _refreshHUD();
     } else {
@@ -544,6 +726,9 @@ const Game = (() => {
     if (state.wave >= (GAME_CONFIG.waveCount || 15)) { _handleGameWin(); return; }
     state.wave++;
     state.phase = 'prep';
+    // Pre-generate upcoming wave for preview tooltip
+    _currentWaveDef = WaveGenerator.generate(state.wave);
+    _updateWavePreview();
     const refreshMasterLevel = state.upgradeLevels['refresh_master'] || 0;
     const refreshMasterUpg = UPGRADES.find(u => u.id === 'refresh_master');
     state.refreshesLeft = (GAME_CONFIG.maxRefreshesPerRound || 1) + Math.floor((refreshMasterUpg?.effect?.value || 1) * refreshMasterLevel);
@@ -560,7 +745,10 @@ const Game = (() => {
   function _handleGameOver() {
     state.phase = 'gameover';
     Audio.play('gameOver');
+    _accumulateGameStats();
     UI.showGameOver(state.wave, state.score);
+    const goEl = document.getElementById('gameover-stats');
+    if (goEl && _battleStats) goEl.innerHTML = _buildStatsHTML(_battleStats, state.playerUnits, true);
 
     // Clear enemy units from grid
     for (const e of state.enemyUnits) Grid.removeUnitFromTile(e.row, e.col);
@@ -572,8 +760,11 @@ const Game = (() => {
     state.phase = 'win';
     localStorage.setItem('shape_strikers_void_unlocked', '1');
     localStorage.setItem('shape_strikers_arcane_unlocked', '1');
+    _accumulateGameStats();
     UI.hideResult();
     UI.showWin(state.score);
+    const wEl = document.getElementById('win-stats');
+    if (wEl && _battleStats) wEl.innerHTML = _buildStatsHTML(_battleStats, state.playerUnits, true);
 
     // Clear all units from grid
     for (const e of state.enemyUnits) Grid.removeUnitFromTile(e.row, e.col);
@@ -638,6 +829,7 @@ const Game = (() => {
     if (splashEl) splashEl.remove();
     Audio.stopMusic();
     state = _freshState();
+    _initGameStats();
     battle = null;
     nextUnitId = 1;
     _currentWaveDef = null;
@@ -650,15 +842,32 @@ const Game = (() => {
 
     // Escape key cancels shop selection or unit selection
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && state?.phase === 'prep') {
-        if (state.selectedShopIdx !== null || state.selectedUnit) {
-          state.selectedShopIdx = null;
-          state.selectedUnit = null;
-          Grid.clearSelection();
-          Grid.clearHighlights();
-          UI.showMessage('');
-          UI.clearUnitDetail();
+      // Don't trigger shortcuts when typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      const key = e.key.toLowerCase();
+      if (key === 'escape') {
+        if (state?.phase === 'prep') {
+          if (state.selectedShopIdx !== null || state.selectedUnit) {
+            state.selectedShopIdx = null;
+            state.selectedUnit = null;
+            Grid.clearSelection();
+            Grid.clearHighlights();
+            UI.showMessage('');
+            UI.clearUnitDetail();
+          }
         }
+        return;
+      }
+      if (key === 'b' && state?.phase === 'prep') {
+        document.getElementById('btn-battle')?.click();
+      } else if (key === 'r' && state?.phase === 'prep') {
+        document.getElementById('btn-refresh')?.click();
+      } else if (key === 'n' && state?.phase === 'result') {
+        document.getElementById('btn-next-wave')?.click();
+      } else if (key >= '1' && key <= '4') {
+        const speeds = { '1': 0.5, '2': 1, '3': 2, '4': 4 };
+        const speedBtn = document.querySelector(`[data-speed="${speeds[key]}"]`);
+        if (speedBtn) speedBtn.click();
       }
     });
     UI.clearLog();
@@ -678,6 +887,10 @@ const Game = (() => {
     document.getElementById('btn-battle').disabled = false;
     document.getElementById('btn-refresh').disabled = false;
     _updateRefreshBtn();
+
+    // Pre-generate wave 1 for preview
+    _currentWaveDef = WaveGenerator.generate(state.wave);
+    _updateWavePreview();
 
     // Handle speed controls visibility from title option
     const speedCtrl = document.getElementById('speed-controls');

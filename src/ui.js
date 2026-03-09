@@ -130,6 +130,12 @@ const UI = (() => {
               <span class="card-element">${elem} ${def.element}</span>
             </div>
             <div class="card-tier">${tier}</div>
+            <div class="card-stats-mini">
+              <span style="color:#ff6644" title="Attack">${def.stats.attack}</span>
+              <span style="color:#66bbff" title="Defense">${def.stats.defense}</span>
+              <span style="color:#44ff88" title="HP">${def.stats.hp}</span>
+              <span style="color:#c8a000" title="Speed">${def.stats.speed}</span>
+            </div>
             <div class="card-footer">
               <span class="card-cost-badge${canAfford ? '' : ' cant-afford'}">${def.cost}g</span>
             </div>

@@ -53,7 +53,9 @@
 
   <!-- TOP BAR -->
   <div id="top-bar">
-    <span id="hud-wave">Wave 1 / 15</span>
+    <span id="hud-wave" class="hud-wave-wrap">Wave 1 / 15
+      <div id="wave-preview" class="wave-preview hidden"></div>
+    </span>
     <span id="hud-gold">💰 <span id="gold-val">10</span></span>
     <span id="hud-score">🏆 <span id="score-val">0</span></span>
     <span id="hud-units">⚔️ <span id="units-val">0</span> / <span id="max-units-val">7</span></span>
@@ -132,9 +134,10 @@
         <button class="btn btn-primary" id="btn-battle">⚔️ Fight!</button>
         <div id="speed-controls">
           <span>Speed:</span>
+          <button class="btn btn-secondary btn-speed" data-speed="0.5">½×</button>
           <button class="btn btn-secondary btn-speed active" data-speed="1">1×</button>
           <button class="btn btn-secondary btn-speed" data-speed="2">2×</button>
-          <button class="btn btn-secondary btn-speed" data-speed="0.5">½×</button>
+          <button class="btn btn-secondary btn-speed" data-speed="4">4×</button>
         </div>
       </div>
     </div>
@@ -148,6 +151,7 @@
   <div class="overlay-box">
     <div id="result-title"></div>
     <div id="result-body"></div>
+    <div id="result-stats" class="battle-stats"></div>
     <button class="btn btn-primary btn-lg" id="btn-next-wave">Continue →</button>
   </div>
 </div>
@@ -158,6 +162,7 @@
     <h2>💀 Smoked!</h2>
     <p id="gameover-wave"></p>
     <p id="gameover-score"></p>
+    <div id="gameover-stats" class="battle-stats"></div>
     <button class="btn btn-fire btn-lg" id="btn-gameover-restart">↺ Play Again</button>
   </div>
 </div>
@@ -168,6 +173,7 @@
     <h2>🏆 Victory!</h2>
     <p>You defeated the Chaos Overlord!</p>
     <p id="win-score"></p>
+    <div id="win-stats" class="battle-stats"></div>
     <button class="btn btn-primary btn-lg" id="btn-win-restart">↺ Play Again</button>
   </div>
 </div>
@@ -222,7 +228,15 @@
       </div>
       <div class="help-section">
         <h3>🎮 Controls</h3>
-        <p><b>Click</b> shop cards to buy → click tile to place. <b>Click</b> your unit → click empty tile to move, or click it again to deselect. <b>Right-click</b> to sell. <b>Escape</b> to cancel. <b>Click</b> enemy units during battle to inspect.</p>
+        <p><b>Click</b> shop cards to buy → click tile to place. <b>Click</b> your unit → click empty tile to move, or click it again to deselect. <b>Right-click</b> to sell (with confirm). <b>Escape</b> to cancel.</p>
+        <h4>⌨️ Keyboard Shortcuts</h4>
+        <table class="help-status-table">
+          <tr><td><b>B</b></td><td>Start Battle (prep phase)</td></tr>
+          <tr><td><b>R</b></td><td>Refresh Shop (prep phase)</td></tr>
+          <tr><td><b>N</b></td><td>Next Wave (result screen)</td></tr>
+          <tr><td><b>1-4</b></td><td>Speed: ½× / 1× / 2× / 4×</td></tr>
+          <tr><td><b>Esc</b></td><td>Cancel selection</td></tr>
+        </table>
       </div>
       <div class="help-section">
         <h3>💥 Status Effects</h3>

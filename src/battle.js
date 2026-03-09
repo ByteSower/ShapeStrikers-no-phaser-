@@ -19,12 +19,13 @@ class BattleSystem {
     this.onLogMessage  = null;  // (msg, type)
     this.onPhaseChange = null;  // (boss, phaseName, desc)
     this.onUnitAttack  = null;  // (attacker, target)  — visual: attacker lunges
-    this.onUnitHit     = null;  // (target, dmg)       — visual: target flashes + HP bar update
+    this.onUnitHit     = null;  // (target, dmg, elem, sourceId) — visual: target flashes + HP bar update
     this.onAbilityUsed = null;  // (unit, abilityName)  — visual: ability effect
     this.onScreenShake = null;  // (intensity)          — visual: screen shake
     this.onUnitMove    = null;  // (unit, fromRow, fromCol, toRow, toCol) — visual: unit slides
     this.onStatusChange = null; // (unit) — visual: status icons update
     this.onActionDone  = null;  // () → Promise<void> — resolves when current animation finishes
+    this.onSynergyActivated = null; // (element, description) — visual: synergy pulse
 
     this._running = false;
     this._actionDelay = 500; // ms between individual unit actions
@@ -174,7 +175,7 @@ class BattleSystem {
     const dmg = this._calcDamage(attacker, target);
     if (this.onUnitAttack) this.onUnitAttack(attacker, target);
     this._applyDamage(target, dmg);
-    if (this.onUnitHit) this.onUnitHit(target, dmg);
+    if (this.onUnitHit) this.onUnitHit(target, dmg, attacker.definition.element, attacker.id);
     this._log(`${this._n(attacker)} attacks ${this._n(target)} for ${dmg} dmg`, 'attack', this._side(attacker));
 
     // Lifesteal (blood units)
@@ -183,7 +184,7 @@ class BattleSystem {
       const heal = Math.floor(raw * this._healMod(attacker));
       attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
       this._log(`🩸 ${this._n(attacker)} heals ${heal} HP`, 'heal', this._side(attacker));
-      if (this.onUnitHit) this.onUnitHit(attacker, -heal);
+      if (this.onUnitHit) this.onUnitHit(attacker, -heal, null, attacker.id);
     }
 
     if (target.hp <= 0) this._killUnit(target);
@@ -322,7 +323,7 @@ class BattleSystem {
         for (const t of aliveEnemies) {
           const dmg = Math.max(1, Math.floor(unit.stats.attack * 1.2));
           this._applyDamage(t, dmg);
-          if (this.onUnitHit) this.onUnitHit(t, dmg);
+          if (this.onUnitHit) this.onUnitHit(t, dmg, 'void', unit.id);
           this._log(`💥 ${this._n(t)} takes ${dmg} void dmg`, 'attack', this._side(unit));
           if (t.hp <= 0) this._killUnit(t);
         }
@@ -368,7 +369,7 @@ class BattleSystem {
       if (target.hp <= 0) continue;
       const dmg = this._calcDamage(unit, target, mult);
       this._applyDamage(target, dmg);
-      if (this.onUnitHit) this.onUnitHit(target, dmg);
+      if (this.onUnitHit) this.onUnitHit(target, dmg, unit.definition.element, unit.id);
       this._log(`💥 ${this._n(target)} takes ${dmg} ability dmg`, 'attack', this._side(unit));
       if (lifesteal || unit.definition.id.startsWith('blood_')) {
         const pct = unit.definition.id.startsWith('blood_') ? 0.4 : lifestealPct;
@@ -376,7 +377,7 @@ class BattleSystem {
         const heal = Math.floor(raw * this._healMod(unit));
         unit.hp = Math.min(unit.maxHp, unit.hp + heal);
         this._log(`🩸 ${this._n(unit)} heals ${heal} HP`, 'heal', this._side(unit));
-        if (this.onUnitHit) this.onUnitHit(unit, -heal);
+        if (this.onUnitHit) this.onUnitHit(unit, -heal, null, unit.id);
       }
       if (target.hp <= 0) this._killUnit(target);
     }
@@ -393,7 +394,7 @@ class BattleSystem {
       t.hp += actual;
       if (mod < 1) this._log(`🩸 Wound reduces healing on ${this._n(t)}!`, 'system');
       this._log(`💚 ${this._n(t)} healed ${actual} HP`, 'heal', this._side(unit));
-      if (this.onUnitHit) this.onUnitHit(t, -actual);
+      if (this.onUnitHit) this.onUnitHit(t, -actual, null, unit.id);
     }
   }
 
@@ -554,7 +555,7 @@ class BattleSystem {
         const dmg = baseDmg * eff.stacks;
         unit.hp = Math.max(0, unit.hp - dmg);
         this._log(`${eff.type === 'burn' ? '🔥' : '☠️'} ${this._n(unit)} takes ${dmg} ${eff.type} dmg (×${eff.stacks})`, 'attack');
-        if (this.onUnitHit) this.onUnitHit(unit, dmg);
+        if (this.onUnitHit) this.onUnitHit(unit, dmg, eff.type === 'burn' ? 'fire' : 'earth', null);
       }
       // Freeze duration is managed in the freeze-skip block, not here
       if (eff.type !== 'freeze') eff.duration--;
@@ -603,6 +604,7 @@ class BattleSystem {
         }
       }
       this._log(`✨ Synergy: ${syn.description}`, 'ability');
+      if (this.onSynergyActivated) this.onSynergyActivated(syn.element, syn.description);
     }
   }
 

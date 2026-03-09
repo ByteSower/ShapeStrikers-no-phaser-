@@ -16,6 +16,18 @@ const Grid = (() => {
 
   const AURA_TYPES = ['burn','poison','freeze','slow','weaken','wound','shield','barrier','untargetable'];
 
+  const STATUS_DESCRIPTIONS = {
+    burn:          'Burn — takes fire damage each turn (stacks increase damage)',
+    poison:        'Poison — takes damage each turn (stacks increase damage)',
+    freeze:        'Freeze — skips next action (consumed on skip)',
+    slow:          'Slow — speed halved for duration',
+    weaken:        'Weaken — attack reduced by 30% for duration',
+    wound:         'Wound — healing received halved for duration',
+    shield:        'Shield — absorbs next incoming hit, then expires',
+    barrier:       'Barrier — blocks all damage for duration',
+    untargetable:  'Untargetable — cannot be targeted by attacks or abilities',
+  };
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   function build() {
@@ -90,6 +102,7 @@ const Grid = (() => {
     const wrapper = document.createElement('div');
     wrapper.className = 'unit-on-tile';
     wrapper.dataset.unitId = unitData.id;
+    wrapper.style.setProperty('--breathe-delay', (Math.random() * 2).toFixed(2) + 's');
 
     const canvas = createUnitCanvas(unitData.definition, unitData.isEnemy, 62);
     wrapper.appendChild(canvas);
@@ -175,7 +188,7 @@ const Grid = (() => {
         stack.textContent = eff.stacks;
         el.appendChild(stack);
       }
-      el.title = `${eff.type} (${eff.duration}t)`;
+      el.title = STATUS_DESCRIPTIONS[eff.type] || `${eff.type} (${eff.duration}t)`;
       container.appendChild(el);
     }
   }
@@ -298,18 +311,22 @@ const Grid = (() => {
   function animateAttack(row, col) { _flashClass(row, col, 'anim-attack', true); }
   function animateHit(row, col)    { _flashClass(row, col, 'anim-hit', true); }
 
-  function animateDamageNumber(row, col, dmg) {
+  function animateDamageNumber(row, col, dmg, elemColor) {
     const tile = getTileEl(row, col);
     if (!tile) return;
     const num = document.createElement('div');
     num.className = 'dmg-float';
+    const rounded = Math.round(Math.abs(dmg));
     if (dmg < 0) {
       // Healing
-      num.textContent = '+' + Math.abs(dmg);
+      num.textContent = '+' + rounded;
       num.style.color = '#44ff88';
+      num.style.setProperty('--dmg-glow', 'rgba(68,255,136,0.5)');
     } else {
-      num.textContent = '-' + dmg;
-      num.style.color = '#ff4422';
+      num.textContent = '-' + rounded;
+      const color = elemColor || '#ff4422';
+      num.style.color = color;
+      num.style.setProperty('--dmg-glow', color + '88');
     }
     tile.appendChild(num);
     num.addEventListener('animationend', () => num.remove(), { once: true });
@@ -417,6 +434,64 @@ const Grid = (() => {
     }
   }
 
+  // ── Projectile animation (ranged attacks) ──────────────────────────────────
+
+  const ELEM_PROJECTILE = { fire: '🔥', ice: '❄️', lightning: '⚡', earth: '🪨', arcane: '✨', void: '🕳️' };
+
+  function animateProjectile(fromRow, fromCol, toRow, toCol, element) {
+    const container = document.getElementById('grid-container');
+    const fromTile = getTileEl(fromRow, fromCol);
+    const toTile   = getTileEl(toRow, toCol);
+    if (!container || !fromTile || !toTile) return;
+
+    const cRect = container.getBoundingClientRect();
+    const fRect = fromTile.getBoundingClientRect();
+    const tRect = toTile.getBoundingClientRect();
+
+    const startX = fRect.left + fRect.width / 2 - cRect.left;
+    const startY = fRect.top + fRect.height / 2 - cRect.top;
+    const endX   = tRect.left + tRect.width / 2 - cRect.left;
+    const endY   = tRect.top + tRect.height / 2 - cRect.top;
+
+    const color = ELEMENT_COLORS[element] || '#ffffff';
+    const emoji = ELEM_PROJECTILE[element] || '•';
+
+    const proj = document.createElement('div');
+    proj.className = 'projectile';
+    proj.textContent = emoji;
+    proj.style.left = startX + 'px';
+    proj.style.top  = startY + 'px';
+    proj.style.setProperty('--proj-color', color);
+    container.appendChild(proj);
+
+    // Animate to target
+    requestAnimationFrame(() => {
+      proj.style.left = endX + 'px';
+      proj.style.top  = endY + 'px';
+      proj.style.opacity = '0.3';
+    });
+
+    proj.addEventListener('transitionend', () => proj.remove(), { once: true });
+    // Safety cleanup
+    setTimeout(() => { if (proj.parentNode) proj.remove(); }, 600);
+  }
+
+  // ── Synergy pulse VFX ─────────────────────────────────────────────────────
+
+  function animateSynergyPulse(units, element) {
+    const color = ELEMENT_COLORS[element] || '#ffffff';
+    for (const u of units) {
+      if (u.definition.element !== element) continue;
+      const tile = getTileEl(u.row, u.col);
+      if (!tile) continue;
+      const pulse = document.createElement('div');
+      pulse.className = 'synergy-pulse';
+      pulse.style.setProperty('--syn-color', color);
+      tile.appendChild(pulse);
+      pulse.addEventListener('animationend', () => pulse.remove(), { once: true });
+    }
+  }
+
   // ── Event handlers ────────────────────────────────────────────────────────
 
   function _handleClick(row, col)      { if (_onClick)      _onClick(row, col); }
@@ -447,6 +522,8 @@ const Grid = (() => {
     animateDeath,
     moveUnit,
     animateAbilityName,
+    animateProjectile,
+    animateSynergyPulse,
     animateHealBurst,
     waitForAnimations,
     set onClick(fn)      { _onClick = fn; },
