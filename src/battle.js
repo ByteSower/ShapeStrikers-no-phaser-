@@ -121,7 +121,13 @@ class BattleSystem {
     const targets = unit.isEnemy ? players : enemies;
     const hasTarget = this._pickTarget(unit, targets);
 
-    if (hasTarget && unit.abilityCooldown <= 0) {
+    // Healers should only use ability when an ally is actually damaged
+    const isHealer = unit.definition.ability?.healAmount > 0;
+    const allyNeedsHeal = isHealer
+      ? (unit.isEnemy ? enemies : players).some(u => u.hp > 0 && u.hp < u.maxHp)
+      : true;
+
+    if (hasTarget && unit.abilityCooldown <= 0 && allyNeedsHeal) {
       this._useAbility(unit, unit.isEnemy ? players : enemies, unit.isEnemy ? enemies : players);
       unit.abilityCooldown = unit.definition.ability.cooldown;
     } else if (hasTarget) {
