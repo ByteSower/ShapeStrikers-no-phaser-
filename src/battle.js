@@ -5,6 +5,12 @@
  * Pure logic — no DOM access. Communicates via callbacks.
  */
 
+// ── Status stack caps ────────────────────────────────────────────────────────
+const STATUS_MAX_STACKS = {
+  burn: 3, poison: 5, freeze: 3, slow: 8,
+  shield: 3, barrier: 1, weaken: 3, wound: 3, untargetable: 1,
+};
+
 class BattleSystem {
   constructor() {
     // Callbacks wired by game.js
@@ -62,8 +68,10 @@ class BattleSystem {
 
     // Build action queue: all living units sorted by effective speed desc
     this._actionQueue = [...players, ...enemies].sort((a, b) => {
-      const aSpd = a.statusEffects.find(s => s.type === 'slow') ? a.stats.speed * 0.5 : a.stats.speed;
-      const bSpd = b.statusEffects.find(s => s.type === 'slow') ? b.stats.speed * 0.5 : b.stats.speed;
+      const aSlow = a.statusEffects.find(s => s.type === 'slow');
+      const bSlow = b.statusEffects.find(s => s.type === 'slow');
+      const aSpd = aSlow ? a.stats.speed * Math.max(0.2, 1 - aSlow.stacks * 0.1) : a.stats.speed;
+      const bSpd = bSlow ? b.stats.speed * Math.max(0.2, 1 - bSlow.stacks * 0.1) : b.stats.speed;
       return bSpd - aSpd;
     });
     this._actionIndex = 0;
@@ -392,13 +400,13 @@ class BattleSystem {
     const atk = attacker.stats.attack;
     const def = Math.max(0, target.stats.defense);
 
-    // Shield adds to defense
+    // Shield adds to defense (value per stack)
     const shield = target.statusEffects.find(s => s.type === 'shield');
-    const defTotal = shield ? def + (shield.stacks || 10) : def;
+    const defTotal = shield ? def + (shield.value || 10) * shield.stacks : def;
 
-    // Weaken reduces attacker
+    // Weaken reduces attacker (8% per stack, max 24% at 3 stacks)
     const weaken = attacker.statusEffects.find(s => s.type === 'weaken');
-    const atkMod = weaken ? atk * 0.75 : atk;
+    const atkMod = weaken ? atk * Math.max(0.5, 1 - weaken.stacks * 0.08) : atk;
 
     // Diminishing returns defense: reduction = def / (def + 50)
     const dmgReduction = defTotal / (defTotal + 50);
@@ -518,21 +526,31 @@ class BattleSystem {
     }
   }
 
-  _addStatus(unit, type, duration, stacks = 0) {
+  _addStatus(unit, type, duration, value = 0) {
     // Barrier blocks only negative effects
     const NEGATIVE = ['burn', 'poison', 'freeze', 'slow', 'weaken', 'wound'];
     if (NEGATIVE.includes(type) && unit.statusEffects.find(s => s.type === 'barrier')) return;
-    unit.statusEffects = unit.statusEffects.filter(s => s.type !== type);
-    unit.statusEffects.push({ type, duration, stacks });
+
+    const maxStacks = STATUS_MAX_STACKS[type] || 1;
+    const existing = unit.statusEffects.find(s => s.type === type);
+
+    if (existing) {
+      existing.stacks = Math.min(existing.stacks + 1, maxStacks);
+      existing.duration = Math.max(existing.duration, duration);
+      if (value > 0) existing.value = Math.max(existing.value || 0, value);
+    } else {
+      unit.statusEffects.push({ type, duration, stacks: 1, value: value || 0 });
+    }
     if (this.onStatusChange) this.onStatusChange(unit);
   }
 
   _tickStatus(unit) {
     for (const eff of unit.statusEffects.slice()) {
       if (eff.type === 'burn' || eff.type === 'poison') {
-        const dmg = eff.stacks || 5;
+        const baseDmg = eff.value || 5;
+        const dmg = baseDmg * eff.stacks;
         unit.hp = Math.max(0, unit.hp - dmg);
-        this._log(`${eff.type === 'burn' ? '🔥' : '☠️'} ${this._n(unit)} takes ${dmg} ${eff.type} dmg`, 'attack');
+        this._log(`${eff.type === 'burn' ? '🔥' : '☠️'} ${this._n(unit)} takes ${dmg} ${eff.type} dmg (×${eff.stacks})`, 'attack');
         if (this.onUnitHit) this.onUnitHit(unit, dmg);
       }
       eff.duration--;
