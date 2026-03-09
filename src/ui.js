@@ -275,16 +275,17 @@ const UI = (() => {
     grid.innerHTML = '';
 
     const arcaneUnlocked = localStorage.getItem('shape_strikers_arcane_unlocked') === '1';
+    const voidUnlocked = localStorage.getItem('shape_strikers_void_unlocked') === '1';
     const encounteredBosses = JSON.parse(localStorage.getItem('shape_strikers_encountered_bosses') || '[]');
 
     const units = UNIT_DEFINITIONS.filter(d => {
       if (d.isBoss && !encounteredBosses.includes(d.id)) return false;
-      if (_glossaryFilter === 'all') return d.element !== 'void';
+      if (_glossaryFilter === 'all') return d.element !== 'void' || voidUnlocked;
       return d.element === _glossaryFilter;
     });
 
     for (const def of units) {
-      const isLocked = (def.element === 'arcane' && !arcaneUnlocked);
+      const isLocked = (def.element === 'arcane' && !arcaneUnlocked) || (def.element === 'void' && !voidUnlocked);
       const card = document.createElement('div');
       card.className = 'glossary-card' + (isLocked ? ' locked-card' : '');
       const elemColor = isLocked ? '#888' : (ELEMENT_COLORS[def.element] || '#aaaaaa');
@@ -292,10 +293,13 @@ const UI = (() => {
       const elemEmoji = ELEMENT_EMOJI[def.element] || '';
 
       if (isLocked) {
+        const lockMsg = def.element === 'void'
+          ? 'Complete the game to unlock Void faction'
+          : 'Complete the game to unlock Arcane faction';
         card.innerHTML = `
           <div class="g-name" style="color:#888">🔒 ${elemEmoji} ???</div>
           <div class="g-tier" style="color:#999">${tier} · ${def.cost}g</div>
-          <div class="g-stats" style="color:#aaa">Complete the game to unlock Arcane faction</div>`;
+          <div class="g-stats" style="color:#aaa">${lockMsg}</div>`;
       } else {
         const canvas = createUnitCanvas(def, false, 44);
 
