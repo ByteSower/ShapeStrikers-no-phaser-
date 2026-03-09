@@ -118,10 +118,10 @@ Row 4  │  ⚔️   │  ⚔️   │  ⚔️   │  ⚔️   │  ⚔️   │
 
 ### Action Order
 
-Each round, all living units are sorted by **effective speed** (descending). Units with the `slow` status effect have their speed halved for sorting purposes.
+Each round, all living units are sorted by **effective speed** (descending). Units with the `slow` status effect have their speed reduced by **10% per stack** (min 20% speed at max 8 stacks).
 
 ```
-Effective Speed = unit.stats.speed × (has 'slow' ? 0.5 : 1.0)
+Effective Speed = unit.stats.speed × max(0.2, 1 - slowStacks × 0.1)
 ```
 
 Each unit takes one action per round: **Ability** (if off cooldown + target in range) → **Attack** (if target in range) → **Move** (if no target in range).
@@ -141,8 +141,8 @@ Damage = max(1, floor(attackMod × (1 - defenseReduction) × abilityMult))
 
 | Modifier | Effect |
 |----------|--------|
-| **Shield** status | Adds `stacks` (10–20) to defense total before reduction calc |
-| **Weaken** status | Reduces attacker's attack by 25%: `atk × 0.75` |
+| **Shield** status | Adds `value × stacks` to defense total before reduction calc (e.g., 15 value × 2 stacks = +30 DEF) |
+| **Weaken** status | Reduces attacker's attack by 8% per stack (max 24% at 3 stacks): `atk × max(0.5, 1 - stacks × 0.08)` |
 | **Ability multiplier** | Varies per ability (0.3× to 2.5×) |
 
 ### Examples
@@ -152,8 +152,8 @@ Damage = max(1, floor(attackMod × (1 - defenseReduction) × abilityMult))
 | 15 | 5 | 1.0× | `15 × (1 - 5/55) = 15 × 0.91 = 13` |
 | 25 | 15 | 1.0× | `25 × (1 - 15/65) = 25 × 0.77 = 19` |
 | 30 | 20 | 1.4× | `30 × (1 - 20/70) × 1.4 = 30 × 0.71 × 1.4 = 29` |
-| 15 (weakened) | 8 | 1.0× | `(15×0.75) × (1 - 8/58) = 11.25 × 0.86 = 9` |
-| 35 | 10+15 (shield) | 1.0× | `35 × (1 - 25/75) = 35 × 0.67 = 23` |
+| 15 (weakened ×1) | 8 | 1.0× | `(15×0.92) × (1 - 8/58) = 13.8 × 0.86 = 11` |
+| 35 | 10+15×2 (shield ×2) | 1.0× | `35 × (1 - 40/90) = 35 × 0.56 = 19` |
 
 ---
 
@@ -248,20 +248,21 @@ Each unit has one ability with a **cooldown** (number of rounds between uses). W
 
 ## Status Effects
 
-| Status | Icon | Duration | Effect | Blocked by Barrier? |
-|--------|------|----------|--------|---------------------|
-| **Burn** | 🔥 | 2–3 turns | Takes `stacks` damage per tick (3–8) | Yes |
-| **Poison** | ☠️ | 2–3 turns | Takes `stacks` damage per tick (8) | Yes |
-| **Freeze** | ❄️ | 1–2 turns | Skips action entirely (cooldowns still tick) | Yes |
-| **Slow** | 🐌 | 2 turns | Speed halved for action order | Yes |
-| **Shield** | 🛡️ | 2–3 turns | Adds `stacks` (10–15) to defense | No |
-| **Barrier** | 🔮 | 2 turns | Blocks ALL negative status effects | No |
-| **Weaken** | 💔 | 2 turns | Attack reduced by 25% | Yes |
-| **Wound** | 🩸 | 3 turns | Healing received reduced by 50% | Yes |
-| **Untargetable** | 👻 | 1 turn | Cannot be selected as target | No |
+| Status | Icon | Duration | Effect | Max Stacks | Blocked by Barrier? |
+|--------|------|----------|--------|-----------|---------------------|
+| **Burn** | 🔥 | 2–3 turns | `value × stacks` damage per tick (e.g., 5 dmg × 3 = 15/tick) | 3 | Yes |
+| **Poison** | ☠️ | 2–3 turns | `value × stacks` damage per tick (e.g., 8 dmg × 5 = 40/tick) | 5 | Yes |
+| **Freeze** | ❄️ | 1–2 turns | Skips action entirely (cooldowns still tick) | 3 | Yes |
+| **Slow** | 🐌 | 2 turns | −10% speed per stack for action order (min 20% speed) | 8 | Yes |
+| **Shield** | 🛡️ | 2–3 turns | Adds `value × stacks` bonus defense (e.g., 15 × 2 = +30 DEF) | 3 | No |
+| **Barrier** | 🔮 | 2 turns | Blocks ALL negative status effects | 1 | No |
+| **Weaken** | 💔 | 2 turns | −8% ATK per stack (max −24% at 3 stacks) | 3 | Yes |
+| **Wound** | 🩸 | 3 turns | Healing received reduced by 50% | 3 | Yes |
+| **Untargetable** | 👻 | 1 turn | Cannot be selected as target | 1 | No |
 
 ### Stacking Rules
-- **Same status**: Refreshes duration (does not stack; replaces previous)
+- **Same status**: Each reapplication adds +1 stack (up to the cap) and refreshes duration to the longer value
+- **At max stacks**: Further applications only refresh duration
 - **Different statuses**: Can coexist (e.g., burned + poisoned + slowed)
 - **Barrier**: Only blocks burn, poison, freeze, slow, weaken, wound. Allows shield/barrier/untargetable.
 
@@ -378,7 +379,7 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 |------|-------|
 | HP | 425 |
 | ATK / DEF / SPD | 32 / 14 / 5 |
-| Range | 2 |
+| Range | 4 |
 | Ability | Tyrant's Wrath — 0.6× AoE ALL + burn |
 
 | Phase | HP Threshold | Modifier |
@@ -392,7 +393,7 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 |------|-------|
 | HP | 675 |
 | ATK / DEF / SPD | 30 / 22 / 3 |
-| Range | 2 |
+| Range | 4 |
 | Ability | Absolute Zero — 0.3× AoE + freeze ALL (2 turns) + self-heal 80 HP |
 
 | Phase | HP Threshold | Modifier |
@@ -406,7 +407,7 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 |------|-------|
 | HP | 300 (Phase 1) → 350 (Phase 2) → 400 (Phase 3) |
 | ATK / DEF / SPD | 35 / 15 / 6 |
-| Range | 3 |
+| Range | 4 |
 | Ability | Elemental Cataclysm — 0.4× AoE ALL + enrage shield at <30% HP |
 
 | Phase | HP Threshold | New HP Pool | Modifier |
@@ -533,6 +534,11 @@ Each non-boss wave has 2–3 template variants with difficulty ratings. The gene
 | Blue spotlight ring | Tutorial highlight |
 | Floating red number | Damage dealt |
 | Floating green number | Healing received |
+| Green sparkle particles | Heal burst VFX |
+| Golden/purple tile glow | Shield/barrier aura |
+| Fire/green/blue tile glow | Burn/poison/freeze aura |
+| Ghost effect (faded unit) | Untargetable status |
+| Desaturated unit | Frozen status |
 | Screen shake | Unit death (strong for bosses) |
 
 ---
@@ -551,4 +557,4 @@ src/game.js         Game controller — state machine, shop, battle wiring, tuto
 
 ---
 
-*Shape Strikers v0.1-alpha · By ByteSower*
+*Shape Strikers v0.2-alpha · By ByteSower*

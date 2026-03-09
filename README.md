@@ -34,7 +34,7 @@ Shape Strikers is a rogue-like auto-battler where you buy, place, and upgrade sh
 | ⚡ Lightning | +SPD |
 | 🌍 Earth | +HP |
 | ✨ Arcane | +ATK / +SPD |
-| 🕳️ Void | Enemy-exclusive |
+| 🕳️ Void | +ATK / +HP (unlockable) |
 
 ## How to Play
 

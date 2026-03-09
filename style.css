@@ -715,6 +715,11 @@ html, body {
 .blue      { color: var(--col-def); }
 .red       { color: var(--col-atk); }
 
+/* ── Help Status Table ────────────────────────────────────────────────────── */
+.help-status-table { width:100%; border-collapse:collapse; margin-top:6px; font-size:.85rem; }
+.help-status-table td { padding:3px 6px; border-bottom:1px solid rgba(255,255,255,.08); }
+.help-status-table td:last-child { text-align:right; opacity:.7; white-space:nowrap; }
+
 /* ── Animations ────────────────────────────────────────────────────────────── */
 @keyframes fadeIn     { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
 @keyframes shake      { 0%,100%{transform:none} 20%{transform:translate(calc(var(--shake-x,4px)*-1),1px)} 40%{transform:translate(var(--shake-x,4px),-1px)} 60%{transform:translate(calc(var(--shake-x,4px)*-0.6),1px)} 80%{transform:translate(calc(var(--shake-x,4px)*0.4),0)} }
