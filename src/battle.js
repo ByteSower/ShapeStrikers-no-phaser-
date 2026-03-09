@@ -114,13 +114,14 @@ class BattleSystem {
       return;
     }
 
-    // Skip frozen units (but still tick cooldowns)
+    // Skip frozen units — consume 1 stack per skipped turn
     const frozen = unit.statusEffects.find(s => s.type === 'freeze');
     if (frozen) {
-      frozen.duration--;
-      if (frozen.duration <= 0) unit.statusEffects = unit.statusEffects.filter(s => s !== frozen);
+      frozen.stacks--;
+      if (frozen.stacks <= 0) unit.statusEffects = unit.statusEffects.filter(s => s !== frozen);
       unit.abilityCooldown = Math.max(0, unit.abilityCooldown - 1);
-      this._log(`❄️ ${this._n(unit)} is frozen!`, 'system');
+      this._log(`❄️ ${this._n(unit)} is frozen — turn skipped!${frozen.stacks > 0 ? ` (${frozen.stacks} left)` : ''}`, 'system');
+      if (this.onStatusChange) this.onStatusChange(unit);
       this._turnTimer = setTimeout(() => this._processNextAction(), this._actionDelay * 0.5);
       return;
     }
@@ -178,7 +179,8 @@ class BattleSystem {
 
     // Lifesteal (blood units)
     if (attacker.definition.id.startsWith('blood_')) {
-      const heal = Math.floor(dmg * 0.4);
+      const raw = Math.floor(dmg * 0.4);
+      const heal = Math.floor(raw * this._healMod(attacker));
       attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
       this._log(`🩸 ${this._n(attacker)} heals ${heal} HP`, 'heal', this._side(attacker));
       if (this.onUnitHit) this.onUnitHit(attacker, -heal);
@@ -194,7 +196,7 @@ class BattleSystem {
     if (this.onAbilityUsed) this.onAbilityUsed(unit, ab.name);
 
     const unitRange = unit.stats.range || 1;
-    const aliveEnemies = enemies.filter(u => u.hp > 0 && Math.abs(unit.row - u.row) <= unitRange);
+    const aliveEnemies = enemies.filter(u => u.hp > 0 && Math.abs(unit.row - u.row) <= unitRange && !u.statusEffects.find(s => s.type === 'untargetable'));
     const aliveAllies  = allies.filter(u => u.hp > 0);
 
     // ── Per-unit ability dispatch ─────────────────────────────────────────
@@ -335,7 +337,8 @@ class BattleSystem {
         this._abilityDamage(unit, aliveEnemies, 0.3);
         for (const t of aliveEnemies.filter(u => u.hp > 0)) this._addStatus(t, 'freeze', ab.freezeDuration || 2);
         this._log(`❄️ All units frozen by Absolute Zero!`, 'ability');
-        { const actual = Math.min(ab.healAmount || 80, unit.maxHp - unit.hp);
+        { const raw = Math.min(ab.healAmount || 80, unit.maxHp - unit.hp);
+          const actual = Math.floor(raw * this._healMod(unit));
           unit.hp += actual;
           if (actual > 0) this._log(`💚 ${this._n(unit)} restores ${actual} HP`, 'heal', this._side(unit)); }
         break;
@@ -369,7 +372,8 @@ class BattleSystem {
       this._log(`💥 ${this._n(target)} takes ${dmg} ability dmg`, 'attack', this._side(unit));
       if (lifesteal || unit.definition.id.startsWith('blood_')) {
         const pct = unit.definition.id.startsWith('blood_') ? 0.4 : lifestealPct;
-        const heal = Math.floor(dmg * pct);
+        const raw = Math.floor(dmg * pct);
+        const heal = Math.floor(raw * this._healMod(unit));
         unit.hp = Math.min(unit.maxHp, unit.hp + heal);
         this._log(`🩸 ${this._n(unit)} heals ${heal} HP`, 'heal', this._side(unit));
         if (this.onUnitHit) this.onUnitHit(unit, -heal);
@@ -383,17 +387,25 @@ class BattleSystem {
       ? allies.filter(u => u.hp > 0)
       : [allies.filter(u => u.hp > 0).sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0]].filter(Boolean);
     for (const t of targets) {
-      const actual = Math.min(amount, t.maxHp - t.hp);
+      const mod = this._healMod(t);
+      const effective = Math.floor(amount * mod);
+      const actual = Math.min(effective, t.maxHp - t.hp);
       t.hp += actual;
+      if (mod < 1) this._log(`🩸 Wound reduces healing on ${this._n(t)}!`, 'system');
       this._log(`💚 ${this._n(t)} healed ${actual} HP`, 'heal', this._side(unit));
       if (this.onUnitHit) this.onUnitHit(t, -actual);
     }
   }
 
-  _applyStatusToTargets(targets, type, duration, stacks = 0) {
+  _applyStatusToTargets(targets, type, duration, value = 0) {
     for (const t of targets) {
-      if (t.hp > 0) this._addStatus(t, type, duration, stacks);
+      if (t.hp > 0) this._addStatus(t, type, duration, value);
     }
+  }
+
+  /** Healing modifier: wound reduces healing by 50% */
+  _healMod(unit) {
+    return unit.statusEffects.find(s => s.type === 'wound') ? 0.5 : 1;
   }
 
   _calcDamage(attacker, target, mult = 1.0) {
@@ -497,28 +509,19 @@ class BattleSystem {
         unit.row = preferredRow;
         moved = true;
       }
-      // Priority 2: diagonal toward target
-      else if (colDir !== 0) {
-        const diagCol = unit.col + colDir;
-        if (diagCol >= 0 && diagCol < GRID_CONFIG.cols && !isOccupied(preferredRow, diagCol)) {
-          unit.row = preferredRow;
-          unit.col = diagCol;
-          moved = true;
-        }
-      }
-      // Priority 3: diagonal other direction (just to advance row)
+      // Priority 2: blocked — try lateral on CURRENT row (don't leap-frog allies)
       if (!moved) {
-        const dirs = colDir !== 0 ? [-colDir, colDir] : [-1, 1];
-        for (const d of dirs) {
+        const lateralDirs = colDir !== 0 ? [colDir, -colDir] : [-1, 1];
+        for (const d of lateralDirs) {
           const tryCol = unit.col + d;
-          if (tryCol >= 0 && tryCol < GRID_CONFIG.cols && !isOccupied(preferredRow, tryCol)) {
-            unit.row = preferredRow;
+          if (tryCol >= 0 && tryCol < GRID_CONFIG.cols && !isOccupied(unit.row, tryCol)) {
             unit.col = tryCol;
             moved = true;
             break;
           }
         }
       }
+      // Priority 3: all lateral blocked — stay put and wait
     }
 
     if (moved && this.onUnitMove) {
@@ -553,7 +556,8 @@ class BattleSystem {
         this._log(`${eff.type === 'burn' ? '🔥' : '☠️'} ${this._n(unit)} takes ${dmg} ${eff.type} dmg (×${eff.stacks})`, 'attack');
         if (this.onUnitHit) this.onUnitHit(unit, dmg);
       }
-      eff.duration--;
+      // Freeze duration is managed in the freeze-skip block, not here
+      if (eff.type !== 'freeze') eff.duration--;
     }
     unit.statusEffects = unit.statusEffects.filter(e => e.duration > 0);
     if (this.onStatusChange) this.onStatusChange(unit);
