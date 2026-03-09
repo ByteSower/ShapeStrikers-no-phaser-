@@ -14,6 +14,8 @@ const Grid = (() => {
   let _selectedTile   = null;  // {row, col} | null
   let _highlightedTiles = [];  // [{row,col}]
 
+  const AURA_TYPES = ['burn','poison','freeze','slow','weaken','wound','shield','barrier','untargetable'];
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   function build() {
@@ -120,6 +122,10 @@ const Grid = (() => {
     const existing = tile.querySelector('.unit-on-tile');
     if (existing) existing.remove();
     tile.classList.remove('occupied', 'selected', 'enemy-unit');
+    // Clean up status auras and icons
+    tile.querySelectorAll('.status-aura').forEach(el => el.remove());
+    tile.querySelectorAll('.status-icons').forEach(el => el.remove());
+    for (const t of AURA_TYPES) tile.classList.remove('has-' + t);
   }
 
   function updateUnitHp(row, col, hp, maxHp) {
@@ -171,6 +177,45 @@ const Grid = (() => {
       }
       el.title = `${eff.type} (${eff.duration}t)`;
       container.appendChild(el);
+    }
+  }
+
+  // ── Status Aura Overlays (persistent glow while status is active) ─────────
+
+  function updateStatusAuras(row, col, statusEffects) {
+    const tile = getTileEl(row, col);
+    if (!tile) return;
+    // Remove old aura overlays
+    tile.querySelectorAll('.status-aura').forEach(el => el.remove());
+    // Remove helper classes
+    for (const t of AURA_TYPES) tile.classList.remove('has-' + t);
+
+    if (!statusEffects || statusEffects.length === 0) return;
+    for (const eff of statusEffects) {
+      if (!AURA_TYPES.includes(eff.type)) continue;
+      const aura = document.createElement('div');
+      aura.className = `status-aura status-aura-${eff.type}`;
+      tile.appendChild(aura);
+      tile.classList.add('has-' + eff.type);
+    }
+  }
+
+  // ── Heal Burst Particles ──────────────────────────────────────────────────
+
+  function animateHealBurst(row, col) {
+    const tile = getTileEl(row, col);
+    if (!tile) return;
+    const symbols = ['✦', '✧', '+', '♥'];
+    for (let i = 0; i < 4; i++) {
+      const p = document.createElement('div');
+      p.className = 'heal-particle';
+      p.textContent = symbols[i % symbols.length];
+      p.style.color = '#44ff88';
+      p.style.left = (15 + Math.random() * 60) + '%';
+      p.style.top = (30 + Math.random() * 40) + '%';
+      p.style.animationDelay = (i * 0.1) + 's';
+      tile.appendChild(p);
+      p.addEventListener('animationend', () => p.remove(), { once: true });
     }
   }
 
@@ -314,6 +359,17 @@ const Grid = (() => {
     toTile.classList.add('occupied');
     if (wasEnemy) toTile.classList.add('enemy-unit');
 
+    // Transfer status auras and icons from old tile to new tile
+    fromTile.querySelectorAll('.status-aura').forEach(el => toTile.appendChild(el));
+    const icons = fromTile.querySelector('.status-icons');
+    if (icons) toTile.appendChild(icons);
+    for (const t of AURA_TYPES) {
+      if (fromTile.classList.contains('has-' + t)) {
+        fromTile.classList.remove('has-' + t);
+        toTile.classList.add('has-' + t);
+      }
+    }
+
     // Animate slide
     const tileSize = GRID_CONFIG.tileSize + 4; // tile + gap
     const dx = (fromCol - toCol) * tileSize;
@@ -379,6 +435,7 @@ const Grid = (() => {
     removeUnitFromTile,
     updateUnitHp,
     updateStatusIcons,
+    updateStatusAuras,
     selectTile,
     clearSelection,
     highlightTiles,
@@ -390,6 +447,7 @@ const Grid = (() => {
     animateDeath,
     moveUnit,
     animateAbilityName,
+    animateHealBurst,
     waitForAnimations,
     set onClick(fn)      { _onClick = fn; },
     set onRightClick(fn) { _onRightClick = fn; },

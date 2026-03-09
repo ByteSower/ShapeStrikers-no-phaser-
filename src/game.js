@@ -417,12 +417,15 @@ const Game = (() => {
 
   function _onStatusChange(unit) {
     Grid.updateStatusIcons(unit.row, unit.col, unit.statusEffects);
+    Grid.updateStatusAuras(unit.row, unit.col, unit.statusEffects);
   }
 
   function _onUnitHit(target, dmg) {
     if (dmg > 0) {
       Grid.animateHit(target.row, target.col);
       Audio.play('hit');
+    } else if (dmg < 0) {
+      Grid.animateHealBurst(target.row, target.col);
     }
     Grid.updateUnitHp(target.row, target.col, target.hp, target.maxHp);
     Grid.animateDamageNumber(target.row, target.col, dmg);
