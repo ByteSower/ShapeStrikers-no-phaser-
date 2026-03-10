@@ -68,7 +68,7 @@ const UI = (() => {
       pill.className = 'synergy-pill ' + (best ? 'active' : 'inactive');
       const emoji = ELEMENT_EMOJI[elem];
       const label = best ? best.description : (next ? `${next.requiredCount}${emoji}: need ${next.requiredCount - count} more` : '');
-      pill.innerHTML = `<span>${emoji} ${count}</span><span style="flex:1;font-size:11px;color:${best ? '#44ff88' : '#556677'}">${label}</span>`;
+      pill.innerHTML = `<span>${emoji} ${count}</span><span style="flex:1;font-size:11px;color:${best ? '#2eaa5e' : '#556677'}">${label}</span>`;
       container.appendChild(pill);
     }
 
@@ -120,21 +120,12 @@ const UI = (() => {
         card.innerHTML = `<div class="card-stripe"></div><div class="card-body" style="align-items:center;justify-content:center"><span style="color:#c0c8d0;font-size:22px">—</span></div>`;
       } else {
         const canAfford = gold >= def.cost;
-        const tier = '★'.repeat(def.tier);
         const elem = ELEMENT_EMOJI[def.element] || '';
         card.innerHTML = `
           <div class="card-stripe"></div>
           <div class="card-body">
             <div class="card-header">
-              <span class="card-name" title="${def.name}">${def.name}</span>
-              <span class="card-element">${elem} ${def.element}</span>
-            </div>
-            <div class="card-tier">${tier}</div>
-            <div class="card-stats-mini">
-              <span style="color:#ff6644" title="Attack">${def.stats.attack}</span>
-              <span style="color:#66bbff" title="Defense">${def.stats.defense}</span>
-              <span style="color:#44ff88" title="HP">${def.stats.hp}</span>
-              <span style="color:#c8a000" title="Speed">${def.stats.speed}</span>
+              <span class="card-name" title="${def.name}">${elem} ${def.name}</span>
             </div>
             <div class="card-footer">
               <span class="card-cost-badge${canAfford ? '' : ' cant-afford'}">${def.cost}g</span>

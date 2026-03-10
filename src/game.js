@@ -13,6 +13,9 @@ const Game = (() => {
   let _currentWaveDef = null; // cached generated wave for bonusGold lookup
   let _battleStats = null;    // per-battle performance tracking
   let _gameStats = null;      // cumulative game-wide stats
+  let _currentSpeedMult = 1;  // persisted speed multiplier across waves
+  let _preBattlePositions = null; // saved player unit positions {id, row, col}
+  let _inspectedUnit = null; // unit currently shown in detail panel during battle
 
   function _freshState() {
     return {
@@ -306,6 +309,7 @@ const Game = (() => {
     if (state.phase === 'battle') {
       const unit = clickedUnit || clickedEnemy;
       if (unit) {
+        _inspectedUnit = unit;
         Grid.clearSelection();
         Grid.selectTile(row, col);
         UI.showUnitDetail(unit);
@@ -508,6 +512,7 @@ const Game = (() => {
     }
 
     battle = new BattleSystem();
+    if (_currentSpeedMult !== 1) battle.setSpeed(_currentSpeedMult);
     _initBattleStats();
     battle.onUnitDeath   = _onUnitDeath;
     battle.onBattleEnd   = _onBattleEnd;
@@ -526,6 +531,9 @@ const Game = (() => {
 
     Audio.play('waveStart');
 
+    // Save player unit positions to restore after battle
+    _preBattlePositions = state.playerUnits.map(u => ({ id: u.id, row: u.row, col: u.col }));
+
     // Boss intro cinematic
     const boss = enemies.find(e => e.definition.isBoss);
     if (boss) {
@@ -538,6 +546,7 @@ const Game = (() => {
 
     document.getElementById('btn-battle').disabled = true;
     document.getElementById('btn-refresh').disabled = true;
+    document.getElementById('btn-slots').disabled = true;
   }
 
   // ── Battle Callbacks ──────────────────────────────────────────────────────
@@ -559,6 +568,9 @@ const Game = (() => {
   function _onStatusChange(unit) {
     Grid.updateStatusIcons(unit.row, unit.col, unit.statusEffects);
     Grid.updateStatusAuras(unit.row, unit.col, unit.statusEffects);
+    if (_inspectedUnit && _inspectedUnit.id === unit.id) {
+      UI.showUnitDetail(unit);
+    }
   }
 
   function _onUnitHit(target, dmg, element, sourceId) {
@@ -571,6 +583,10 @@ const Game = (() => {
     Grid.updateUnitHp(target.row, target.col, target.hp, target.maxHp);
     const elemColor = element ? ELEMENT_COLORS[element] : null;
     Grid.animateDamageNumber(target.row, target.col, dmg, elemColor);
+    // Live-refresh detail panel if this unit is being inspected
+    if (_inspectedUnit && _inspectedUnit.id === target.id) {
+      UI.showUnitDetail(target);
+    }
     // Track stats
     if (sourceId && _battleStats) {
       if (dmg < 0) {
@@ -645,20 +661,21 @@ const Game = (() => {
       _battleStats.totalEnemyKills = (_battleStats.totalEnemyKills || 0) + 1;
       if (unit.definition.isBoss) _battleStats.bossKills = (_battleStats.bossKills || 0) + 1;
     }
-    Grid.animateDeath(unit.row, unit.col, () => {
-      if (unit.isEnemy) {
-        state.enemyUnits = state.enemyUnits.filter(u => u !== unit);
-        state.score += unit.definition.cost * 10;
-      } else {
-        state.playerUnits = state.playerUnits.filter(u => u !== unit);
-      }
-      _refreshHUD();
-    });
+    // Remove from state immediately (don't wait for animation) to prevent ghost units
+    if (unit.isEnemy) {
+      state.enemyUnits = state.enemyUnits.filter(u => u !== unit);
+      state.score += unit.definition.cost * 10;
+    } else {
+      state.playerUnits = state.playerUnits.filter(u => u !== unit);
+    }
+    _refreshHUD();
+    Grid.animateDeath(unit.row, unit.col);
   }
 
   function _onBattleEnd(playerWon) {
     state.phase = 'result';
     battle = null;
+    _inspectedUnit = null;
 
     if (playerWon) {
       Audio.play('waveClear');
@@ -671,6 +688,8 @@ const Game = (() => {
       state.gold += interest;
       const earnedGold = goldBase + interest + victoryBonus;
       state.score += state.wave * 100;
+      _restorePlayerPositions();
+      _cleanupBattleArtifacts();
       _healPlayerUnits();
 
       UI.showMessage('');
@@ -711,6 +730,52 @@ const Game = (() => {
     }
   }
 
+  function _restorePlayerPositions() {
+    if (!_preBattlePositions) return;
+    // Pass 1: clear ALL player zone tiles to avoid cross-contamination
+    for (let r = GRID_CONFIG.battleLineRow + 1; r < GRID_CONFIG.rows; r++) {
+      for (let c = 0; c < GRID_CONFIG.cols; c++) {
+        Grid.removeUnitFromTile(r, c);
+      }
+    }
+    // Pass 2: restore each surviving unit to its pre-battle position
+    for (const u of state.playerUnits) {
+      const saved = _preBattlePositions.find(p => p.id === u.id);
+      if (saved) { u.row = saved.row; u.col = saved.col; }
+      Grid.placeUnit(u, u.row, u.col);
+    }
+    _preBattlePositions = null;
+  }
+
+  function _cleanupBattleArtifacts() {
+    // Remove any lingering damage numbers, ability floats, death animations, and enemy remnants
+    document.querySelectorAll('.dmg-float, .ability-float, .anim-death, .heal-particle').forEach(el => el.remove());
+    // Clear ALL tiles of status effects, auras, icons
+    document.querySelectorAll('.status-aura, .status-icons').forEach(el => el.remove());
+    for (let r = 0; r < GRID_CONFIG.rows; r++) {
+      for (let c = 0; c < GRID_CONFIG.cols; c++) {
+        const tile = Grid.getTileEl(r, c);
+        if (!tile) continue;
+        // Remove aura type classes
+        for (const t of ['burn','poison','freeze','slow','weaken','wound','shield','barrier','untargetable']) tile.classList.remove('has-' + t);
+        // Clear enemy zone tiles completely (remove unit DOM)
+        if (r <= GRID_CONFIG.battleLineRow) {
+          Grid.removeUnitFromTile(r, c);
+          continue;
+        }
+        // Player zone: remove any tile that has no surviving unit in state
+        const hasUnit = state.playerUnits.some(u => u.row === r && u.col === c);
+        if (!hasUnit) {
+          Grid.removeUnitFromTile(r, c);
+        }
+      }
+    }
+    // Reset status effects on surviving player units
+    for (const u of state.playerUnits) {
+      u.statusEffects = [];
+    }
+  }
+
   function _calcInterest(gold) {
     const warChestUpg = UPGRADES.find(u => u.id === 'war_chest');
     const chestLevel  = state.upgradeLevels['war_chest'] || 0;
@@ -738,6 +803,7 @@ const Game = (() => {
     UI.showMessage(`Wave ${state.wave} — Prepare your army!`);
     document.getElementById('btn-battle').disabled  = false;
     document.getElementById('btn-refresh').disabled = false;
+    document.getElementById('btn-slots').disabled   = false;
   }
 
   // ── Game Over / Win ───────────────────────────────────────────────────────
@@ -798,6 +864,7 @@ const Game = (() => {
   // ── Speed Control ─────────────────────────────────────────────────────────
 
   function setSpeed(mult) {
+    _currentSpeedMult = mult;
     battle?.setSpeed(mult);
     document.querySelectorAll('.btn-speed').forEach(b => {
       b.classList.toggle('active', parseFloat(b.dataset.speed) === mult);
@@ -886,6 +953,7 @@ const Game = (() => {
 
     document.getElementById('btn-battle').disabled = false;
     document.getElementById('btn-refresh').disabled = false;
+    document.getElementById('btn-slots').disabled = false;
     _updateRefreshBtn();
 
     // Pre-generate wave 1 for preview
@@ -969,6 +1037,7 @@ const Game = (() => {
     document.getElementById('btn-battle')?.addEventListener('click', startBattle);
     document.getElementById('btn-refresh')?.addEventListener('click', () => refreshShop(false));
     document.getElementById('btn-glossary')?.addEventListener('click', () => UI.showGlossary());
+    document.getElementById('btn-slots')?.addEventListener('click', _openSlots);
     document.getElementById('btn-quit')?.addEventListener('click', () => {
       if (battle) battle.stop();
       UI.showScreen('screen-title');
@@ -1120,6 +1189,12 @@ const Game = (() => {
     tutorialStep = -1;
     _clearTutorialHighlight();
     document.getElementById('overlay-tutorial')?.classList.add('hidden');
+  }
+
+  // ── Fortune Spinner (Slot Machine) — Under Construction ────────────────────
+
+  function _openSlots() {
+    UI.showMessage('🚧 Fortune Spinner is under construction — coming soon!');
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────

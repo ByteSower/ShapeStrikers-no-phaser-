@@ -125,6 +125,15 @@ const Grid = (() => {
       wrapper.appendChild(badge);
     }
 
+    // Boss indicator — crown badge + pulsing tile border
+    if (unitData.definition?.isBoss) {
+      tile.classList.add('boss-tile');
+      const crown = document.createElement('div');
+      crown.className = 'boss-crown';
+      crown.textContent = '👑';
+      wrapper.appendChild(crown);
+    }
+
     tile.appendChild(wrapper);
     tile.classList.add('occupied');
   }
@@ -134,10 +143,9 @@ const Grid = (() => {
     if (!tile) return;
     const existing = tile.querySelector('.unit-on-tile');
     if (existing) existing.remove();
-    tile.classList.remove('occupied', 'selected', 'enemy-unit');
-    // Clean up status auras and icons
-    tile.querySelectorAll('.status-aura').forEach(el => el.remove());
-    tile.querySelectorAll('.status-icons').forEach(el => el.remove());
+    tile.classList.remove('occupied', 'selected', 'enemy-unit', 'boss-tile');
+    // Clean up status auras, icons, and floating elements
+    tile.querySelectorAll('.status-aura, .status-icons, .dmg-float, .ability-float, .boss-crown').forEach(el => el.remove());
     for (const t of AURA_TYPES) tile.classList.remove('has-' + t);
   }
 
@@ -340,7 +348,10 @@ const Grid = (() => {
       if (unit.classList.contains('anim-hit'))  { unit.classList.remove('anim-hit');  _releaseAnim(); }
       if (unit.classList.contains('anim-attack')) { unit.classList.remove('anim-attack'); _releaseAnim(); }
       unit.classList.add('anim-death');
-      unit.addEventListener('animationend', () => { removeUnitFromTile(row, col); if (cb) cb(); }, { once: true });
+      const cleanup = () => { removeUnitFromTile(row, col); if (cb) cb(); };
+      unit.addEventListener('animationend', cleanup, { once: true });
+      // Safety: force removal if animationend never fires
+      setTimeout(() => { if (tile.contains(unit)) cleanup(); }, 800);
     } else if (cb) cb();
   }
 

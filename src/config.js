@@ -129,7 +129,7 @@ const UNIT_DEFINITIONS = [
   {
     id: 'arcane_mage', name: 'Arcane Mage', element: 'arcane', cost: 4, tier: 2, role: 'caster',
     visual: { color: 'purple', shape: 'squircle' },
-    stats: { hp: 100, maxHp: 100, attack: 30, defense: 5, speed: 7, range: 2 },
+    stats: { hp: 100, maxHp: 100, attack: 30, defense: 5, speed: 7, range: 3 },
     ability: { name: 'Arcane Blast', description: 'High damage magic attack', cooldown: 2 },
   },
   {
@@ -249,7 +249,7 @@ const UNIT_DEFINITIONS = [
   {
     id: 'boss_chaos_overlord', name: '⚡ CHAOS OVERLORD', element: 'arcane', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'purple', shape: 'square' },
-    stats: { hp: 300, maxHp: 300, attack: 35, defense: 15, speed: 6, range: 4 },
+    stats: { hp: 450, maxHp: 450, attack: 45, defense: 20, speed: 7, range: 4 },
     ability: { name: 'Elemental Cataclysm', description: 'Unleashes all elements + enrage at low HP', cooldown: 4 },
     bossPhases: [
       { hpThreshold: 1.0, phaseHp: 300, name: 'Awakening',   statModifiers: {},                                        description: 'The Chaos Overlord awakens!' },

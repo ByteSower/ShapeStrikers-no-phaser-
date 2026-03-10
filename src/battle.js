@@ -7,7 +7,7 @@
 
 // ── Status stack caps ────────────────────────────────────────────────────────
 const STATUS_MAX_STACKS = {
-  burn: 3, poison: 5, freeze: 3, slow: 8,
+  burn: 2, poison: 5, freeze: 3, slow: 8,
   shield: 3, barrier: 1, weaken: 3, wound: 3, untargetable: 1,
 };
 
@@ -205,7 +205,7 @@ class BattleSystem {
       // ---- TIER 1 ----
       case 'fire_imp':       // Ember Strike: 1.5× single + burn
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.5);
-        this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'burn', 3, 5);
+        this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'burn', 3, 3);
         break;
       case 'ice_slime':      // Frost Coat: slow all nearby enemies (range 2)
         { const nearby = aliveEnemies.filter(e => Math.abs(unit.row - e.row) <= 2);
@@ -226,7 +226,7 @@ class BattleSystem {
         break;
       case 'fire_scout':     // Fire Bolt: 1.4× + minor burn
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.4);
-        this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'burn', 2, 3);
+        this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'burn', 2, 2);
         break;
       case 'frost_fairy':    // Healing Frost: heal lowest HP ally 25
         this._healAllies(unit, aliveAllies, ab.healAmount || 25, false);
@@ -248,7 +248,7 @@ class BattleSystem {
         { const sameCol = aliveEnemies.filter(e => e.col === unit.col);
           const targets = sameCol.length ? sameCol : aliveEnemies.slice(0, 1);
           this._abilityDamage(unit, targets, 1.4);
-          this._applyStatusToTargets(targets, 'burn', 3, 5); }
+          this._applyStatusToTargets(targets, 'burn', 3, 3); }
         break;
       case 'ice_archer':     // Frost Arrow: 1.2× + freeze
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.2);
@@ -299,7 +299,7 @@ class BattleSystem {
       // ---- TIER 3 ----
       case 'fire_demon':     // Hellfire: 0.6× up to 3 targets + burn
         this._abilityDamage(unit, aliveEnemies.slice(0, 3), 0.6);
-        this._applyStatusToTargets(aliveEnemies.slice(0, 3), 'burn', 3, 5);
+        this._applyStatusToTargets(aliveEnemies.slice(0, 3), 'burn', 3, 3);
         break;
       case 'martial_master': // Thousand Fists: 4 rapid strikes at 0.4× each
         for (let i = 0; i < 4; i++) {
@@ -332,7 +332,7 @@ class BattleSystem {
       // ---- BOSSES ----
       case 'boss_flame_tyrant': // Tyrant's Wrath: 0.6× ALL enemies + burn
         this._abilityDamage(unit, aliveEnemies, 0.6);
-        this._applyStatusToTargets(aliveEnemies, 'burn', 3, 8);
+        this._applyStatusToTargets(aliveEnemies, 'burn', 3, 5);
         break;
       case 'boss_frost_colossus': // Absolute Zero: freeze ALL + 0.3× dmg + heal self
         this._abilityDamage(unit, aliveEnemies, 0.3);
@@ -453,6 +453,10 @@ class BattleSystem {
     const alive = targets.filter(t => t.hp > 0 && !t.statusEffects.find(s => s.type === 'untargetable'));
     if (alive.length === 0) return;
 
+    // Don't move if we already have a valid target in range
+    const hasTarget = this._pickTarget(unit, targets);
+    if (hasTarget) return;
+
     // Find closest enemy
     let closest = alive[0];
     let closestDist = Math.abs(unit.row - closest.row) + Math.abs(unit.col - closest.col);
@@ -510,7 +514,20 @@ class BattleSystem {
         unit.row = preferredRow;
         moved = true;
       }
-      // Priority 2: blocked — try lateral on CURRENT row (don't leap-frog allies)
+      // Priority 2: advance forward diagonally toward the target
+      if (!moved) {
+        const diagDirs = colDir !== 0 ? [colDir, -colDir] : [-1, 1];
+        for (const d of diagDirs) {
+          const tryCol = unit.col + d;
+          if (tryCol >= 0 && tryCol < GRID_CONFIG.cols && !isOccupied(preferredRow, tryCol)) {
+            unit.row = preferredRow;
+            unit.col = tryCol;
+            moved = true;
+            break;
+          }
+        }
+      }
+      // Priority 3: blocked ahead — try lateral on CURRENT row
       if (!moved) {
         const lateralDirs = colDir !== 0 ? [colDir, -colDir] : [-1, 1];
         for (const d of lateralDirs) {
@@ -522,7 +539,7 @@ class BattleSystem {
           }
         }
       }
-      // Priority 3: all lateral blocked — stay put and wait
+      // Priority 4: all blocked — stay put and wait
     }
 
     if (moved && this.onUnitMove) {
