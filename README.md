@@ -4,26 +4,30 @@ A tactical lane-based auto-battler built with **vanilla HTML, CSS, and JavaScrip
 
 🎮 **[Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)**
 
-![Shape Strikers](public/sstitle3.png)
+![Shape Strikers](public/SSTitle4.png)
 
 ---
 
 ## About
 
-Shape Strikers is a rogue-like auto-battler where you buy, place, and upgrade shape-drawn units to fight through 15 waves of enemies. Strategy comes from **element synergies**, **unit positioning**, and **economy management**.
+Shape Strikers is a rogue-like auto-battler where you buy, place, and upgrade shape-drawn units to fight through waves of enemies. Strategy comes from **element synergies**, **unit positioning**, and **economy management**.
 
 ### Features
 
-- **28+ unique units** across 4 tiers and 6 elements
+- **38 unique units** across 4 tiers and 6 elements (33 playable + 5 bosses)
 - **Lane-based combat** on a 6×5 grid with automatic pathfinding
-- **3 boss fights** with multi-phase mechanics (Waves 5, 10, 15)
+- **5 boss fights** with multi-phase mechanics (Waves 5, 10, 15, 20, 25)
+- **2 campaign modes** — Normal (15 waves) and Void Campaign (25 waves with hard mode scaling)
 - **Element synergy system** — stack elements for stat bonuses
-- **9 status effects** — burn, poison, freeze, slow, shield, barrier, weaken, wound, untargetable
+- **10 status effects** — burn, poison, freeze, slow, shield, barrier, weaken, wound, untargetable, blind
+- **Advanced mechanics** — evolve, knockback, pull, kill-stacking
 - **Shop & economy** — buy, sell, refresh, earn interest, purchase upgrades
 - **Seeded wave generator** — different compositions each run
+- **CSS particle VFX engine** — element-colored effects, projectiles, shockwaves, screen shake
 - **Guided tutorial** with spotlight highlights
 - **Unit glossary & guidebook** — learn every unit and mechanic in-game
 - **Procedural shape-drawn units** — no sprite assets needed for characters
+- **Dark mode** and **mobile layout** support
 
 ### Elements
 
@@ -42,7 +46,16 @@ Shape Strikers is a rogue-like auto-battler where you buy, place, and upgrade sh
 2. **Place them** on your side of the grid (bottom 2 rows)
 3. **Press Fight** — units auto-battle toward the center battle line
 4. **Win waves** to earn gold, then spend it on more units and upgrades
-5. **Survive 15 waves** including 3 boss encounters to win
+5. **Survive 15 waves** (Normal) or **25 waves** (Void Campaign) to win
+
+### Campaign Modes
+
+| Mode | Waves | Bosses | Unlock |
+|------|-------|--------|--------|
+| **Normal** | 15 | Sun Dragon (W5), Frost Giant (W10), Void Supreme (W15) | Available from start |
+| **Void Campaign** | 25 | + Void Leviathan (W20), Void Architect (W25) | Beat Normal mode once |
+
+Void Campaign features **hard mode scaling** — enemy stats increase from waves 16-25 (up to 2× HP, 1.6× ATK). Void units become available to players.
 
 ## Running Locally
 
@@ -66,7 +79,9 @@ Then open `http://localhost:8000` in your browser.
 
 ## Documentation
 
-See [GAME_DESIGN.md](GAME_DESIGN.md) for the full game design document covering all rules, stats, formulas, and mechanics.
+- [GAME_DESIGN.md](GAME_DESIGN.md) — Full game design document (rules, stats, formulas, mechanics)
+- [PROGRESS.md](PROGRESS.md) — Development progress tracker and roadmap
+- [AUDIT.md](AUDIT.md) — Codebase audit and architecture assessment
 
 ## License
 

@@ -20,19 +20,27 @@
 13. [Shop & Economy](#shop--economy)
 14. [Upgrades](#upgrades)
 15. [Wave System](#wave-system)
-16. [Win / Loss Conditions](#win--loss-conditions)
-17. [Visual Indicators](#visual-indicators)
+16. [Campaign Modes](#campaign-modes)
+17. [Win / Loss Conditions](#win--loss-conditions)
+18. [Achievements](#achievements)
+19. [Daily & Weekly Challenges](#daily--weekly-challenges)
+20. [Visual Indicators](#visual-indicators)
+21. [Leaderboards](#leaderboards)
+22. [Patch Notes](#patch-notes)
 
 ---
 
 ## Game Overview
 
-Shape Strikers is a **lane-based auto-battler** where players buy and place procedurally-drawn shape units on a grid, then watch them fight enemy waves automatically. Strategic depth comes from **element synergies**, **unit positioning**, **ability interactions**, and **economy management** across 15 waves culminating in a final boss fight.
+Shape Strikers is a **lane-based auto-battler** where players buy and place procedurally-drawn shape units on a grid, then watch them fight enemy waves automatically. Strategic depth comes from **element synergies**, **unit positioning**, **ability interactions**, and **economy management**.
 
 **Key Features:**
 - 6 elements with synergy bonuses
-- 28+ unique units across 4 tiers
-- 3 boss fights with multi-phase mechanics
+- 38 unique units (33 playable + 5 bosses) across 4 tiers
+- 5 boss fights with multi-phase mechanics (Waves 5, 10, 15, 20, 25)
+- 2 campaign modes: Normal (15 waves) and Void Campaign (25 waves)
+- Hard mode stat scaling for waves 16–25
+- 4 advanced mechanics (evolve, knockback, pull, kill-stacking)
 - Seeded wave generation for variety across runs
 - Shop with refresh, sell, and upgrade systems
 
@@ -243,6 +251,11 @@ Each unit has one ability with a **cooldown** (number of rounds between uses). W
 | Ice Empress | Blizzard | 0.5× | ALL enemies + freeze |
 | Life Guardian | Guardian's Blessing | — | Heals ALL allies 30 HP + barrier to ALL |
 | Void Horror | Void Rupture | 1.2× | AoE, **ignores defense** |
+| Arcane Pupil | Arcane Bolt | 1.3× | + Evolve passive (+10% ATK/DEF every 3 turns, max 3 stacks) |
+| Earth Enforcer | Ground Slam | 1.4× | + Knockback (pushes target 1 row back) |
+| Lightning Hunter | Grapple Pull | 1.2× | + Pull (drags target 1 row forward) |
+| Fire Ravager | Rampage | 1.5× | Up to 2 targets + Kill-stack passive (+10% ATK per kill, max +50%) |
+| Arcane Illusionist | Mirage | 0.3× | Hits ALL enemies + blinds all (30% miss, 2 turns) |
 
 ---
 
@@ -259,15 +272,64 @@ Each unit has one ability with a **cooldown** (number of rounds between uses). W
 | **Weaken** | 💔 | 2 turns | −8% ATK per stack (max −24% at 3 stacks) | 3 | Yes |
 | **Wound** | 🩸 | 3 turns | Healing received reduced by 50% | 3 | Yes |
 | **Untargetable** | 👻 | 1 turn | Cannot be selected as target | 1 | No |
+| **Blind** | 😵 | 2 turns | 30% chance to miss basic attacks | 2 | Yes |
 
 ### Stacking Rules
 - **Same status**: Each reapplication adds +1 stack (up to the cap) and refreshes duration to the longer value
 - **At max stacks**: Further applications only refresh duration
 - **Different statuses**: Can coexist (e.g., burned + poisoned + slowed)
-- **Barrier**: Only blocks burn, poison, freeze, slow, weaken, wound. Allows shield/barrier/untargetable.
+- **Barrier**: Only blocks burn, poison, freeze, slow, weaken, wound, blind. Allows shield/barrier/untargetable.
 
 ### Tick Timing
 Burn and poison damage are applied at the **start** of the affected unit's turn (before their action).
+
+---
+
+## Advanced Mechanics
+
+### Evolve
+
+Certain units (e.g., Arcane Pupil) grow stronger the longer they survive in battle.
+
+| Parameter | Description |
+|-----------|-------------|
+| `interval` | Turns between stat boosts (e.g., every 3 turns) |
+| `statBonus` | Percentage of **base** ATK/DEF gained per stack (e.g., 0.1 = +10%) |
+| `maxStacks` | Cap on evolve stacks (e.g., 3 = max +30% ATK/DEF) |
+
+- Tracked per unit via `_turnsSurvived` and `_evolveStacks`
+- Multiplier applies from **base stats** (non-compounding)
+- Checked at the **start** of the unit's turn
+
+### Knockback
+
+Abilities with knockback push the target **1 row toward their spawn side** (enemies → row 0, players → row 4).
+
+- Fails silently if the destination tile is **occupied** or **out of bounds**
+- Fires `onUnitMove` callback for animation
+- Currently used by: **Earth Enforcer** (Ground Slam)
+
+### Pull
+
+Abilities with pull drag the target **1 row toward the attacker's side** (pulling enemies → row 4, pulling players → row 0).
+
+- Same occupation/bounds checks as knockback
+- Fires `onUnitMove` callback for animation
+- Currently used by: **Lightning Hunter** (Grapple Pull)
+
+### Kill-Stacking
+
+Units with the `killStackBonus` property gain permanent ATK bonuses for each kill they score during a battle.
+
+| Parameter | Description |
+|-----------|-------------|
+| `atkPerKill` | ATK multiplier gained per kill (e.g., 0.1 = +10%) |
+| `maxBonus` | Maximum total bonus (e.g., 0.5 = +50% ATK cap) |
+
+- Tracked via `unit._kills` counter (incremented when any unit dies by their hand)
+- Bonus is applied during damage calculation: `finalATK = atk × (1 + min(maxBonus, kills × atkPerKill))`
+- Resets each battle (kill counter starts at 0)
+- Currently used by: **Fire Ravager** (Rampage)
 
 ---
 
@@ -320,44 +382,49 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 
 | Unit | Element | Cost | Role | HP | ATK | DEF | SPD | Range |
 |------|---------|------|------|-----|-----|-----|-----|-------|
-| Fire Imp | 🔥 | 1 | Skirmisher | 80 | 15 | 5 | 8 | 1 |
-| Ice Slime | 🧊 | 1 | Tank | 100 | 10 | 8 | 4 | 1 |
-| Earth Golem | 🌍 | 2 | Tank | 150 | 12 | 15 | 2 | 1 |
-| Lightning Sprite | ⚡ | 2 | Sniper | 60 | 18 | 3 | 12 | 2 |
-| Earth Archer | 🌍 | 2 | Sniper | 90 | 14 | 10 | 5 | 2 |
-| Fire Scout | 🔥 | 1 | Skirmisher | 65 | 12 | 4 | 10 | 2 |
-| Frost Fairy | 🧊 | 2 | Healer | 70 | 8 | 6 | 7 | 2 |
-| Blood Sprite | 🔥 | 2 | Skirmisher | 75 | 14 | 5 | 7 | 1 |
-| Konji Scout | 🌍 | 2 | Sniper | 70 | 12 | 6 | 8 | 2 |
-| Void Shade | 🕳️ | 2 | Skirmisher | 60 | 18 | 3 | 10 | 1 |
+| Flame Child Yun | 🔥 | 1 | Skirmisher | 80 | 15 | 5 | 8 | 1 |
+| Frost Slime Yon | 🧊 | 1 | Tank | 100 | 10 | 8 | 4 | 1 |
+| Shape Golem Bofu | 🌍 | 2 | Tank | 150 | 12 | 15 | 2 | 1 |
+| Thundorian Child | ⚡ | 2 | Sniper | 60 | 18 | 3 | 12 | 2 |
+| Scout Trooper Pebbles | 🌍 | 2 | Sniper | 90 | 14 | 10 | 5 | 2 |
+| Flame Child Yunni | 🔥 | 1 | Skirmisher | 65 | 12 | 4 | 10 | 2 |
+| Frost Fairy Yoko | 🧊 | 2 | Healer | 70 | 8 | 6 | 7 | 2 |
+| Vamp Kid Yoi | 🔥 | 2 | Skirmisher | 75 | 14 | 5 | 7 | 1 |
+| Plague Son Yav | 🌍 | 2 | Sniper | 70 | 12 | 6 | 8 | 2 |
+| Void Embryo Shadi | 🕳️ | 2 | Skirmisher | 60 | 18 | 3 | 10 | 1 |
+| Arcane Servant Qua | ✨ | 2 | Skirmisher | 70 | 14 | 5 | 8 | 1 |
 
 ### Tier 2 (Cost 3–4g)
 
 | Unit | Element | Cost | Role | HP | ATK | DEF | SPD | Range |
 |------|---------|------|------|-----|-----|-----|-----|-------|
-| Fire Warrior | 🔥 | 4 | Tank | 180 | 25 | 12 | 6 | 1 |
-| Ice Archer | 🧊 | 4 | Sniper | 120 | 22 | 8 | 9 | 3 |
-| Arcane Mage | ✨ | 4 | Caster | 100 | 30 | 5 | 7 | 2 |
-| Lightning Knight | ⚡ | 4 | Tank | 160 | 20 | 14 | 8 | 1 |
-| Ice Guardian | 🧊 | 4 | Tank | 200 | 15 | 18 | 3 | 1 |
-| Arcane Assassin | ✨ | 3 | Skirmisher | 85 | 35 | 4 | 11 | 1 |
-| Nature Spirit | 🌍 | 4 | Healer | 120 | 10 | 12 | 5 | 2 |
-| Arcane Priest | ✨ | 4 | Healer | 100 | 15 | 8 | 6 | 3 |
-| Blood Knight | 🔥 | 4 | Tank | 170 | 24 | 10 | 6 | 1 |
-| Konji Shaman | 🌍 | 4 | Caster | 130 | 18 | 9 | 5 | 2 |
-| Void Knight | 🕳️ | 3 | Tank | 180 | 28 | 10 | 6 | 1 |
-| Void Blighter | 🕳️ | 4 | Caster | 160 | 25 | 8 | 6 | 2 |
+| Flame Soldier Magna | 🔥 | 4 | Tank | 180 | 25 | 12 | 6 | 1 |
+| Ice Archer ColdShot | 🧊 | 4 | Sniper | 120 | 22 | 8 | 9 | 3 |
+| Arcane Descendant | ✨ | 4 | Caster | 100 | 30 | 5 | 7 | 2 |
+| Thundorian Soldier | ⚡ | 4 | Tank | 160 | 20 | 14 | 8 | 1 |
+| Frost Guardian IceBur | 🧊 | 4 | Tank | 200 | 15 | 18 | 3 | 1 |
+| Arcane Shadow | ✨ | 3 | Skirmisher | 85 | 35 | 4 | 11 | 1 |
+| Shape Spirit Runi | 🌍 | 4 | Healer | 120 | 10 | 12 | 5 | 2 |
+| Arcane Sorcerer | ✨ | 4 | Healer | 100 | 15 | 8 | 6 | 3 |
+| Vamp General Parasect | 🔥 | 4 | Tank | 170 | 24 | 10 | 6 | 1 |
+| Plague Caster Fuu | 🌍 | 4 | Caster | 130 | 18 | 9 | 5 | 2 |
+| Void Berserker Zeku | 🕳️ | 3 | Tank | 180 | 28 | 10 | 6 | 1 |
+| Void Curser Ukez | 🕳️ | 4 | Caster | 160 | 25 | 8 | 6 | 2 |
+| Shape Enforcer Ooglong | 🌍 | 4 | Tank | 160 | 22 | 14 | 5 | 1 |
+| Thundorian Elite Danza | ⚡ | 4 | Skirmisher | 110 | 24 | 6 | 10 | 2 |
+| Inferno Ravager Rye | 🔥 | 4 | Skirmisher | 130 | 26 | 7 | 8 | 1 |
 
 ### Tier 3 (Cost 5–6g)
 
 | Unit | Element | Cost | Role | HP | ATK | DEF | SPD | Range |
 |------|---------|------|------|-----|-----|-----|-----|-------|
-| Fire Demon | 🔥 | 6 | Caster | 200 | 30 | 12 | 5 | 2 |
-| Martial Master | 🌍 | 6 | Tank | 280 | 35 | 20 | 8 | 1 |
-| Lightning Lord | ⚡ | 6 | Sniper | 180 | 45 | 10 | 10 | 3 |
-| Ice Empress | 🧊 | 5 | Caster | 220 | 32 | 16 | 6 | 3 |
-| Life Guardian | 🌍 | 5 | Healer | 200 | 12 | 18 | 4 | 2 |
-| Void Horror | 🕳️ | 5 | Caster | 300 | 38 | 12 | 4 | 2 |
+| Daemon The Incinerator | 🔥 | 6 | Caster | 200 | 30 | 12 | 5 | 2 |
+| Shape Boxer Tysr | 🌍 | 6 | Tank | 280 | 35 | 20 | 8 | 1 |
+| Thundorian King Zesper | ⚡ | 6 | Sniper | 180 | 45 | 10 | 10 | 3 |
+| Ice Queen Elaine | 🧊 | 5 | Caster | 220 | 32 | 16 | 6 | 3 |
+| Shape Guardian Ari | 🌍 | 5 | Healer | 200 | 12 | 18 | 4 | 2 |
+| Void Horror Yui | 🕳️ | 5 | Caster | 300 | 38 | 12 | 4 | 2 |
+| Arcane Illusionist Shera | ✨ | 6 | Caster | 170 | 28 | 10 | 7 | 3 |
 
 ### Unit Roles
 
@@ -373,7 +440,7 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 
 ## Bosses & Phases
 
-### Wave 5: 🔥 Flame Tyrant
+### Wave 5: 🔥 Sun Dragon Sel
 
 | Stat | Value |
 |------|-------|
@@ -387,7 +454,7 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 | Burning Fury | 100% | — |
 | Inferno | 50% | +40% ATK |
 
-### Wave 10: 🧊 Frost Colossus
+### Wave 10: 🧊 Frost Giant Anvalog
 
 | Stat | Value |
 |------|-------|
@@ -401,14 +468,14 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 | Frozen Fortress | 100% | — |
 | Glacier's Wrath | 50% | +50% DEF, −20% SPD |
 
-### Wave 15: ⚡ Chaos Overlord
+### Wave 15: 🕳️ The Void Supreme
 
 | Stat | Value |
 |------|-------|
 | HP | 300 (Phase 1) → 350 (Phase 2) → 400 (Phase 3) |
 | ATK / DEF / SPD | 35 / 15 / 6 |
 | Range | 4 |
-| Ability | Elemental Cataclysm — 0.4× AoE ALL + enrage shield at <30% HP |
+| Ability | Void Cataclysm — 0.4× AoE ALL + enrage shield at <30% HP |
 
 | Phase | HP Threshold | New HP Pool | Modifier |
 |-------|-------------|-------------|----------|
@@ -416,10 +483,40 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 | Corruption | 66% | 350 | +30% ATK, +20% SPD |
 | Cataclysm | 33% | 400 | +60% ATK, +50% SPD, −30% DEF |
 
+### Wave 20: 🕳️ Void Leviathan (Void Campaign)
+
+| Stat | Value |
+|------|-------|
+| HP | 800 |
+| ATK / DEF / SPD | 52 / 25 / 5 |
+| Range | 4 |
+| Ability | Abyssal Devour — consumes target HP, heals self 60 HP, applies wound + weaken |
+
+| Phase | HP Threshold | New HP Pool | Modifier |
+|-------|-------------|-------------|----------|
+| Emergence | 100% | 500 | — |
+| Deep Hunger | 50% | 600 | +40% ATK, +30% SPD |
+
+### Wave 25: 🕳️ The Void Architect (Void Campaign)
+
+| Stat | Value |
+|------|-------|
+| HP | 600 |
+| ATK / DEF / SPD | 60 / 18 / 8 |
+| Range | 4 |
+| Ability | Reality Tear — massive void damage to ALL + blind + poison |
+
+| Phase | HP Threshold | New HP Pool | Modifier |
+|-------|-------------|-------------|----------|
+| Blueprint | 100% | 400 | — |
+| Reconstruction | 66% | 450 | +30% ATK, +30% DEF |
+| Annihilation | 33% | 500 | +80% ATK, +50% SPD, −50% DEF |
+
 **Boss Phase Rules:**
 - Phase transitions trigger when HP drops below threshold (checked on every damage taken)
 - Stat multipliers are applied from **base stats** (not compounding)
-- Chaos Overlord's HP resets to the new phase pool on transition
+- The Void Supreme and Void Architect HP resets to new phase pool on transition
+- In Void Campaign, boss phaseHp is scaled by HARD_MODE_SCALING multipliers
 - Boss escorts spawn alongside each boss (see Wave System)
 
 ---
@@ -499,24 +596,124 @@ Each non-boss wave has 2–3 template variants with difficulty ratings. The gene
 
 | Boss Wave | Boss | Escorts |
 |-----------|------|---------|
-| Wave 5 | Flame Tyrant | 3 Skirmishers |
-| Wave 10 | Frost Colossus | 2 Tanks + 1 Healer + 2 Snipers |
-| Wave 15 | Chaos Overlord | 2 Casters + 2 Tanks + 3 Skirmishers |
+| Wave 5 | Sun Dragon Sel | 3 Skirmishers + 1 Tank + 1 Sniper |
+| Wave 10 | Frost Giant Anvalog | 3 Tanks + 2 Healers + 2 Snipers |
+| Wave 15 | The Void Supreme | 3 Casters + 3 Tanks + 3 Skirmishers + 1 Healer |
+| Wave 20 | Void Leviathan | 3 Tanks + 3 Casters + 2 Healers + 2 Snipers |
+| Wave 25 | The Void Architect | 4 Casters + 4 Tanks + 3 Skirmishers + 2 Healers |
+
+---
+
+## Campaign Modes
+
+| Mode | Waves | Final Boss | Unlock Condition |
+|------|-------|------------|------------------|
+| **Normal** | 15 | The Void Supreme (W15) | Available from start |
+| **Void Campaign** | 25 | The Void Architect (W25) | Beat Normal mode once |
+
+Void Campaign includes all 15 Normal waves plus 10 additional waves (16–25) with **hard mode scaling**.
+
+### Hard Mode Scaling (Waves 16–25)
+
+Enemy stats are multiplied based on wave number:
+
+| Wave | HP | ATK | DEF | SPD |
+|------|----|-----|-----|-----|
+| 16 | 1.15× | 1.10× | 1.10× | 1.05× |
+| 18 | 1.30× | 1.20× | 1.20× | 1.10× |
+| 20 (Boss) | 1.50× | 1.30× | 1.30× | 1.15× |
+| 22 | 1.65× | 1.40× | 1.40× | 1.20× |
+| 25 (Final) | 2.00× | 1.60× | 1.55× | 1.30× |
+
+Boss `phaseHp` values are also scaled by the wave's HP multiplier.
+
+During Void Campaign, **void units become available** in the player shop.
 
 ---
 
 ## Win / Loss Conditions
 
 | Condition | Trigger |
-|-----------|---------|
-| **Victory** | Defeat all 15 waves including Wave 15 boss |
+|-----------|--------|
+| **Normal Victory** | Defeat all 15 waves including Wave 15 boss |
+| **Void Victory** | Defeat all 25 waves including Wave 25 boss |
 | **Defeat** | All player units die during battle |
 | **Soft Lock** | No units, no gold, no refreshes available → game over prompt |
 
 ### Unlocks on Victory
 
 - **Arcane faction**: `localStorage.shape_strikers_arcane_unlocked = '1'`
-- **Void faction**: `localStorage.shape_strikers_void_unlocked = '1'`
+- **Void faction + Void Campaign button**: `localStorage.shape_strikers_void_unlocked = '1'`
+- **Void Conqueror badge**: `localStorage.shape_strikers_void_campaign_cleared = '1'` (Void Campaign only)
+
+---
+
+## Achievements
+
+10 achievements tracked via `localStorage.shape_strikers_achievements` (JSON object).
+
+| Achievement | Condition | Icon |
+|-------------|-----------|------|
+| First Blood | Win your first battle | ⚔️ |
+| Dragon Slayer | Defeat the Sun Dragon (W5 boss) | 🐉 |
+| Frost Breaker | Defeat the Frost Giant (W10 boss) | 🧊 |
+| Void Conqueror | Complete the Void Campaign | 🕳️ |
+| Untouchable | Win a battle without losing any units | 🛡️ |
+| Flawless Run | Complete a full campaign without losing any unit | 💎 |
+| Big Spender | Buy 10+ upgrades in a single run | 💰 |
+| Army Builder | Have 12 units on the grid simultaneously | 🏰 |
+| Executioner | Have a single unit score 10+ kills in one run | 💀 |
+| Speed Demon | Win a battle on 3× speed | ⚡ |
+
+### Post-Game Accolades
+
+After each battle, per-unit accolades are shown in the stats table:
+
+| Accolade | Icon | Condition |
+|----------|------|-----------|
+| MVP | 🌟 | Highest damage dealt |
+| Executioner | 💀 | Most kills |
+| Lifeline | 💚 | Most healing done |
+
+---
+
+## Daily & Weekly Challenges
+
+### Daily Challenge
+
+- **Seed**: `YYYY * 10000 + MM * 100 + DD` (deterministic per calendar day)
+- **Mode**: Normal campaign (15 waves), no modifiers
+- **Waves**: Seeded via `_mulberry32(seed)` — same for all players on the same day
+- **Shop**: Non-deterministic (uses `Math.random`) — shop luck varies per player
+- **Tracking**: `localStorage.shape_strikers_daily_challenge` — JSON keyed by `"YYYY-MM-DD"`
+- **Data**: `{ bestScore, attempts, completed }`
+
+### Weekly Challenge
+
+- **Seed**: `YYYY * 100 + weekNumber` (deterministic per ISO week)
+- **Modifier**: One of 8 modifiers selected deterministically from the seed
+- **Tracking**: `localStorage.shape_strikers_weekly_challenge` — JSON keyed by `"YYYY-WNN"`
+
+### Challenge Modifiers
+
+| Modifier | Icon | Effect |
+|----------|------|--------|
+| Inferno | 🔥 | Only fire-element units available in shop |
+| Frozen Front | 🧊 | Only ice-element units available in shop |
+| No Mercy | 🚫 | Healer-role units banned from shop |
+| Glass Cannon | 💥 | Player units: +50% ATK, −50% HP |
+| Budget Run | 💰 | Start with 5g (instead of 10g), gold rewards reduced to 70% |
+| Fragile | 🩸 | Player units: −30% HP |
+| Purity | ✨ | Only one element available (determined by seed) |
+| Titan Wave | 🏔️ | Enemy units: +40% HP |
+
+### Challenge Rules
+
+- Challenges always use Normal campaign (15 waves)
+- **No campaign unlocks** during challenges (void, arcane factions protected)
+- **No achievement progress** during challenges
+- Restart during a challenge re-seeds and replays the same challenge
+- Quitting returns to title screen and resets challenge state
 
 ---
 
@@ -543,18 +740,80 @@ Each non-boss wave has 2–3 template variants with difficulty ratings. The gene
 
 ---
 
+## Leaderboards
+
+Online leaderboards powered by Supabase (PostgreSQL + anonymous auth).
+
+### Authentication
+
+- **Anonymous sign-in** — no account creation required
+- Session persists via Supabase auth tokens in browser storage
+- Optional future upgrade to email/social accounts
+
+### Score Submission
+
+Triggered after game-over or win. Player enters a display name (max 20 characters, saved to localStorage for future sessions). Submitted data:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `player_name` | text | Display name (sanitized, 1-20 chars) |
+| `score` | int | Final score |
+| `wave_reached` | int | Last wave completed |
+| `campaign_mode` | text | `normal` or `void` |
+| `challenge_type` | text | `daily`, `weekly`, or `null` |
+| `challenge_key` | text | `YYYY-MM-DD` or `YYYY-WNN`, or `null` |
+| `units_used` | int | Total units placed during the run |
+| `won` | bool | Whether the player won |
+
+### Leaderboard Tabs
+
+| Tab | Shows | Sort |
+|-----|-------|------|
+| **Global** | Top scores across all non-challenge games | Score desc |
+| **Daily** | Today's daily challenge scores | Score desc |
+| **Weekly** | This week's weekly challenge scores | Score desc |
+| **Personal** | Current player's best scores | Score desc |
+
+### Graceful Degradation
+
+If Supabase SDK fails to load, credentials are missing, or network is unavailable:
+- Game is fully playable without leaderboards
+- Leaderboard button shows "Backend not configured" message
+- Score submit UI is hidden from game-over/win overlays
+
+---
+
+## Patch Notes
+
+In-game "What's New" overlay accessible from the title screen.
+
+### Data Source
+
+`PATCH_NOTES` array in `src/config.js`. Each entry:
+
+```javascript
+{ version: "0.8.0", date: "April 2026", title: "Online Leaderboards", notes: [...] }
+```
+
+New entries are added at the **top** of the array (newest first). The overlay renders all entries in order with version badges, titles, dates, and bulleted note lists.
+
+---
+
 ## Architecture
 
 ```
 index.html          Entry point, all screens & overlays
-style.css           All styling, animations, responsive layout
-src/config.js       Unit definitions, synergies, upgrades, wave templates, generator
+style.css           All styling, animations, responsive layout, themes
+src/config.js       Unit definitions, synergies, upgrades, wave templates, scaling, patch notes
 src/battle.js       BattleSystem class — pure logic, no DOM
 src/grid.js         Grid controller — tile management, canvas rendering, animations
+src/vfx.js          CSS particle VFX engine — pooled effects, shockwaves, projectiles
 src/ui.js           UI controller — shop, glossary, logs, overlays
-src/game.js         Game controller — state machine, shop, battle wiring, tutorial
+src/audio.js        Sound pool management
+src/backend.js      Supabase client, authentication, leaderboard API
+src/game.js         Game controller — state machine, shop, battle wiring, leaderboard, tutorial
 ```
 
 ---
 
-*Shape Strikers v0.2-alpha · By ByteSower*
+*Shape Strikers v0.8.0 · By ByteSower*

@@ -18,8 +18,11 @@ const UI = (() => {
   // ── Top Bar / HUD ─────────────────────────────────────────────────────────
 
   function updateHUD(state) {
-    const { wave, waveCount, gold, score, units, maxUnits, phase } = state;
-    document.getElementById('hud-wave').textContent   = `Wave ${wave} / ${waveCount}`;
+    const { wave, waveCount, gold, score, units, maxUnits, phase, challengeLabel } = state;
+    const waveEl = document.getElementById('hud-wave');
+    waveEl.textContent = challengeLabel
+      ? `${challengeLabel} · Wave ${wave} / ${waveCount}`
+      : `Wave ${wave} / ${waveCount}`;
     document.getElementById('gold-val').textContent   = gold;
     document.getElementById('score-val').textContent  = score;
     document.getElementById('units-val').textContent  = units;
@@ -322,15 +325,26 @@ const UI = (() => {
 
   // ── Battle Result Overlay ─────────────────────────────────────────────────
 
-  function showResult(won, wave, goldEarned) {
+  function showResult(won, wave, goldEarned, goldBreakdown) {
     const overlay = document.getElementById('overlay-result');
     overlay.classList.remove('hidden');
     document.getElementById('result-title').innerHTML = won
       ? `<h2 style="color:#44ff88">✅ Wave ${wave} Cleared!</h2>`
       : `<h2 style="color:#ff4422">💀 Defeated on Wave ${wave}</h2>`;
-    document.getElementById('result-body').innerHTML = won
-      ? `<p>Gold earned: <span style="color:#ffd700">${goldEarned}g</span></p>`
-      : `<p>Your army was overwhelmed.</p>`;
+    if (!won) {
+      document.getElementById('result-body').innerHTML = `<p>Your army was overwhelmed.</p>`;
+      return;
+    }
+    let goldHTML = `<p style="font-size:1.1em">Gold earned: <span style="color:#ffd700;font-weight:bold">${goldEarned}g</span></p>`;
+    if (goldBreakdown) {
+      goldHTML += `<div style="font-size:0.85em;color:#aaa;margin-top:4px;line-height:1.6">`;
+      goldHTML += `<span style="color:#ddd">💰 Base: ${goldBreakdown.base}g</span>`;
+      if (goldBreakdown.bonus > 0) goldHTML += ` &nbsp;•&nbsp; <span style="color:#ffaa44">⭐ Wave Bonus: ${goldBreakdown.bonus}g</span>`;
+      if (goldBreakdown.victory > 0) goldHTML += ` &nbsp;•&nbsp; <span style="color:#88ddff">🏆 Victory: ${goldBreakdown.victory}g</span>`;
+      if (goldBreakdown.interest > 0) goldHTML += ` &nbsp;•&nbsp; <span style="color:#44ff88">📈 Interest: ${goldBreakdown.interest}g</span>`;
+      goldHTML += `</div>`;
+    }
+    document.getElementById('result-body').innerHTML = goldHTML;
   }
 
   function hideResult() {
@@ -343,9 +357,23 @@ const UI = (() => {
     document.getElementById('gameover-score').textContent = `Score: ${score}`;
   }
 
-  function showWin(score) {
-    document.getElementById('overlay-win').classList.remove('hidden');
+  function showWin(score, title, campaignMode) {
+    const overlay = document.getElementById('overlay-win');
+    overlay.classList.remove('hidden');
     document.getElementById('win-score').textContent = `Final Score: ${score}`;
+    const titleEl = document.getElementById('win-title');
+    if (titleEl) titleEl.textContent = title || '🏆 VICTORY!';
+    const subtitleEl = document.getElementById('win-subtitle');
+    if (subtitleEl) {
+      subtitleEl.textContent = campaignMode === 'void'
+        ? 'You have conquered the Void Abyss!'
+        : 'You defeated the Void Supreme!';
+    }
+    if (campaignMode === 'void') {
+      overlay.classList.add('void-win');
+    } else {
+      overlay.classList.remove('void-win');
+    }
   }
 
   function hideAllOverlays() {

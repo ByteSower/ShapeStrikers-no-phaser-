@@ -7,7 +7,7 @@
 
 // ── Status stack caps ────────────────────────────────────────────────────────
 const STATUS_MAX_STACKS = {
-  burn: 2, poison: 5, freeze: 3, slow: 8,
+  burn: 3, poison: 5, freeze: 3, slow: 8, blind: 2,
   shield: 3, barrier: 1, weaken: 3, wound: 3, untargetable: 1,
 };
 
@@ -115,6 +115,23 @@ class BattleSystem {
       return;
     }
 
+    // Evolve: buff stats every N turns survived
+    const ec = unit.definition.evolveConfig;
+    if (ec) {
+      unit._turnsSurvived = (unit._turnsSurvived || 0) + 1;
+      const currentStacks = Math.floor(unit._turnsSurvived / ec.interval);
+      const prevStacks = unit._evolveStacks || 0;
+      if (currentStacks > prevStacks && currentStacks <= ec.maxStacks) {
+        unit._evolveStacks = currentStacks;
+        if (!unit._evolveBase) unit._evolveBase = { attack: unit.stats.attack, defense: unit.stats.defense };
+        const mult = 1 + currentStacks * ec.statBonus;
+        unit.stats.attack = Math.floor(unit._evolveBase.attack * mult);
+        unit.stats.defense = Math.floor(unit._evolveBase.defense * mult);
+        this._log(`⬆️ ${this._n(unit)} evolves! (+${Math.floor(currentStacks * ec.statBonus * 100)}% ATK/DEF)`, 'ability', this._side(unit));
+        if (this.onStatusChange) this.onStatusChange(unit);
+      }
+    }
+
     // Skip frozen units — consume 1 stack per skipped turn
     const frozen = unit.statusEffects.find(s => s.type === 'freeze');
     if (frozen) {
@@ -172,14 +189,22 @@ class BattleSystem {
     const target = this._pickTarget(attacker, targets);
     if (!target) return;
 
-    const dmg = this._calcDamage(attacker, target);
     if (this.onUnitAttack) this.onUnitAttack(attacker, target);
+
+    // Blind: 30% miss chance
+    const blind = attacker.statusEffects.find(s => s.type === 'blind');
+    if (blind && Math.random() < 0.3) {
+      this._log(`😵 ${this._n(attacker)} misses ${this._n(target)}! (blinded)`, 'system');
+      return;
+    }
+
+    const dmg = this._calcDamage(attacker, target);
     this._applyDamage(target, dmg);
     if (this.onUnitHit) this.onUnitHit(target, dmg, attacker.definition.element, attacker.id);
     this._log(`${this._n(attacker)} attacks ${this._n(target)} for ${dmg} dmg`, 'attack', this._side(attacker));
 
-    // Lifesteal (blood units)
-    if (attacker.definition.id.startsWith('blood_')) {
+    // Lifesteal (vampire trait)
+    if (attacker.definition.trait === 'vampire') {
       const raw = Math.floor(dmg * 0.4);
       const heal = Math.floor(raw * this._healMod(attacker));
       attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
@@ -187,7 +212,7 @@ class BattleSystem {
       if (this.onUnitHit) this.onUnitHit(attacker, -heal, null, attacker.id);
     }
 
-    if (target.hp <= 0) this._killUnit(target);
+    if (target.hp <= 0) this._killUnit(target, attacker);
   }
 
   _useAbility(unit, enemies, allies) {
@@ -243,10 +268,14 @@ class BattleSystem {
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.8);
         break;
 
+      case 'arcane_pupil':    // Arcane Bolt: 1.3× single (evolve is passive)
+        this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.3);
+        break;
+
       // ---- TIER 2 ----
-      case 'fire_warrior':   // Blazing Charge: damage ALL enemies in same column + burn
-        { const sameCol = aliveEnemies.filter(e => e.col === unit.col);
-          const targets = sameCol.length ? sameCol : aliveEnemies.slice(0, 1);
+      case 'fire_warrior':   // Blazing Charge: damage enemies in front in same column + burn
+        { const inFront = aliveEnemies.filter(e => e.col === unit.col && (unit.isEnemy ? e.row > unit.row : e.row < unit.row));
+          const targets = inFront.length ? inFront : aliveEnemies.slice(0, 1);
           this._abilityDamage(unit, targets, 1.4);
           this._applyStatusToTargets(targets, 'burn', 3, 3); }
         break;
@@ -270,15 +299,21 @@ class BattleSystem {
       case 'arcane_assassin': // Shadow Strike: 50% chance 2.5× crit or 1.5×
         { const crit = Math.random() < 0.5;
           this._abilityDamage(unit, aliveEnemies.slice(0, 1), crit ? 2.5 : 1.5);
-          if (crit) this._log(`💥 Critical hit!`, 'ability'); }
+          if (crit) {
+            this._log(`💥 Critical hit!`, 'ability');
+            if (this.onCriticalHit) this.onCriticalHit(unit, aliveEnemies[0]);
+          }
+        }
         break;
       case 'nature_spirit':  // Rejuvenate: heal ALL allies 15 HP
         this._healAllies(unit, aliveAllies, ab.healAmount || 15, true);
         break;
-      case 'arcane_priest':  // Arcane Restoration: heal lowest 25 HP + shield
-        this._healAllies(unit, aliveAllies, ab.healAmount || 25, false);
-        { const lowest = aliveAllies.sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0];
-          if (lowest) this._addStatus(lowest, 'shield', 2, 10); }
+      case 'arcane_priest':  // Arcane Restoration: heal lowest 25 HP + shield same target
+        { const healTarget = aliveAllies.filter(u => u.hp > 0).sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0];
+          if (healTarget) {
+            this._healAllies(unit, [healTarget], ab.healAmount || 25, true);
+            this._addStatus(healTarget, 'shield', 2, 10);
+          } }
         break;
       case 'blood_knight':   // Crimson Cleave: 1.2× to up to 3 + 30% lifesteal
         this._abilityDamage(unit, aliveEnemies.slice(0, 3), 1.2, true, 0.3);
@@ -294,6 +329,20 @@ class BattleSystem {
       case 'void_blighter':  // Cursed Wound: 0.6× ALL enemies + wound
         this._abilityDamage(unit, aliveEnemies, 0.6);
         this._applyStatusToTargets(aliveEnemies, 'wound', 3);
+        break;
+
+      case 'earth_enforcer':  // Ground Slam: 1.4× + knockback 1 row
+        { const slamTarget = aliveEnemies.slice(0, 1);
+          this._abilityDamage(unit, slamTarget, 1.4);
+          if (slamTarget[0]?.hp > 0) this._knockback(slamTarget[0]); }
+        break;
+      case 'lightning_hunter': // Grapple Pull: 1.2× + pull target 1 row forward
+        { const pullTarget = aliveEnemies.slice(0, 1);
+          this._abilityDamage(unit, pullTarget, 1.2);
+          if (pullTarget[0]?.hp > 0) this._pullForward(pullTarget[0]); }
+        break;
+      case 'fire_ravager':    // Rampage: 1.5× to 2 targets (kill-stack is passive via _calcDamage)
+        this._abilityDamage(unit, aliveEnemies.slice(0, 2), 1.5);
         break;
 
       // ---- TIER 3 ----
@@ -325,8 +374,14 @@ class BattleSystem {
           this._applyDamage(t, dmg);
           if (this.onUnitHit) this.onUnitHit(t, dmg, 'void', unit.id);
           this._log(`💥 ${this._n(t)} takes ${dmg} void dmg`, 'attack', this._side(unit));
-          if (t.hp <= 0) this._killUnit(t);
+          if (t.hp <= 0) this._killUnit(t, unit);
         }
+        break;
+
+      case 'arcane_illusionist': // Mirage: 0.3× ALL + blind all enemies
+        this._abilityDamage(unit, aliveEnemies, 0.3);
+        this._applyStatusToTargets(aliveEnemies.filter(e => e.hp > 0), 'blind', 2);
+        this._log(`😵 All enemies blinded by Mirage!`, 'ability');
         break;
 
       // ---- BOSSES ----
@@ -343,7 +398,7 @@ class BattleSystem {
           unit.hp += actual;
           if (actual > 0) this._log(`💚 ${this._n(unit)} restores ${actual} HP`, 'heal', this._side(unit)); }
         break;
-      case 'boss_chaos_overlord': // Elemental Cataclysm: 0.4× ALL + enrage at <30%
+      case 'boss_chaos_overlord': // Void Cataclysm: 0.4× ALL + enrage at <30%
         this._abilityDamage(unit, aliveEnemies, 0.4);
         if (unit.hp / unit.maxHp < 0.3) {
           this._addStatus(unit, 'shield', 1, 20);
@@ -371,15 +426,15 @@ class BattleSystem {
       this._applyDamage(target, dmg);
       if (this.onUnitHit) this.onUnitHit(target, dmg, unit.definition.element, unit.id);
       this._log(`💥 ${this._n(target)} takes ${dmg} ability dmg`, 'attack', this._side(unit));
-      if (lifesteal || unit.definition.id.startsWith('blood_')) {
-        const pct = unit.definition.id.startsWith('blood_') ? 0.4 : lifestealPct;
+      if (lifesteal || unit.definition.trait === 'vampire') {
+        const pct = unit.definition.trait === 'vampire' ? 0.4 : lifestealPct;
         const raw = Math.floor(dmg * pct);
         const heal = Math.floor(raw * this._healMod(unit));
         unit.hp = Math.min(unit.maxHp, unit.hp + heal);
         this._log(`🩸 ${this._n(unit)} heals ${heal} HP`, 'heal', this._side(unit));
         if (this.onUnitHit) this.onUnitHit(unit, -heal, null, unit.id);
       }
-      if (target.hp <= 0) this._killUnit(target);
+      if (target.hp <= 0) this._killUnit(target, unit);
     }
   }
 
@@ -421,9 +476,15 @@ class BattleSystem {
     const weaken = attacker.statusEffects.find(s => s.type === 'weaken');
     const atkMod = weaken ? atk * Math.max(0.5, 1 - weaken.stacks * 0.08) : atk;
 
+    // Kill-stack bonus: +% ATK per kill
+    const ksb = attacker.definition.killStackBonus;
+    const atkFinal = ksb && attacker._kills > 0
+      ? atkMod * (1 + Math.min(ksb.maxBonus, attacker._kills * ksb.atkPerKill))
+      : atkMod;
+
     // Diminishing returns defense: reduction = def / (def + 50)
     const dmgReduction = defTotal / (defTotal + 50);
-    let dmg = Math.max(1, Math.floor(atkMod * (1 - dmgReduction) * mult));
+    let dmg = Math.max(1, Math.floor(atkFinal * (1 - dmgReduction) * mult));
     return dmg;
   }
 
@@ -549,7 +610,7 @@ class BattleSystem {
 
   _addStatus(unit, type, duration, value = 0) {
     // Barrier blocks only negative effects
-    const NEGATIVE = ['burn', 'poison', 'freeze', 'slow', 'weaken', 'wound'];
+    const NEGATIVE = ['burn', 'poison', 'freeze', 'slow', 'weaken', 'wound', 'blind'];
     if (NEGATIVE.includes(type) && unit.statusEffects.find(s => s.type === 'barrier')) return;
 
     const maxStacks = STATUS_MAX_STACKS[type] || 1;
@@ -581,11 +642,46 @@ class BattleSystem {
     if (this.onStatusChange) this.onStatusChange(unit);
   }
 
-  _killUnit(unit) {
+  _killUnit(unit, killer = null) {
     unit.hp = 0;
+    if (killer) killer._kills = (killer._kills || 0) + 1;
     this._log(`💀 ${this._n(unit)} defeated!`, 'death', this._side(unit));
     if (this.onScreenShake) this.onScreenShake(unit.definition.isBoss ? 12 : 5);
-    if (this.onUnitDeath) this.onUnitDeath(unit);
+    if (this.onUnitDeath) this.onUnitDeath(unit, killer);
+  }
+
+  // ── Positional mechanics ─────────────────────────────────────────────────
+
+  _knockback(target, rows = 1) {
+    const fromRow = target.row;
+    const allUnits = [...this._playerUnits, ...this._enemyUnits].filter(u => u.hp > 0 && u !== target);
+    const isOccupied = (r, c) => allUnits.some(u => u.row === r && u.col === c);
+    // Push toward target's spawn side: enemies → row 0, players → row 4
+    const dir = target.isEnemy ? -1 : 1;
+    const newRow = Math.max(0, Math.min(GRID_CONFIG.rows - 1, target.row + dir * rows));
+    if (newRow !== target.row && !isOccupied(newRow, target.col)) {
+      target.row = newRow;
+      if (this.onUnitMove) this.onUnitMove(target, fromRow, target.col, target.row, target.col);
+      this._log(`💨 ${this._n(target)} knocked back!`, 'ability');
+      return true;
+    }
+    return false;
+  }
+
+  _pullForward(target, rows = 1) {
+    const fromRow = target.row;
+    const allUnits = [...this._playerUnits, ...this._enemyUnits].filter(u => u.hp > 0 && u !== target);
+    const isOccupied = (r, c) => allUnits.some(u => u.row === r && u.col === c);
+    // Pull toward attacker's side: enemies → row 4, players → row 0
+    const dir = target.isEnemy ? 1 : -1;
+    const newRow = Math.max(0, Math.min(GRID_CONFIG.rows - 1, target.row + dir * rows));
+    if (newRow !== target.row && !isOccupied(newRow, target.col)) {
+      target.row = newRow;
+      if (this.onUnitMove) this.onUnitMove(target, fromRow, target.col, target.row, target.col);
+      this._log(`🪝 ${this._n(target)} pulled forward!`, 'ability');
+      return true;
+    }
+    return false;
   }
 
   // ── Synergies ────────────────────────────────────────────────────────────
@@ -659,7 +755,7 @@ class BattleSystem {
       if (phase.statModifiers.defenseMult) boss.stats.defense = Math.floor(boss._bossBaseStats.defense * phase.statModifiers.defenseMult);
       if (phase.statModifiers.speedMult)   boss.stats.speed   = Math.floor(boss._bossBaseStats.speed   * phase.statModifiers.speedMult);
 
-      // For Chaos Overlord: reset HP to new phase pool
+      // For Void Supreme: reset HP to new phase pool
       if (phase.phaseHp) {
         boss.hp = phase.phaseHp;
         boss.maxHp = phase.phaseHp;

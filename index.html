@@ -35,8 +35,13 @@
     <p class="game-subtitle">Tactical Auto-Battler Rogue-like Game By ByteSower</p>
     <div class="title-buttons">
       <button class="btn btn-lg btn-fire" id="btn-start">▶ Start Game</button>
+      <button class="btn btn-lg btn-void hidden" id="btn-start-void">🕳️ Void Campaign</button>
       <button class="btn btn-lg btn-secondary" onclick="UI.showGlossary()">📖 Unit Glossary</button>
       <button class="btn btn-lg btn-secondary" id="btn-how-to-play">❓ How to Play</button>
+      <button class="btn btn-lg btn-secondary" id="btn-achievements">🏅 Achievements</button>
+      <button class="btn btn-lg btn-challenge" id="btn-challenges">📅 Challenges</button>
+      <button class="btn btn-lg btn-secondary" id="btn-leaderboard">🏆 Leaderboard</button>
+      <button class="btn btn-lg btn-secondary" id="btn-patch-notes">📋 What's New</button>
     </div>
     <div class="title-options">
       <label class="option-label"><input type="checkbox" id="opt-tutorial" checked> Show Tutorial</label>
@@ -164,6 +169,11 @@
     <p id="gameover-wave"></p>
     <p id="gameover-score"></p>
     <div id="gameover-stats" class="battle-stats"></div>
+    <div id="gameover-submit" class="score-submit-area hidden">
+      <input type="text" id="gameover-name" class="name-input" placeholder="Enter name..." maxlength="20" />
+      <button class="btn btn-primary btn-sm" id="btn-gameover-submit">📤 Submit Score</button>
+      <span id="gameover-submit-status" class="submit-status"></span>
+    </div>
     <button class="btn btn-fire btn-lg" id="btn-gameover-restart">↺ Play Again</button>
   </div>
 </div>
@@ -171,10 +181,15 @@
 <!-- WIN OVERLAY -->
 <div id="overlay-win" class="overlay hidden">
   <div class="overlay-box win-box">
-    <h2>🏆 Victory!</h2>
-    <p>You defeated the Chaos Overlord!</p>
+    <h2 id="win-title">🏆 Victory!</h2>
+    <p id="win-subtitle">You defeated the Void Supreme!</p>
     <p id="win-score"></p>
     <div id="win-stats" class="battle-stats"></div>
+    <div id="win-submit" class="score-submit-area hidden">
+      <input type="text" id="win-name" class="name-input" placeholder="Enter name..." maxlength="20" />
+      <button class="btn btn-primary btn-sm" id="btn-win-submit">📤 Submit Score</button>
+      <span id="win-submit-status" class="submit-status"></span>
+    </div>
     <button class="btn btn-primary btn-lg" id="btn-win-restart">↺ Play Again</button>
   </div>
 </div>
@@ -252,6 +267,7 @@
           <tr><td>💔 <b>Weaken</b></td><td>−8% ATK per stack</td><td>Max 3</td></tr>
           <tr><td>🩸 <b>Wound</b></td><td>−50% healing received</td><td>Max 3</td></tr>
           <tr><td>👻 <b>Untargetable</b></td><td>Can't be targeted</td><td>Max 1</td></tr>
+          <tr><td>😵 <b>Blind</b></td><td>30% chance to miss attacks</td><td>Max 2</td></tr>
         </table>
       </div>
     </div>
@@ -270,12 +286,68 @@
   </div>
 </div>
 
+<!-- ACHIEVEMENTS OVERLAY -->
+<div id="overlay-achievements" class="overlay hidden">
+  <div class="overlay-box achievements-box">
+    <div class="overlay-header">
+      <h2>🏅 Achievements</h2>
+      <button class="btn btn-secondary btn-sm" id="btn-achievements-close">✕ Close</button>
+    </div>
+    <div id="achievements-grid"></div>
+    <div id="achievements-progress"></div>
+  </div>
+</div>
+
+<!-- CHALLENGES OVERLAY -->
+<div id="overlay-challenges" class="overlay hidden">
+  <div class="overlay-box challenges-box">
+    <div class="overlay-header">
+      <h2>📅 Challenges</h2>
+      <button class="btn btn-secondary btn-sm" id="btn-challenges-close">✕ Close</button>
+    </div>
+    <div id="challenges-grid"></div>
+  </div>
+</div>
+
+<!-- LEADERBOARD OVERLAY -->
+<div id="overlay-leaderboard" class="overlay hidden">
+  <div class="overlay-box leaderboard-box">
+    <div class="overlay-header">
+      <h2>🏆 Leaderboard</h2>
+      <button class="btn btn-secondary btn-sm" id="btn-leaderboard-close">✕ Close</button>
+    </div>
+    <div class="leaderboard-tabs">
+      <button class="btn btn-sm lb-tab active" data-tab="global">🌍 Global</button>
+      <button class="btn btn-sm lb-tab" data-tab="daily">📅 Daily</button>
+      <button class="btn btn-sm lb-tab" data-tab="weekly">📆 Weekly</button>
+      <button class="btn btn-sm lb-tab" data-tab="personal">👤 Personal</button>
+    </div>
+    <div id="leaderboard-content" class="leaderboard-content">
+      <p class="leaderboard-loading">Loading...</p>
+    </div>
+  </div>
+</div>
+
+<!-- PATCH NOTES OVERLAY -->
+<div id="overlay-patch-notes" class="overlay hidden">
+  <div class="overlay-box patch-notes-box">
+    <div class="overlay-header">
+      <h2>📋 What's New</h2>
+      <button class="btn btn-secondary btn-sm" id="btn-patch-notes-close">✕ Close</button>
+    </div>
+    <div id="patch-notes-content"></div>
+  </div>
+</div>
+
 <!-- SCRIPTS (order matters — config first) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="src/config.js"></script>
 <script src="src/audio.js"></script>
 <script src="src/battle.js"></script>
 <script src="src/grid.js"></script>
+<script src="src/vfx.js"></script>
 <script src="src/ui.js"></script>
+<script src="src/backend.js"></script>
 <script src="src/game.js"></script>
 
 </body>

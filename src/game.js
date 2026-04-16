@@ -15,7 +15,13 @@ const Game = (() => {
   let _gameStats = null;      // cumulative game-wide stats
   let _currentSpeedMult = 1;  // persisted speed multiplier across waves
   let _preBattlePositions = null; // saved player unit positions {id, row, col}
+  let _battleParticipants = null; // snapshot of player units at battle start (for stats)
   let _inspectedUnit = null; // unit currently shown in detail panel during battle
+  let _campaignMode = 'normal'; // 'normal' | 'void'
+  let _challengeMode = null;     // null | 'daily' | 'weekly'
+  let _challengeModifier = null; // current CHALLENGE_MODIFIERS entry (weekly only)
+  let _challengeSeed = 0;        // deterministic seed for challenge runs
+  let _challengeElement = null;  // for 'purity' modifier — the single allowed element
 
   function _freshState() {
     return {
@@ -50,14 +56,19 @@ const Game = (() => {
   // ── HUD refresh helper ─────────────────────────────────────────────────────
 
   function _refreshHUD() {
+    const waveCount = _campaignMode === 'void' ? 25 : (GAME_CONFIG.waveCount || 15);
+    let challengeLabel = '';
+    if (_challengeMode === 'daily') challengeLabel = '📅 Daily';
+    else if (_challengeMode === 'weekly') challengeLabel = `📆 ${_challengeModifier?.icon || ''} Weekly`;
     UI.updateHUD({
       wave:     state.wave,
-      waveCount: GAME_CONFIG.waveCount || 15,
+      waveCount: waveCount,
       gold:     state.gold,
       score:    state.score,
       units:    state.playerUnits.length,
       maxUnits: _maxUnits(),
       phase:    state.phase,
+      challengeLabel,
     });
   }
 
@@ -66,6 +77,7 @@ const Game = (() => {
   function _updateWavePreview() {
     const el = document.getElementById('wave-preview');
     if (!el || !_currentWaveDef) { if (el) el.classList.add('hidden'); return; }
+    const scoutLevel = state?.upgradeLevels?.['scouts_intel'] || 0;
     const enemies = _currentWaveDef.enemies || [];
     let html = `<div class="wave-preview-title">🔍 Wave ${state.wave} Scout</div>`;
     let total = 0;
@@ -75,6 +87,14 @@ const Game = (() => {
       const emoji = ELEMENT_EMOJI[def.element] || '❓';
       const bossTag = def.isBoss ? ' <b style="color:#ff4422">BOSS</b>' : '';
       html += `<div class="wave-preview-row"><span class="wp-icon">${emoji}</span><span class="wp-name">${def.name}${bossTag}</span><span class="wp-count">×${e.count}</span></div>`;
+      // Scout's Intel L1: show HP and ATK
+      if (scoutLevel >= 1 && def.stats) {
+        html += `<div style="font-size:10px;color:#8899aa;padding-left:24px">HP:${def.stats.hp} ATK:${def.stats.attack} DEF:${def.stats.defense}</div>`;
+      }
+      // Scout's Intel L2: show ability
+      if (scoutLevel >= 2 && def.ability) {
+        html += `<div style="font-size:10px;color:#aa88cc;padding-left:24px">⚡ ${def.ability.name}: ${def.ability.description}</div>`;
+      }
       total += e.count;
     }
     html += `<div style="margin-top:4px;font-weight:700;color:#8899aa;font-size:11px">Total: ${total} enemies</div>`;
@@ -119,28 +139,57 @@ const Game = (() => {
 
   function _buildStatsHTML(battleStats, units, isFinalScreen) {
     if (!battleStats) return '';
+    // Use _battleParticipants if available (includes dead units), otherwise fall back to alive units
+    const allUnits = _battleParticipants || units;
+    const aliveIds = new Set(units.map(u => u.id));
+
     // Merge all player units info
     const rows = [];
-    for (const u of units) {
+    for (const u of allUnits) {
       const name = u.definition?.name || u.id;
       const dealt = battleStats.damageDealt[u.id] || 0;
       const healed = battleStats.healed[u.id] || 0;
-      if (dealt > 0 || healed > 0) rows.push({ name, dealt, healed, elem: u.definition?.element });
+      const kills = battleStats.kills[u.id] || 0;
+      const alive = aliveIds.has(u.id);
+      if (dealt > 0 || healed > 0 || kills > 0) {
+        rows.push({ name, dealt, healed, kills, elem: u.definition?.element, alive });
+      }
     }
     if (rows.length === 0) return '';
     rows.sort((a, b) => b.dealt - a.dealt);
 
-    // MVP = highest damage
-    const mvpName = rows[0]?.name || '';
+    // Determine accolades
+    const mvpRow = rows.reduce((best, r) => r.dealt > best.dealt ? r : best, rows[0]);
+    const topKiller = rows.reduce((best, r) => r.kills > best.kills ? r : best, rows[0]);
+    const topHealer = rows.reduce((best, r) => r.healed > best.healed ? r : best, rows[0]);
+
     let html = `<div class="stat-label">⚔️ Battle Performance</div>`;
-    html += `<table><tr><th>Unit</th><th>Dmg</th><th>Heal</th></tr>`;
+    html += `<table><tr><th>Unit</th><th>Dmg</th><th>Kills</th><th>Heal</th></tr>`;
     for (const r of rows) {
-      const isMvp = r.name === mvpName && r.dealt > 0;
-      html += `<tr${isMvp ? ' class="stat-mvp"' : ''}>`;
-      html += `<td>${ELEMENT_EMOJI[r.elem] || ''} ${r.name}${isMvp ? ' 🌟' : ''}</td>`;
-      html += `<td>${r.dealt}</td><td>${r.healed || '-'}</td></tr>`;
+      const badges = [];
+      if (r === mvpRow && r.dealt > 0) badges.push('🌟');
+      if (r === topKiller && r.kills > 0) badges.push('💀');
+      if (r === topHealer && r.healed > 0) badges.push('💚');
+      const badgeStr = badges.length ? ' ' + badges.join('') : '';
+      const deadClass = !r.alive ? ' stat-dead' : '';
+      const isMvp = r === mvpRow && r.dealt > 0;
+      html += `<tr class="${isMvp ? 'stat-mvp' : ''}${deadClass}">`;
+      html += `<td>${ELEMENT_EMOJI[r.elem] || ''} ${r.name}${badgeStr}${!r.alive ? ' ☠️' : ''}</td>`;
+      html += `<td>${r.dealt}</td><td>${r.kills || '-'}</td><td>${r.healed || '-'}</td></tr>`;
     }
     html += `</table>`;
+
+    // Accolade summary for final screens
+    if (isFinalScreen) {
+      const accolades = [];
+      if (mvpRow && mvpRow.dealt > 0) accolades.push(`🌟 <b>MVP:</b> ${mvpRow.name} (${mvpRow.dealt} dmg)`);
+      if (topKiller && topKiller.kills > 0) accolades.push(`💀 <b>Executioner:</b> ${topKiller.name} (${topKiller.kills} kills)`);
+      if (topHealer && topHealer.healed > 0) accolades.push(`💚 <b>Lifeline:</b> ${topHealer.name} (${topHealer.healed} healed)`);
+      if (accolades.length) {
+        html += `<div class="stat-label" style="margin-top:8px">🏅 Accolades</div>`;
+        html += `<div class="accolade-list">${accolades.join('<br>')}</div>`;
+      }
+    }
 
     if (isFinalScreen && _gameStats) {
       html += `<div class="stat-label" style="margin-top:8px">📊 Campaign Summary</div>`;
@@ -149,20 +198,194 @@ const Game = (() => {
     return html;
   }
 
+  // ── Achievement System ────────────────────────────────────────────────────
+
+  let _totalUpgradesBought = 0;  // per-run counter for big_spender
+  let _unitsLostThisRun = 0;     // per-run counter for flawless_run
+
+  function _getAchievements() {
+    try { return JSON.parse(localStorage.getItem('shape_strikers_achievements') || '{}'); }
+    catch { return {}; }
+  }
+
+  function _unlockAchievement(id) {
+    const achievements = _getAchievements();
+    if (achievements[id]) return false; // already unlocked
+    achievements[id] = Date.now();
+    localStorage.setItem('shape_strikers_achievements', JSON.stringify(achievements));
+    // Show toast notification
+    const def = ACHIEVEMENTS.find(a => a.id === id);
+    if (def) UI.showMessage(`🏅 Achievement Unlocked: ${def.icon} ${def.name}!`, 3000);
+    return true;
+  }
+
+  function _checkAchievementsOnWaveEnd(playerWon) {
+    if (!playerWon) return;
+    // Untouchable: won a wave with no player losses
+    if ((_battleStats?.playerLosses || 0) === 0) _unlockAchievement('untouchable');
+    // Speed Demon: won at 4× speed
+    if (_currentSpeedMult >= 4) _unlockAchievement('speed_demon');
+  }
+
+  function _checkAchievementsOnGameWin() {
+    if (_campaignMode === 'normal') _unlockAchievement('first_victory');
+    if (_campaignMode === 'void') _unlockAchievement('void_conqueror');
+    // Extinction: 100+ total kills
+    if (_gameStats && _gameStats.totalKills >= 100) _unlockAchievement('extinction');
+    // Flawless Run: no units lost the entire game
+    if (_unitsLostThisRun === 0) _unlockAchievement('flawless_run');
+    // Boss Slayer: check all 5 unique bosses encountered
+    _checkBossSlayer();
+  }
+
+  function _checkBossSlayer() {
+    const encountered = JSON.parse(localStorage.getItem('shape_strikers_encountered_bosses') || '[]');
+    const allBossIds = UNIT_DEFINITIONS.filter(d => d.isBoss).map(d => d.id);
+    if (allBossIds.length > 0 && allBossIds.every(id => encountered.includes(id))) {
+      _unlockAchievement('boss_slayer');
+    }
+  }
+
+  function _checkAchievementsOnPrep() {
+    // Full Army: all slots filled
+    if (state.playerUnits.length >= _maxUnits()) _unlockAchievement('full_army');
+    // Synergy Master: 3+ active synergies
+    const elemCounts = {};
+    for (const u of state.playerUnits) {
+      const e = u.definition?.element;
+      if (e) elemCounts[e] = (elemCounts[e] || 0) + 1;
+    }
+    const activeSynergies = ELEMENT_SYNERGIES.filter(s => (elemCounts[s.element] || 0) >= s.requiredCount).length;
+    if (activeSynergies >= 3) _unlockAchievement('synergy_master');
+    // Big Spender: 10+ upgrades bought
+    if (_totalUpgradesBought >= 10) _unlockAchievement('big_spender');
+  }
+
+  // ── Upgrade Stat Buffs (applied at battle start, removed after) ────────
+
+  function _applyUpgradeBuffs() {
+    const eliteLevel = state.upgradeLevels['elite_training'] || 0;
+    const deLevel = state.upgradeLevels['double_edge'] || 0;
+    if (eliteLevel === 0 && deLevel === 0) return;
+
+    const eliteBonus = 0.05 * eliteLevel;  // +5% ATK & DEF per level
+    const deAtkBonus = 0.20 * deLevel;     // +20% ATK per level
+    const deDefPenalty = 0.10 * deLevel;   // −10% DEF per level
+
+    for (const u of state.playerUnits) {
+      // Save original stats for restoration
+      u._origAttack = u.attack;
+      u._origDefense = u.defense;
+      // Elite Training: +ATK and +DEF
+      u.attack = Math.floor(u.attack * (1 + eliteBonus + deAtkBonus));
+      u.defense = Math.max(0, Math.floor(u.defense * (1 + eliteBonus - deDefPenalty)));
+    }
+  }
+
+  function _removeUpgradeBuffs() {
+    for (const u of state.playerUnits) {
+      if (u._origAttack !== undefined) { u.attack = u._origAttack; delete u._origAttack; }
+      if (u._origDefense !== undefined) { u.defense = u._origDefense; delete u._origDefense; }
+    }
+  }
+
+  // ── Challenge System ──────────────────────────────────────────────────────
+
+  function _getDailyKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function _getWeeklyKey() {
+    const d = new Date();
+    const jan1 = new Date(d.getFullYear(), 0, 1);
+    const week = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+    return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`;
+  }
+
+  function _getDailySeed() {
+    const d = new Date();
+    return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  }
+
+  function _getWeeklySeed() {
+    const d = new Date();
+    const jan1 = new Date(d.getFullYear(), 0, 1);
+    const week = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+    return d.getFullYear() * 100 + week;
+  }
+
+  function _getWeeklyModifier() {
+    // Deterministic modifier based on week seed
+    const seed = _getWeeklySeed();
+    return CHALLENGE_MODIFIERS[seed % CHALLENGE_MODIFIERS.length];
+  }
+
+  function _getChallengeData(type) {
+    const key = type === 'daily' ? 'shape_strikers_daily_challenge' : 'shape_strikers_weekly_challenge';
+    try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
+  }
+
+  function _saveChallengeResult(type, score, won) {
+    const dateKey = type === 'daily' ? _getDailyKey() : _getWeeklyKey();
+    const data = _getChallengeData(type);
+    const existing = data[dateKey] || { bestScore: 0, attempts: 0, completed: false };
+    existing.attempts++;
+    if (score > existing.bestScore) existing.bestScore = score;
+    if (won) existing.completed = true;
+    data[dateKey] = existing;
+    const key = type === 'daily' ? 'shape_strikers_daily_challenge' : 'shape_strikers_weekly_challenge';
+    localStorage.setItem(key, JSON.stringify(data));
+  }
+
+  function _applyChallengeMod_onSpawn(unit) {
+    if (!_challengeMode || !_challengeModifier) return;
+    const mod = _challengeModifier;
+    if (mod.buff === 'glass_cannon') {
+      unit.attack = Math.floor(unit.attack * 1.5);
+      unit.maxHp = Math.floor(unit.maxHp * 0.5);
+      unit.hp = Math.min(unit.hp, unit.maxHp);
+    }
+    if (mod.debuff === 'fragile') {
+      unit.maxHp = Math.floor(unit.maxHp * 0.7);
+      unit.hp = Math.min(unit.hp, unit.maxHp);
+    }
+  }
+
+  function _challengeGoldModifier() {
+    if (!_challengeMode || !_challengeModifier) return 1;
+    if (_challengeModifier.economy === 'budget') return 0.7;
+    return 1;
+  }
+
+  function _getEnemyHpMultiplier() {
+    if (_challengeMode === 'weekly' && _challengeModifier?.enemyBuff === 'titan') return 1.4;
+    return 1;
+  }
+
   // ── Generate shop based on current wave ───────────────────────────────────
 
   function _rollableUnits() {
-    // Match Phaser original + wave generator: Math.min(3, Math.ceil(wave/3))
-    // T1 at W1-3, T2 at W4-6, T3 at W7+
     const maxTier = Math.min(3, Math.ceil(state.wave / 3));
     const arcaneUnlocked = localStorage.getItem('shape_strikers_arcane_unlocked') === '1';
-    return UNIT_DEFINITIONS.filter(d => {
+    const voidUnlocked = localStorage.getItem('shape_strikers_void_unlocked') === '1';
+    const voidForPlayer = _campaignMode === 'void' && voidUnlocked;
+    let pool = UNIT_DEFINITIONS.filter(d => {
       if (d.isBoss) return false;
-      if (d.element === Element.VOID) return false;
+      if (d.element === Element.VOID && !voidForPlayer) return false;
       if (d.element === Element.ARCANE && !arcaneUnlocked) return false;
       if (d.tier > maxTier) return false;
       return true;
     });
+    // Apply challenge modifier shop filters
+    if (_challengeMode === 'weekly' && _challengeModifier) {
+      const mod = _challengeModifier;
+      if (mod.filter === 'fire') pool = pool.filter(d => d.element === Element.FIRE);
+      else if (mod.filter === 'ice') pool = pool.filter(d => d.element === Element.ICE);
+      else if (mod.filter === 'single_element' && _challengeElement) pool = pool.filter(d => d.element === _challengeElement);
+      if (mod.banRole === 'healer') pool = pool.filter(d => d.role !== 'healer');
+    }
+    return pool;
   }
 
   function refreshShop(free = false) {
@@ -175,7 +398,9 @@ const Game = (() => {
     }
     const pool = _rollableUnits();
     const maxTier = Math.min(3, Math.ceil(state.wave / 3));
-    state.shopUnits = Array.from({ length: 5 }, () => {
+    const mercLevel = state.upgradeLevels['mercenary'] || 0;
+    const shopSize = 5 + mercLevel;
+    state.shopUnits = Array.from({ length: shopSize }, () => {
       // Tier weighting matching Phaser original: T1=60%, T2=30%, T3=10%
       const weights = { 1: 60, 2: 30, 3: 10 };
       const roll = Math.random() * 100;
@@ -284,7 +509,7 @@ const Game = (() => {
   }
 
   function _mkUnit(def, row, col, isEnemy = false) {
-    return {
+    const unit = {
       id:             nextUnitId++,
       name:           def.name,
       definition:     def,
@@ -297,6 +522,15 @@ const Game = (() => {
       row,
       col,
     };
+    // Apply challenge modifier stat changes for player units
+    if (!isEnemy) _applyChallengeMod_onSpawn(unit);
+    // Apply enemy HP buff for titan_wave challenge
+    if (isEnemy && _getEnemyHpMultiplier() !== 1) {
+      const mult = _getEnemyHpMultiplier();
+      unit.maxHp = Math.floor(unit.maxHp * mult);
+      unit.hp = unit.maxHp;
+    }
+    return unit;
   }
 
   // ── Tile click handler ────────────────────────────────────────────────────
@@ -437,6 +671,9 @@ const Game = (() => {
 
   function _spawnWave(waveDef) {
     const enemies = [];
+    // Hard mode scaling for void campaign waves 16+
+    const scaling = (_campaignMode === 'void' && HARD_MODE_SCALING[state.wave]) || null;
+
     for (const spawn of waveDef.enemies) {
       const def = UNIT_MAP[spawn.unitId];
       if (!def) continue;
@@ -445,6 +682,24 @@ const Game = (() => {
         const col = Math.floor(Math.random() * GRID_CONFIG.cols);
         const row = Math.floor(Math.random() * GRID_CONFIG.battleLineRow); // rows 0..1
         const enemy = _mkUnit(def, row, col, true);
+
+        // Apply hard mode stat scaling
+        if (scaling) {
+          enemy.stats.hp      = Math.round(enemy.stats.hp * (scaling.hp || 1));
+          enemy.stats.maxHp   = Math.round(enemy.stats.maxHp * (scaling.hp || 1));
+          enemy.stats.attack  = Math.round(enemy.stats.attack * (scaling.attack || 1));
+          enemy.stats.defense = Math.round(enemy.stats.defense * (scaling.defense || 1));
+          enemy.stats.speed   = Math.round(enemy.stats.speed * (scaling.speed || 1));
+          // Also scale boss phase HP pools so they match the inflated stats
+          if (def.bossPhases) {
+            enemy.definition = Object.assign({}, def, {
+              bossPhases: def.bossPhases.map(p => ({
+                ...p,
+                phaseHp: p.phaseHp ? Math.round(p.phaseHp * (scaling.hp || 1)) : p.phaseHp,
+              })),
+            });
+          }
+        }
 
         // Avoid stacking: nudge to next available col in same row
         let placed = false;
@@ -485,13 +740,16 @@ const Game = (() => {
     if (state.phase !== 'prep') return;
     if (state.playerUnits.length === 0) { UI.showMessage('Place at least one unit before battling!'); return; }
 
-    if (state.wave > (GAME_CONFIG.waveCount || 15)) { _handleGameWin(); return; }
+    const totalWaves = _campaignMode === 'void' ? 25 : (GAME_CONFIG.waveCount || 15);
+    if (state.wave > totalWaves) { _handleGameWin(); return; }
     if (!_currentWaveDef) _currentWaveDef = WaveGenerator.generate(state.wave);
     const waveDef = _currentWaveDef;
 
     state.phase = 'battle';
     state.selectedUnit = null;
     state.selectedShopIdx = null;
+    // Check prep-phase achievements before battle
+    _checkAchievementsOnPrep();
     Grid.clearSelection();
     Grid.clearHighlights();
     UI.clearLog();
@@ -514,6 +772,8 @@ const Game = (() => {
     battle = new BattleSystem();
     if (_currentSpeedMult !== 1) battle.setSpeed(_currentSpeedMult);
     _initBattleStats();
+    // Snapshot all player units for stats (includes units that may die during battle)
+    _battleParticipants = state.playerUnits.map(u => ({ id: u.id, definition: u.definition, maxHp: u.maxHp }));
     battle.onUnitDeath   = _onUnitDeath;
     battle.onBattleEnd   = _onBattleEnd;
     battle.onLogMessage  = _onLogMsg;
@@ -522,6 +782,7 @@ const Game = (() => {
     battle.onUnitHit     = _onUnitHit;
     battle.onAbilityUsed = _onAbilityUsed;
     battle.onScreenShake = _onScreenShake;
+    battle.onCriticalHit = _onCriticalHit;
     battle.onUnitMove    = _onUnitMove;
     battle.onStatusChange = _onStatusChange;
     battle.onActionDone  = () => Grid.waitForAnimations();
@@ -533,6 +794,9 @@ const Game = (() => {
 
     // Save player unit positions to restore after battle
     _preBattlePositions = state.playerUnits.map(u => ({ id: u.id, row: u.row, col: u.col }));
+
+    // Apply upgrade stat buffs (Elite Training + Double Edge)
+    _applyUpgradeBuffs();
 
     // Boss intro cinematic
     const boss = enemies.find(e => e.definition.isBoss);
@@ -551,12 +815,20 @@ const Game = (() => {
 
   // ── Battle Callbacks ──────────────────────────────────────────────────────
 
+  function _onCriticalHit(attacker, target) {
+    if (target) {
+      VFX.screenFlash('#ffee00', 250, 0.3);
+      VFX.shockwave(target.row, target.col, '#ffee00', 'large');
+      VFX.screenShake('heavy');
+    }
+  }
+
   function _onUnitAttack(attacker, target) {
     Grid.animateAttack(attacker.row, attacker.col);
     Audio.play('attack');
-    // Ranged projectile for units with range > 1
+    // Ranged projectile with element-specific VFX trails
     if ((attacker.stats.range || 1) > 1) {
-      Grid.animateProjectile(attacker.row, attacker.col, target.row, target.col, attacker.definition.element);
+      VFX.elementProjectile(attacker.row, attacker.col, target.row, target.col, attacker.definition.element);
     }
   }
 
@@ -577,8 +849,20 @@ const Game = (() => {
     if (dmg > 0) {
       Grid.animateHit(target.row, target.col);
       Audio.play('hit');
+      // Shockwave + screen flash scaled by damage
+      const color = element ? ELEMENT_COLORS[element] : '#ffffff';
+      if (dmg >= 30) {
+        VFX.shockwave(target.row, target.col, color, 'large');
+        VFX.screenFlash(color, 250, 0.2);
+      } else if (dmg >= 15) {
+        VFX.shockwave(target.row, target.col, color, 'medium');
+        VFX.screenFlash(color, 200, 0.12);
+      } else {
+        VFX.shockwave(target.row, target.col, color, 'small');
+      }
     } else if (dmg < 0) {
-      Grid.animateHealBurst(target.row, target.col);
+      // Healing: use VFX single-target heal
+      VFX.healSingle(target.row, target.col);
     }
     Grid.updateUnitHp(target.row, target.col, target.hp, target.maxHp);
     const elemColor = element ? ELEMENT_COLORS[element] : null;
@@ -609,57 +893,99 @@ const Game = (() => {
     }
     // Floating ability name
     Grid.animateAbilityName(unit.row, unit.col, abilityName, unit.definition.element);
+    // Ability-specific VFX per element / type
+    _triggerAbilityVFX(unit, abilityName);
   }
 
-  let _shaking = false;
+  /** Dispatch ability-specific VFX based on unit id/element */
+  function _triggerAbilityVFX(unit, abilityName) {
+    const uid = unit.definition.id;
+    const elem = unit.definition.element;
+    switch (uid) {
+      // Fire abilities → burn spread
+      case 'fire_imp': case 'fire_scout': case 'fire_warrior':
+      case 'fire_demon': case 'fire_ravager':
+      case 'boss_flame_tyrant':
+        VFX.burnSpread(unit.row, unit.col);
+        break;
+      // Ice abilities → freeze burst
+      case 'ice_slime': case 'ice_archer': case 'ice_guardian':
+      case 'ice_empress':
+      case 'boss_frost_colossus':
+        VFX.freezeBurst(unit.row, unit.col);
+        break;
+      // Lightning → chain bolt VFX
+      case 'lightning_sprite': case 'lightning_knight':
+      case 'lightning_lord': case 'lightning_hunter':
+        VFX.shockwave(unit.row, unit.col, ELEMENT_COLORS.lightning, 'small');
+        break;
+      // Earth → shockwave
+      case 'earth_golem': case 'earth_archer': case 'earth_enforcer':
+        VFX.shockwave(unit.row, unit.col, ELEMENT_COLORS.earth, 'medium');
+        break;
+      // Healer abilities → AoE heal VFX
+      case 'frost_fairy': case 'arcane_priest': case 'nature_spirit':
+      case 'life_guardian':
+        VFX.healAoE(unit.row, unit.col);
+        break;
+      // Shield/barrier abilities
+      case 'arcane_pupil':
+        VFX.shieldDome(unit.row, unit.col);
+        break;
+      // Arcane abilities
+      case 'arcane_mage': case 'arcane_assassin': case 'arcane_illusionist':
+        VFX.shockwave(unit.row, unit.col, ELEMENT_COLORS.arcane, 'medium');
+        break;
+      // Void abilities
+      case 'void_shade': case 'void_knight': case 'void_blighter':
+      case 'void_horror':
+      case 'boss_void_leviathan': case 'boss_void_architect':
+      case 'boss_chaos_overlord':
+        VFX.voidRupture(unit.row, unit.col);
+        break;
+      // Poison cloud
+      case 'konji_scout': case 'konji_shaman':
+        VFX.poisonCloud(unit.row, unit.col);
+        break;
+      // Blood/vampire lifesteal
+      case 'blood_sprite': case 'blood_knight':
+        VFX.shockwave(unit.row, unit.col, '#cc2244', 'small');
+        break;
+      // Martial master → rapid shockwave
+      case 'martial_master':
+        VFX.shockwave(unit.row, unit.col, ELEMENT_COLORS.earth, 'large');
+        break;
+    }
+  }
+
   function _onScreenShake(intensity) {
-    const grid = document.getElementById('grid-container');
-    if (!grid || _shaking) return;
-    _shaking = true;
-    grid.classList.remove('anim-shake');
-    void grid.offsetWidth;
-    grid.style.setProperty('--shake-x', intensity + 'px');
-    grid.classList.add('anim-shake');
-    grid.addEventListener('animationend', () => {
-      grid.classList.remove('anim-shake');
-      grid.style.removeProperty('--shake-x');
-      _shaking = false;
-    }, { once: true });
+    // Map numeric intensity to shake type
+    const type = intensity >= 10 ? 'heavy' : intensity >= 5 ? 'medium' : 'light';
+    VFX.screenShake(type);
   }
 
-  // ── Boss Intro Cinematic ──────────────────────────────────────────────────
+  // ── Boss Intro Cinematic (enhanced via VFX module) ────────────────────────
 
   function _showBossIntro(boss, onDone) {
-    const color = ELEMENT_COLORS[boss.definition.element] || '#ff4422';
-    const overlay = document.createElement('div');
-    overlay.className = 'boss-intro-overlay';
-    overlay.style.setProperty('--boss-color', color);
-    overlay.innerHTML = `
-      <div class="boss-intro-icon">${ELEMENT_EMOJI[boss.definition.element] || '💀'}</div>
-      <div class="boss-intro-name">${boss.definition.name}</div>
-      <div class="boss-intro-sub">Boss Battle!</div>
-    `;
-    document.getElementById('grid-container').appendChild(overlay);
     Audio.play('ability');
-    _onScreenShake(10);
-
-    setTimeout(() => {
-      overlay.classList.add('boss-intro-exit');
-      overlay.addEventListener('animationend', () => {
-        overlay.remove();
-        if (onDone) onDone();
-      }, { once: true });
-      // Safety fallback
-      setTimeout(() => { if (overlay.parentNode) { overlay.remove(); if (onDone) onDone(); } }, 600);
-    }, 1400);
+    VFX.bossEntrance(boss.definition, onDone);
   }
 
-  function _onUnitDeath(unit) {
+  function _onUnitDeath(unit, killer) {
     Audio.play(unit.isEnemy ? 'enemyDeath' : 'death');
     // Track kills for stats (enemy deaths = player kills)
     if (_battleStats && unit.isEnemy) {
       _battleStats.totalEnemyKills = (_battleStats.totalEnemyKills || 0) + 1;
       if (unit.definition.isBoss) _battleStats.bossKills = (_battleStats.bossKills || 0) + 1;
+      // Per-unit kill attribution
+      if (killer && killer.id) {
+        _battleStats.kills[killer.id] = (_battleStats.kills[killer.id] || 0) + 1;
+      }
+    }
+    // Track player unit losses
+    if (_battleStats && !unit.isEnemy) {
+      _battleStats.playerLosses = (_battleStats.playerLosses || 0) + 1;
+      _unitsLostThisRun++;
     }
     // Remove from state immediately (don't wait for animation) to prevent ghost units
     if (unit.isEnemy) {
@@ -676,10 +1002,12 @@ const Game = (() => {
     state.phase = 'result';
     battle = null;
     _inspectedUnit = null;
+    // Remove temporary upgrade stat buffs
+    _removeUpgradeBuffs();
 
     if (playerWon) {
       Audio.play('waveClear');
-      const goldBase = (GAME_CONFIG.goldPerWave ?? 7) + (_currentWaveDef?.bonusGold ?? 0);
+      const goldBase = Math.floor(((GAME_CONFIG.goldPerWave ?? 7) + (_currentWaveDef?.bonusGold ?? 0)) * _challengeGoldModifier());
       const victoryBonusUpg = UPGRADES.find(u => u.id === 'victory_bonus');
       const victoryBonus = (victoryBonusUpg?.effect?.value || 2) * (state.upgradeLevels['victory_bonus'] || 0);
       // Add base gold first, then calculate interest on new total (matches Phaser)
@@ -693,12 +1021,14 @@ const Game = (() => {
       _healPlayerUnits();
 
       UI.showMessage('');
-      UI.showResult(true, state.wave, earnedGold);
+      UI.showResult(true, state.wave, earnedGold, { base: GAME_CONFIG.goldPerWave ?? 7, bonus: _currentWaveDef?.bonusGold ?? 0, victory: victoryBonus, interest });
       // Populate post-battle stats
       const rsEl = document.getElementById('result-stats');
       if (rsEl && _battleStats) rsEl.innerHTML = _buildStatsHTML(_battleStats, state.playerUnits, false);
       // Accumulate game-wide stats
       _accumulateGameStats();
+      // Check wave-end achievements
+      _checkAchievementsOnWaveEnd(true);
       UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
       _refreshHUD();
     } else {
@@ -788,7 +1118,8 @@ const Game = (() => {
   // ── Next Wave ─────────────────────────────────────────────────────────────
 
   function nextWave() {
-    if (state.wave >= (GAME_CONFIG.waveCount || 15)) { _handleGameWin(); return; }
+    const totalWaves = _campaignMode === 'void' ? 25 : (GAME_CONFIG.waveCount || 15);
+    if (state.wave >= totalWaves) { _handleGameWin(); return; }
     state.wave++;
     state.phase = 'prep';
     // Pre-generate upcoming wave for preview tooltip
@@ -800,7 +1131,8 @@ const Game = (() => {
     UI.hideResult();
     refreshShop(true);
     _refreshHUD();
-    UI.showMessage(`Wave ${state.wave} — Prepare your army!`);
+    const voidLabel = (_campaignMode === 'void' && state.wave >= 16) ? ' 🕳️' : '';
+    UI.showMessage(`Wave ${state.wave}${voidLabel} — Prepare your army!`);
     document.getElementById('btn-battle').disabled  = false;
     document.getElementById('btn-refresh').disabled = false;
     document.getElementById('btn-slots').disabled   = false;
@@ -812,6 +1144,8 @@ const Game = (() => {
     state.phase = 'gameover';
     Audio.play('gameOver');
     _accumulateGameStats();
+    // Save challenge result
+    if (_challengeMode) _saveChallengeResult(_challengeMode, state.score, false);
     UI.showGameOver(state.wave, state.score);
     const goEl = document.getElementById('gameover-stats');
     if (goEl && _battleStats) goEl.innerHTML = _buildStatsHTML(_battleStats, state.playerUnits, true);
@@ -820,15 +1154,30 @@ const Game = (() => {
     for (const e of state.enemyUnits) Grid.removeUnitFromTile(e.row, e.col);
     state.enemyUnits = [];
     _refreshHUD();
+    _showScoreSubmit('gameover');
   }
 
   function _handleGameWin() {
     state.phase = 'win';
-    localStorage.setItem('shape_strikers_void_unlocked', '1');
-    localStorage.setItem('shape_strikers_arcane_unlocked', '1');
+    if (!_challengeMode) {
+      localStorage.setItem('shape_strikers_void_unlocked', '1');
+      localStorage.setItem('shape_strikers_arcane_unlocked', '1');
+      if (_campaignMode === 'void') {
+        localStorage.setItem('shape_strikers_void_campaign_cleared', '1');
+      }
+    }
     _accumulateGameStats();
+    // Save challenge result
+    if (_challengeMode) _saveChallengeResult(_challengeMode, state.score, true);
+    // Check end-of-game achievements (not in challenge mode)
+    if (!_challengeMode) _checkAchievementsOnGameWin();
     UI.hideResult();
-    UI.showWin(state.score);
+
+    const winTitle = _campaignMode === 'void'
+      ? '🕳️ VOID CONQUERED!'
+      : '🏆 VICTORY!';
+    UI.showWin(state.score, winTitle, _campaignMode);
+
     const wEl = document.getElementById('win-stats');
     if (wEl && _battleStats) wEl.innerHTML = _buildStatsHTML(_battleStats, state.playerUnits, true);
 
@@ -836,6 +1185,7 @@ const Game = (() => {
     for (const e of state.enemyUnits) Grid.removeUnitFromTile(e.row, e.col);
     state.enemyUnits = [];
     _refreshHUD();
+    _showScoreSubmit('win');
   }
 
   // ── Upgrades ─────────────────────────────────────────────────────────────
@@ -849,6 +1199,7 @@ const Game = (() => {
     if (state.gold < cost)  { UI.showMessage('Not enough gold!'); return; }
     state.gold -= cost;
     state.upgradeLevels[id] = level + 1;
+    _totalUpgradesBought++;
 
     // Immediate effects (match Phaser original)
     if (id === 'refresh_master') state.refreshesLeft += (upg.effect.value || 1);
@@ -890,19 +1241,63 @@ const Game = (() => {
 
   // ── Public startGame ──────────────────────────────────────────────────────
 
-  function startGame() {
+  function startChallenge(type) {
+    _challengeMode = type; // 'daily' | 'weekly'
+    if (type === 'daily') {
+      _challengeSeed = _getDailySeed();
+      _challengeModifier = null;
+      _challengeElement = null;
+    } else {
+      _challengeSeed = _getWeeklySeed();
+      _challengeModifier = _getWeeklyModifier();
+      // For 'purity' (single_element), pick a deterministic element from the seed
+      if (_challengeModifier.filter === 'single_element') {
+        const elements = [Element.FIRE, Element.ICE, Element.LIGHTNING, Element.EARTH];
+        _challengeElement = elements[_challengeSeed % elements.length];
+      } else {
+        _challengeElement = null;
+      }
+    }
+    startGame('normal');
+  }
+
+  function startGame(campaignMode) {
     // Remove splash if still visible
     const splashEl = document.getElementById('splash-overlay');
     if (splashEl) splashEl.remove();
     Audio.stopMusic();
+
+    // Set campaign mode (default to normal)
+    _campaignMode = (campaignMode === 'void') ? 'void' : 'normal';
+    // Reset challenge state if this is a direct startGame call (not from startChallenge)
+    if (!_challengeMode) {
+      _challengeModifier = null;
+      _challengeElement = null;
+      _challengeSeed = 0;
+    }
+
     state = _freshState();
     _initGameStats();
+    _totalUpgradesBought = 0;
+    _unitsLostThisRun = 0;
     battle = null;
     nextUnitId = 1;
     _currentWaveDef = null;
 
-    // Seed wave generator for this run (unique per game)
-    WaveGenerator.setSeed(Date.now());
+    // Seed wave generator — deterministic for challenges, unique otherwise
+    if (_challengeMode) {
+      WaveGenerator.setSeed(_challengeSeed);
+      // Apply budget modifier starting gold
+      if (_challengeModifier?.economy === 'budget') state.gold = 5;
+    } else {
+      WaveGenerator.setSeed(Date.now());
+    }
+
+    // Apply void campaign visual theme
+    const gridArea = document.getElementById('grid-area');
+    if (gridArea) {
+      gridArea.classList.toggle('void-campaign', _campaignMode === 'void');
+    }
 
     UI.showScreen('screen-game');
     UI.hideAllOverlays();
@@ -949,7 +1344,13 @@ const Game = (() => {
     UI.updateSynergies([]);
     UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
     _refreshHUD();
-    UI.showMessage('Welcome to Shape Strikers! Buy units from the shop, place them, then press Fight!');
+    if (_challengeMode === 'daily') {
+      UI.showMessage(`📅 Daily Challenge — ${_getDailyKey()} — Same waves for everyone today!`);
+    } else if (_challengeMode === 'weekly') {
+      UI.showMessage(`📆 Weekly Challenge: ${_challengeModifier.icon} ${_challengeModifier.name} — ${_challengeModifier.description}`);
+    } else {
+      UI.showMessage('Welcome to Shape Strikers! Buy units from the shop, place them, then press Fight!');
+    }
 
     document.getElementById('btn-battle').disabled = false;
     document.getElementById('btn-refresh').disabled = false;
@@ -974,14 +1375,256 @@ const Game = (() => {
     if (battle) battle.stop();
     battle = null;
     Grid.clearAll();
-    startGame();
+    if (_challengeMode) {
+      // Re-run the same challenge type (re-seeds deterministically)
+      const type = _challengeMode;
+      _challengeMode = null; // reset so startChallenge can set it fresh
+      startChallenge(type);
+    } else {
+      startGame(_campaignMode);
+    }
+  }
+
+  // ── Achievements Overlay ────────────────────────────────────────────────
+
+  function _showAchievements() {
+    const overlay = document.getElementById('overlay-achievements');
+    const grid = document.getElementById('achievements-grid');
+    const progress = document.getElementById('achievements-progress');
+    if (!overlay || !grid) return;
+
+    const unlocked = _getAchievements();
+    let unlockedCount = 0;
+
+    grid.innerHTML = ACHIEVEMENTS.map(a => {
+      const isUnlocked = !!unlocked[a.id];
+      if (isUnlocked) unlockedCount++;
+      const dateStr = isUnlocked
+        ? `<div class="achievement-date">Unlocked ${new Date(unlocked[a.id]).toLocaleDateString()}</div>`
+        : '';
+      return `
+        <div class="achievement-card ${isUnlocked ? 'unlocked' : 'locked'}">
+          <div class="achievement-icon">${a.icon}</div>
+          <div class="achievement-info">
+            <div class="achievement-name">${a.name}</div>
+            <div class="achievement-desc">${a.description}</div>
+            ${dateStr}
+          </div>
+        </div>`;
+    }).join('');
+
+    if (progress) {
+      progress.textContent = `${unlockedCount} / ${ACHIEVEMENTS.length} achievements unlocked`;
+    }
+    overlay.classList.remove('hidden');
+  }
+
+  // ── Challenges Overlay ────────────────────────────────────────────────────
+
+  function _showChallenges() {
+    const overlay = document.getElementById('overlay-challenges');
+    if (!overlay) return;
+
+    const dailyKey = _getDailyKey();
+    const weeklyKey = _getWeeklyKey();
+    const dailyData = _getChallengeData('daily')[dailyKey] || null;
+    const weeklyData = _getChallengeData('weekly')[weeklyKey] || null;
+    const weeklyMod = _getWeeklyModifier();
+
+    // Determine the element name for purity modifier
+    let purityElement = '';
+    if (weeklyMod.filter === 'single_element') {
+      const elements = [Element.FIRE, Element.ICE, Element.LIGHTNING, Element.EARTH];
+      const elem = elements[_getWeeklySeed() % elements.length];
+      const ELEM_NAMES = { fire: 'Fire 🔥', ice: 'Ice ❄️', lightning: 'Lightning ⚡', earth: 'Earth 🌿' };
+      purityElement = ` (${ELEM_NAMES[elem] || elem})`;
+    }
+
+    const grid = overlay.querySelector('#challenges-grid');
+    if (grid) {
+      grid.innerHTML = `
+        <div class="challenge-card daily">
+          <div class="challenge-header">
+            <span class="challenge-icon">📅</span>
+            <span class="challenge-title">Daily Challenge</span>
+          </div>
+          <div class="challenge-desc">Same 15 waves for every player today.<br>Seed: ${dailyKey}</div>
+          <div class="challenge-stats">
+            ${dailyData ? `Best: ${dailyData.bestScore} pts · ${dailyData.attempts} attempt${dailyData.attempts !== 1 ? 's' : ''}${dailyData.completed ? ' · ✅ Completed' : ''}` : 'Not attempted yet today'}
+          </div>
+          <button class="btn btn-fire btn-sm" id="btn-play-daily">▶ Play Daily</button>
+        </div>
+        <div class="challenge-card weekly">
+          <div class="challenge-header">
+            <span class="challenge-icon">📆</span>
+            <span class="challenge-title">Weekly Challenge</span>
+          </div>
+          <div class="challenge-desc">
+            Modifier: <b>${weeklyMod.icon} ${weeklyMod.name}</b>${purityElement}<br>
+            ${weeklyMod.description}<br>Week: ${weeklyKey}
+          </div>
+          <div class="challenge-stats">
+            ${weeklyData ? `Best: ${weeklyData.bestScore} pts · ${weeklyData.attempts} attempt${weeklyData.attempts !== 1 ? 's' : ''}${weeklyData.completed ? ' · ✅ Completed' : ''}` : 'Not attempted yet this week'}
+          </div>
+          <button class="btn btn-fire btn-sm" id="btn-play-weekly">▶ Play Weekly</button>
+        </div>
+      `;
+
+      // Wire play buttons
+      grid.querySelector('#btn-play-daily')?.addEventListener('click', () => {
+        overlay.classList.add('hidden');
+        startChallenge('daily');
+      });
+      grid.querySelector('#btn-play-weekly')?.addEventListener('click', () => {
+        overlay.classList.add('hidden');
+        startChallenge('weekly');
+      });
+    }
+
+    overlay.classList.remove('hidden');
+  }
+
+  // ── Leaderboard ───────────────────────────────────────────────────────────
+
+  function _showLeaderboard() {
+    const overlay = document.getElementById('overlay-leaderboard');
+    if (!overlay) return;
+    overlay.classList.remove('hidden');
+    // Reset to global tab
+    document.querySelectorAll('.lb-tab').forEach(b => b.classList.remove('active'));
+    document.querySelector('.lb-tab[data-tab="global"]')?.classList.add('active');
+    _loadLeaderboardTab('global');
+  }
+
+  async function _loadLeaderboardTab(tab) {
+    const el = document.getElementById('leaderboard-content');
+    if (!el) return;
+    el.innerHTML = '<p class="leaderboard-loading">Loading…</p>';
+
+    if (!Backend.isReady()) {
+      el.innerHTML = '<p class="leaderboard-empty">Leaderboards not available — backend not configured.</p>';
+      return;
+    }
+
+    let result;
+    if (tab === 'global') {
+      result = await Backend.fetchGlobal();
+    } else if (tab === 'daily') {
+      result = await Backend.fetchChallenge('daily', _getDailyKey());
+    } else if (tab === 'weekly') {
+      result = await Backend.fetchChallenge('weekly', _getWeeklyKey());
+    } else if (tab === 'personal') {
+      result = await Backend.fetchPersonal();
+    }
+
+    if (!result?.ok || !result.rows) {
+      el.innerHTML = `<p class="leaderboard-empty">${result?.error || 'Failed to load.'}</p>`;
+      return;
+    }
+    if (result.rows.length === 0) {
+      el.innerHTML = '<p class="leaderboard-empty">No scores yet. Be the first!</p>';
+      return;
+    }
+    el.innerHTML = _buildLeaderboardTable(result.rows, tab === 'personal');
+  }
+
+  function _buildLeaderboardTable(rows, isPersonal) {
+    const header = isPersonal
+      ? '<tr><th>#</th><th>Score</th><th>Wave</th><th>Mode</th><th>Won</th></tr>'
+      : '<tr><th>#</th><th>Name</th><th>Score</th><th>Wave</th><th>Won</th></tr>';
+    const body = rows.map((r, i) => {
+      const rank = i + 1;
+      const cls = rank <= 3 ? ` lb-rank-${rank}` : '';
+      if (isPersonal) {
+        const mode = r.challenge_type || r.campaign_mode || 'normal';
+        return `<tr><td class="lb-rank${cls}">${rank}</td><td class="lb-score">${r.score}</td><td class="lb-wave">W${r.wave_reached}</td><td>${mode}</td><td class="lb-won">${r.won ? '✅' : '❌'}</td></tr>`;
+      }
+      return `<tr><td class="lb-rank${cls}">${rank}</td><td class="lb-name">${_escapeHTML(r.player_name)}</td><td class="lb-score">${r.score}</td><td class="lb-wave">W${r.wave_reached}</td><td class="lb-won">${r.won ? '✅' : '❌'}</td></tr>`;
+    }).join('');
+    return `<table class="leaderboard-table"><thead>${header}</thead><tbody>${body}</tbody></table>`;
+  }
+
+  function _escapeHTML(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ── Score Submission (from game-over/win overlays) ─────────────────────────
+
+  function _showScoreSubmit(prefix) {
+    if (!Backend.isReady()) return;
+    const area = document.getElementById(`${prefix}-submit`);
+    if (!area) return;
+    area.classList.remove('hidden');
+    const nameInput = document.getElementById(`${prefix}-name`);
+    const savedName = Backend.getPlayerName();
+    if (nameInput && savedName) nameInput.value = savedName;
+    // Reset status
+    const status = document.getElementById(`${prefix}-submit-status`);
+    if (status) { status.textContent = ''; status.className = 'submit-status'; }
+  }
+
+  async function _submitScoreFromOverlay(prefix) {
+    const nameInput = document.getElementById(`${prefix}-name`);
+    const status = document.getElementById(`${prefix}-submit-status`);
+    const btn = document.getElementById(`btn-${prefix}-submit`);
+    if (!nameInput || !status) return;
+
+    const name = nameInput.value.trim();
+    if (!name) { status.textContent = 'Enter a name!'; status.className = 'submit-status error'; return; }
+    if (!Backend.setPlayerName(name)) { status.textContent = 'Invalid name'; status.className = 'submit-status error'; return; }
+
+    if (btn) btn.disabled = true;
+    status.textContent = 'Submitting…'; status.className = 'submit-status';
+
+    const result = await Backend.submitScore({
+      score: state.score,
+      waveReached: state.wave,
+      campaignMode: _campaignMode,
+      challengeType: _challengeMode || null,
+      challengeKey: _challengeMode === 'daily' ? _getDailyKey() : _challengeMode === 'weekly' ? _getWeeklyKey() : null,
+      unitsUsed: state.playerUnits.length,
+      won: state.phase === 'win',
+    });
+
+    if (result.ok) {
+      status.textContent = '✅ Score submitted!'; status.className = 'submit-status success';
+      if (btn) btn.disabled = true; // keep disabled after success
+    } else {
+      status.textContent = result.error || 'Failed'; status.className = 'submit-status error';
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // ── Patch Notes ───────────────────────────────────────────────────────────
+
+  function _showPatchNotes() {
+    const overlay = document.getElementById('overlay-patch-notes');
+    const el = document.getElementById('patch-notes-content');
+    if (!overlay || !el) return;
+
+    el.innerHTML = (typeof PATCH_NOTES !== 'undefined' ? PATCH_NOTES : []).map(p => `
+      <div class="patch-entry">
+        <div class="patch-header">
+          <span class="patch-version">v${_escapeHTML(p.version)}</span>
+          <span class="patch-title">${_escapeHTML(p.title)}</span>
+          <span class="patch-date">${_escapeHTML(p.date)}</span>
+        </div>
+        <ul class="patch-notes-list">
+          ${p.notes.map(n => `<li>${_escapeHTML(n)}</li>`).join('')}
+        </ul>
+      </div>`).join('');
+
+    overlay.classList.remove('hidden');
   }
 
   // ── Wire up static DOM buttons after DOM load ─────────────────────────────
 
   function _wireDOMButtons() {
     // Title screen
-    document.getElementById('btn-start')?.addEventListener('click', startGame);
+    document.getElementById('btn-start')?.addEventListener('click', () => { _challengeMode = null; startGame('normal'); });
+    document.getElementById('btn-start-void')?.addEventListener('click', () => { _challengeMode = null; startGame('void'); });
     document.getElementById('btn-tutorial')?.addEventListener('click', () => {
       UI.showMessage('Place units in the bottom rows, then press Fight! Same-element units grant bonuses.', 0);
     });
@@ -1033,6 +1676,41 @@ const Game = (() => {
       document.getElementById('overlay-help')?.classList.add('hidden');
     });
 
+    // Achievements overlay
+    document.getElementById('btn-achievements')?.addEventListener('click', () => _showAchievements());
+    document.getElementById('btn-achievements-close')?.addEventListener('click', () => {
+      document.getElementById('overlay-achievements')?.classList.add('hidden');
+    });
+
+    // Challenges overlay
+    document.getElementById('btn-challenges')?.addEventListener('click', () => _showChallenges());
+    document.getElementById('btn-challenges-close')?.addEventListener('click', () => {
+      document.getElementById('overlay-challenges')?.classList.add('hidden');
+    });
+
+    // Leaderboard overlay
+    document.getElementById('btn-leaderboard')?.addEventListener('click', () => _showLeaderboard());
+    document.getElementById('btn-leaderboard-close')?.addEventListener('click', () => {
+      document.getElementById('overlay-leaderboard')?.classList.add('hidden');
+    });
+    document.querySelectorAll('.lb-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.lb-tab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        _loadLeaderboardTab(btn.dataset.tab);
+      });
+    });
+
+    // Score submit buttons (game over + win)
+    document.getElementById('btn-gameover-submit')?.addEventListener('click', () => _submitScoreFromOverlay('gameover'));
+    document.getElementById('btn-win-submit')?.addEventListener('click', () => _submitScoreFromOverlay('win'));
+
+    // Patch notes overlay
+    document.getElementById('btn-patch-notes')?.addEventListener('click', () => _showPatchNotes());
+    document.getElementById('btn-patch-notes-close')?.addEventListener('click', () => {
+      document.getElementById('overlay-patch-notes')?.classList.add('hidden');
+    });
+
     // In-game controls
     document.getElementById('btn-battle')?.addEventListener('click', startBattle);
     document.getElementById('btn-refresh')?.addEventListener('click', () => refreshShop(false));
@@ -1040,6 +1718,9 @@ const Game = (() => {
     document.getElementById('btn-slots')?.addEventListener('click', _openSlots);
     document.getElementById('btn-quit')?.addEventListener('click', () => {
       if (battle) battle.stop();
+      _challengeMode = null;
+      _challengeModifier = null;
+      _challengeElement = null;
       UI.showScreen('screen-title');
       Audio.playMusic('ss_title_music_full.mp3');
       _updateTitleUnlocks();
@@ -1084,7 +1765,36 @@ const Game = (() => {
     if (localStorage.getItem('shape_strikers_arcane_unlocked') === '1') {
       badges.push('<span class="unlock-badge">✨ Arcane Unlocked</span>');
     }
+    if (localStorage.getItem('shape_strikers_void_campaign_cleared') === '1') {
+      badges.push('<span class="unlock-badge void">🕳️ Void Conqueror</span>');
+    }
     el.innerHTML = badges.length ? badges.join('') : '<span style="font-size:11px;color:var(--text-dim)">Complete the game to unlock factions!</span>';
+
+    // Achievement progress summary on title screen
+    const achievements = _getAchievements();
+    const unlockedCount = Object.keys(achievements).length;
+    if (unlockedCount > 0) {
+      el.innerHTML += `<br><span class="unlock-badge" style="cursor:pointer" onclick="Game.showAchievements()">🏅 ${unlockedCount}/${ACHIEVEMENTS.length} Achievements</span>`;
+    }
+
+    // Challenge status on title screen
+    const dailyKey = _getDailyKey();
+    const dailyData = _getChallengeData('daily')[dailyKey];
+    const weeklyKey = _getWeeklyKey();
+    const weeklyData = _getChallengeData('weekly')[weeklyKey];
+    if (dailyData?.completed || weeklyData?.completed) {
+      let cBadges = '';
+      if (dailyData?.completed) cBadges += '<span class="unlock-badge">📅 Daily ✅</span> ';
+      if (weeklyData?.completed) cBadges += '<span class="unlock-badge">📆 Weekly ✅</span>';
+      el.innerHTML += `<br>${cBadges}`;
+    }
+
+    // Show/hide Void Campaign button
+    const voidBtn = document.getElementById('btn-start-void');
+    if (voidBtn) {
+      const unlocked = localStorage.getItem('shape_strikers_void_unlocked') === '1';
+      voidBtn.classList.toggle('hidden', !unlocked);
+    }
   }
 
   // ── Tutorial System ───────────────────────────────────────────────────────
@@ -1096,7 +1806,7 @@ const Game = (() => {
     { text: '🔥 <b>Element synergies!</b> Place 2+ units of the same element (Fire, Ice, etc.) to activate bonus stats for those units.', highlight: '#synergy-list', position: 'left' },
     { text: '⬆️ Check the <b>Stats tab</b> for upgrades — Army Expansion adds slots, Field Medic heals between waves, and more.', highlight: '#upgrade-list', position: 'left' },
     { text: '⚔️ When ready, press <b>Fight!</b> — units auto-battle, moving toward enemies and using abilities. Faster units act first.', highlight: '#btn-battle', position: 'top' },
-    { text: '🏆 Defeat 15 waves to win! <b>Enemy units</b> have a red skull badge 💀 — look for it on the grid. Good luck!', highlight: '#top-bar', position: 'bottom' },
+    { get text() { return `🏆 Defeat ${_campaignMode === 'void' ? 25 : 15} waves to win! <b>Enemy units</b> have a red skull badge 💀 — look for it on the grid. Good luck!`; }, highlight: '#top-bar', position: 'bottom' },
   ];
 
   let tutorialStep = -1;
@@ -1202,6 +1912,7 @@ const Game = (() => {
   function init() {
     preloadSprites(); // fire-and-forget — sprites ready before user enters game
     Audio.init();
+    Backend.init(); // fire-and-forget — leaderboards degrade gracefully
     _wireDOMButtons();
     _updateTitleUnlocks();
 
@@ -1232,6 +1943,7 @@ const Game = (() => {
   return {
     init,
     startGame,
+    startChallenge,
     restart,
     refreshShop,
     startBattle,
@@ -1239,6 +1951,10 @@ const Game = (() => {
     buyUpgrade,
     setSpeed,
     getRefreshCost,
+    showAchievements: _showAchievements,
+    showChallenges: _showChallenges,
+    showLeaderboard: _showLeaderboard,
+    showPatchNotes: _showPatchNotes,
     get state() { return state; },
   };
 })();

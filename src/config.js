@@ -26,208 +26,266 @@ const ELEMENT_COLORS = {
 // ─── Element Synergies ────────────────────────────────────────────────────────
 const ELEMENT_SYNERGIES = [
   { element: 'fire',      requiredCount: 2, bonus: { stat: 'attack',  multiplier: 1.15 }, description: '2🔥: +15% ATK' },
-  { element: 'fire',      requiredCount: 3, bonus: { stat: 'attack',  multiplier: 1.30 }, description: '3🔥: +30% ATK' },
-  { element: 'ice',       requiredCount: 2, bonus: { stat: 'defense', multiplier: 1.15 }, description: '2🧊: +15% DEF' },
-  { element: 'ice',       requiredCount: 3, bonus: { stat: 'defense', multiplier: 1.30 }, description: '3🧊: +30% DEF' },
+  { element: 'fire',      requiredCount: 3, bonus: { stat: 'attack',  multiplier: 1.30 }, description: '3🔥: +25% ATK' },
+  { element: 'ice',       requiredCount: 2, bonus: { stat: 'defense', multiplier: 1.15 }, description: '2🧊: +10% DEF' },
+  { element: 'ice',       requiredCount: 3, bonus: { stat: 'defense', multiplier: 1.30 }, description: '3🧊: +25% DEF' },
   { element: 'lightning', requiredCount: 2, bonus: { stat: 'speed',   multiplier: 1.20 }, description: '2⚡: +20% SPD' },
   { element: 'lightning', requiredCount: 3, bonus: { stat: 'speed',   multiplier: 1.40 }, description: '3⚡: +40% SPD' },
   { element: 'earth',     requiredCount: 2, bonus: { stat: 'hp',      multiplier: 1.20 }, description: '2🌍: +20% HP' },
-  { element: 'earth',     requiredCount: 3, bonus: { stat: 'hp',      multiplier: 1.40 }, description: '3🌍: +40% HP' },
-  { element: 'arcane',    requiredCount: 2, bonus: { stat: 'attack',  multiplier: 1.10 }, description: '2✨: +10% ATK' },
-  { element: 'arcane',    requiredCount: 3, bonus: { stat: 'speed',   multiplier: 1.25 }, description: '3✨: +25% SPD' },
-  { element: 'void',      requiredCount: 2, bonus: { stat: 'attack',  multiplier: 1.25 }, description: '2🕳️: +25% ATK' },
-  { element: 'void',      requiredCount: 3, bonus: { stat: 'hp',      multiplier: 1.20 }, description: '3🕳️: +20% HP' },
+  { element: 'earth',     requiredCount: 3, bonus: { stat: 'hp',      multiplier: 1.40 }, description: '3🌍: +35% HP' },
+  { element: 'arcane',    requiredCount: 2, bonus: { stat: 'attack',  multiplier: 1.10 }, description: '2✨: +15% ATK' },
+  { element: 'arcane',    requiredCount: 3, bonus: { stat: 'speed',   multiplier: 1.25 }, description: '3✨: +30% SPD' },
+  { element: 'void',      requiredCount: 2, bonus: { stat: 'attack',  multiplier: 1.25 }, description: '2🕳️: +30% ATK' },
+  { element: 'void',      requiredCount: 3, bonus: { stat: 'hp',      multiplier: 1.20 }, description: '3🕳️: +40% HP' },
 ];
 
 // ─── Upgrades ─────────────────────────────────────────────────────────────────
 const UPGRADES = [
   { id: 'army_expansion', name: '🏰 Army Expansion', description: '+1 max unit slot',          cost: 8, maxLevel: 5, effect: { type: 'maxUnits',         value: 1    } },
   { id: 'field_medic',    name: '💚 Field Medic',    description: '+15% post-battle healing',  cost: 5, maxLevel: 3, effect: { type: 'healingRate',       value: 0.15 } },
-  { id: 'bargain_hunter', name: 'Hovs Handouts',     description: '-1 shop refresh cost',      cost: 4, maxLevel: 2, effect: { type: 'shopRefresh',       value: -1   } },
-  { id: 'war_chest',      name: '📈 War Chest',      description: '+10% interest on gold',     cost: 6, maxLevel: 3, effect: { type: 'interestRate',      value: 0.1  } },
+  { id: 'bargain_hunter', name: 'Hovs Handouts',     description: '-1 shop refresh cost(Stackable)',      cost: 4, maxLevel: 2, effect: { type: 'shopRefresh',       value: -1   } },
+  { id: 'war_chest',      name: '📈 War Chest',      description: '+10% interest on gold(Stackable)',     cost: 6, maxLevel: 3, effect: { type: 'interestRate',      value: 0.1  } },
   { id: 'victory_bonus',  name: '🏆 Victory Bonus',  description: '+2 gold per wave won',      cost: 5, maxLevel: 3, effect: { type: 'goldPerWave',       value: 2    } },
-  { id: 'refresh_master', name: '🔄 Refresh Master', description: '+1 refresh per round',      cost: 6, maxLevel: 2, effect: { type: 'refreshesPerRound', value: 1    } },
+  { id: 'refresh_master', name: '🔄 Refresh Master', description: '+1 refresh per round(Max 3)',      cost: 6, maxLevel: 2, effect: { type: 'refreshesPerRound', value: 1    } },
+  { id: 'scouts_intel',   name: '🔭 Scout\'s Intel', description: 'See enemy details in wave preview', cost: 4, maxLevel: 2, effect: { type: 'scoutLevel',        value: 1    } },
+  { id: 'elite_training', name: '⬆️ Elite Training', description: '+5% ATK & DEF to all units',       cost: 7, maxLevel: 3, effect: { type: 'statBonus',         value: 0.05 } },
+  { id: 'mercenary',      name: '📜 Mercenary',      description: '+1 shop card per refresh',          cost: 6, maxLevel: 2, effect: { type: 'shopCards',          value: 1    } },
+  { id: 'double_edge',    name: '⚔️ Double Edge',    description: '+20% ATK, −10% DEF all units',     cost: 5, maxLevel: 1, effect: { type: 'doubleEdge',        value: 1    } },
+];
+
+// ─── Achievements ─────────────────────────────────────────────────────────────
+const ACHIEVEMENTS = [
+  { id: 'first_victory',    name: 'First Victory',    icon: '🏆', description: 'Win the Normal Campaign' },
+  { id: 'void_conqueror',   name: 'Void Conqueror',   icon: '🕳️', description: 'Win the Void Campaign' },
+  { id: 'boss_slayer',      name: 'Boss Slayer',      icon: '👑', description: 'Defeat all 5 bosses across runs' },
+  { id: 'full_army',        name: 'Full Army',        icon: '🏰', description: 'Fill all unit slots on the board' },
+  { id: 'synergy_master',   name: 'Synergy Master',   icon: '🔗', description: 'Activate 3+ element synergies at once' },
+  { id: 'untouchable',      name: 'Untouchable',      icon: '🛡️', description: 'Win a wave without losing any unit' },
+  { id: 'speed_demon',      name: 'Speed Demon',      icon: '⚡', description: 'Win a battle on 4× speed' },
+  { id: 'big_spender',      name: '💰 Big Spender',   icon: '💰', description: 'Buy 10+ upgrades in a single run' },
+  { id: 'extinction',       name: 'Extinction',        icon: '💀', description: 'Kill 100+ enemies in a single run' },
+  { id: 'flawless_run',     name: 'Flawless Run',     icon: '✨', description: 'Win the game without losing any unit' },
+];
+
+// ─── Challenge Modifiers (for Weekly Challenges) ──────────────────────────────
+const CHALLENGE_MODIFIERS = [
+  { id: 'inferno',        name: 'Inferno',        icon: '🔥', description: 'Only Fire units in the shop',        filter: 'fire' },
+  { id: 'frozen_front',   name: 'Frozen Front',   icon: '❄️', description: 'Only Ice units in the shop',         filter: 'ice' },
+  { id: 'no_mercy',       name: 'No Mercy',       icon: '💀', description: 'Healer units are banned from shop',  banRole: 'healer' },
+  { id: 'glass_cannon',   name: 'Glass Cannon',   icon: '💥', description: '+50% ATK but −50% HP for all units', buff: 'glass_cannon' },
+  { id: 'budget_run',     name: 'Penny Pincher',  icon: '🪙', description: 'Start with 5 gold, −30% gold income', economy: 'budget' },
+  { id: 'fragile',        name: 'Fragile',        icon: '💔', description: 'All player units have −30% HP',       debuff: 'fragile' },
+  { id: 'purity',         name: 'Purity',         icon: '✨', description: 'Only one random element available',   filter: 'single_element' },
+  { id: 'titan_wave',     name: 'Titan Wave',     icon: '🗿', description: 'Enemies have +40% HP',               enemyBuff: 'titan' },
 ];
 
 // ─── Unit Definitions ─────────────────────────────────────────────────────────
 const UNIT_DEFINITIONS = [
   // ── TIER 1 ──────────────────────────────────────────────────────────────────
   {
-    id: 'fire_imp', name: 'Fire Imp', element: 'fire', cost: 1, tier: 1, role: 'skirmisher',
+    id: 'fire_imp', name: 'Flame Child Yun', element: 'fire', cost: 2, tier: 1, role: 'skirmisher',
     visual: { color: 'red', shape: 'circle' },
     stats: { hp: 80, maxHp: 80, attack: 15, defense: 5, speed: 8, range: 1 },
-    ability: { name: 'Ember Strike', description: 'Deals fire damage and applies burn', cooldown: 2 },
+    ability: { name: 'Ember', description: 'Deals fire damage and applies burn', cooldown: 2 },
   },
   {
-    id: 'ice_slime', name: 'Ice Slime', element: 'ice', cost: 1, tier: 1, role: 'tank',
+    id: 'ice_slime', name: 'Frost Slime Yon', element: 'ice', cost: 2, tier: 1, role: 'tank',
     visual: { color: 'blue', shape: 'circle' },
     stats: { hp: 100, maxHp: 100, attack: 10, defense: 8, speed: 4, range: 1 },
-    ability: { name: 'Frost Coat', description: 'Slows nearby enemies', cooldown: 3 },
+    ability: { name: 'Frost Blast', description: 'Slows nearby enemies', cooldown: 3 },
   },
   {
-    id: 'earth_golem', name: 'Earth Golem', element: 'earth', cost: 2, tier: 1, role: 'tank',
+    id: 'earth_golem', name: 'Shape Golem Bofu', element: 'earth', cost: 2, tier: 1, role: 'tank',
     visual: { color: 'green', shape: 'square' },
     stats: { hp: 150, maxHp: 150, attack: 12, defense: 15, speed: 2, range: 1 },
     ability: { name: 'Stone Skin', description: 'Grants shield (bonus defense for 2 turns)', cooldown: 4 },
   },
   {
-    id: 'lightning_sprite', name: 'Lightning Sprite', element: 'lightning', cost: 2, tier: 1, role: 'sniper',
+    id: 'lightning_sprite', name: 'Thundorian Child', element: 'lightning', cost: 2, tier: 1, role: 'sniper',
     visual: { color: 'yellow', shape: 'circle' },
     stats: { hp: 60, maxHp: 60, attack: 18, defense: 3, speed: 12, range: 2 },
     ability: { name: 'Chain Lightning', description: 'Bounces to 2 additional targets', cooldown: 3 },
   },
   {
-    id: 'earth_archer', name: 'Earth Archer', element: 'earth', cost: 2, tier: 1, role: 'sniper',
+    id: 'earth_archer', name: 'Scout Trooper Pebbles', element: 'earth', cost: 2, tier: 1, role: 'sniper',
     visual: { color: 'green', shape: 'rhombus' },
     stats: { hp: 90, maxHp: 90, attack: 14, defense: 10, speed: 5, range: 2 },
-    ability: { name: 'Boulder Toss', description: 'Stuns target for 1 turn', cooldown: 3 },
+    ability: { name: 'Boulder Shot', description: 'Stuns target for 1 turn', cooldown: 3 },
   },
   {
-    id: 'fire_scout', name: 'Fire Scout', element: 'fire', cost: 1, tier: 1, role: 'skirmisher',
+    id: 'fire_scout', name: 'Flame Child Yunni', element: 'fire', cost: 2, tier: 1, role: 'skirmisher',
     visual: { color: 'red', shape: 'rhombus' },
     stats: { hp: 65, maxHp: 65, attack: 12, defense: 4, speed: 10, range: 2 },
-    ability: { name: 'Fire Bolt', description: 'Quick ranged attack with minor burn', cooldown: 2 },
+    ability: { name: 'Fire Blast', description: 'Quick ranged attack with minor burn', cooldown: 2 },
   },
   {
-    id: 'frost_fairy', name: 'Frost Fairy', element: 'ice', cost: 2, tier: 1, role: 'healer',
+    id: 'frost_fairy', name: 'Frost Fairy Yoko', element: 'ice', cost: 2, tier: 1, role: 'healer',
     visual: { color: 'blue', shape: 'square' },
     stats: { hp: 70, maxHp: 70, attack: 8, defense: 6, speed: 7, range: 2 },
-    ability: { name: 'Healing Frost', description: 'Heals lowest HP ally for 25 HP', cooldown: 2, healAmount: 25 },
+    ability: { name: 'Frost Blessing', description: 'Heals lowest HP ally for 25 HP', cooldown: 2, healAmount: 25 },
   },
   {
-    id: 'blood_sprite', name: 'Blood Sprite', element: 'fire', cost: 2, tier: 1, role: 'skirmisher',
+    id: 'blood_sprite', name: 'Vamp Kid Yoi', element: 'fire', cost: 2, tier: 1, role: 'skirmisher', trait: 'vampire',
     visual: { color: 'pink', shape: 'circle' },
     stats: { hp: 75, maxHp: 75, attack: 14, defense: 5, speed: 7, range: 1 },
-    ability: { name: 'Drain Touch', description: 'Drains enemy HP, healing self for 40% of damage', cooldown: 2 },
+    ability: { name: 'Drain Bite', description: 'Drains enemy HP, healing self for 40% of damage', cooldown: 2 },
   },
   {
-    id: 'konji_scout', name: 'Konji Scout', element: 'earth', cost: 2, tier: 1, role: 'sniper',
+    id: 'konji_scout', name: 'Plague Son Yav', element: 'earth', cost: 2, tier: 1, role: 'sniper',
     visual: { color: 'yellow', shape: 'square' },
     stats: { hp: 70, maxHp: 70, attack: 12, defense: 6, speed: 8, range: 2 },
     ability: { name: 'Toxic Dart', description: 'Ranged attack that poisons target for 3 turns', cooldown: 2 },
   },
   {
-    id: 'void_shade', name: 'Void Shade', element: 'void', cost: 2, tier: 1, isVoid: true, role: 'skirmisher',
+    id: 'void_shade', name: 'Void Embryo Shadi', element: 'void', cost: 2, tier: 1, isVoid: true, role: 'skirmisher',
     visual: { color: 'pink', shape: 'circle' },
     stats: { hp: 60, maxHp: 60, attack: 18, defense: 3, speed: 10, range: 1 },
-    ability: { name: 'Shadow Phase', description: 'Becomes untargetable for 1 turn', cooldown: 3 },
+    ability: { name: 'Shadow Step', description: 'Becomes untargetable for 1 turn', cooldown: 3 },
+  },  {
+    id: 'arcane_pupil', name: 'Arcane Servant Qua', element: 'arcane', cost: 2, tier: 1, role: 'skirmisher',
+    visual: { color: 'purple', shape: 'circle' },
+    stats: { hp: 70, maxHp: 70, attack: 14, defense: 5, speed: 8, range: 1 },
+    ability: { name: 'Arcane Bolt', description: 'Quick arcane attack; evolves over time (+ATK/DEF)', cooldown: 2 },
+    evolveConfig: { interval: 3, statBonus: 0.1, maxStacks: 3 },
   },
-
   // ── TIER 2 ──────────────────────────────────────────────────────────────────
   {
-    id: 'fire_warrior', name: 'Fire Warrior', element: 'fire', cost: 4, tier: 2, role: 'tank',
+    id: 'fire_warrior', name: 'Flame Soldier Magna', element: 'fire', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'red', shape: 'squircle' },
     stats: { hp: 180, maxHp: 180, attack: 25, defense: 12, speed: 6, range: 1 },
-    ability: { name: 'Blazing Charge', description: 'Dash forward, damages all enemies in same lane', cooldown: 3 },
+    ability: { name: 'Blazing Dash', description: 'Dash forward, damages all enemies in same lane', cooldown: 3 },
   },
   {
-    id: 'ice_archer', name: 'Ice Archer', element: 'ice', cost: 4, tier: 2, role: 'sniper',
+    id: 'ice_archer', name: 'Ice Archer ColdShot', element: 'ice', cost: 4, tier: 2, role: 'sniper',
     visual: { color: 'blue', shape: 'squircle' },
     stats: { hp: 120, maxHp: 120, attack: 22, defense: 8, speed: 9, range: 3 },
     ability: { name: 'Frost Arrow', description: 'Piercing shot that freezes target', cooldown: 2 },
   },
   {
-    id: 'arcane_mage', name: 'Arcane Mage', element: 'arcane', cost: 4, tier: 2, role: 'caster',
+    id: 'arcane_mage', name: 'Arcane Descendant', element: 'arcane', cost: 4, tier: 2, role: 'caster',
     visual: { color: 'purple', shape: 'squircle' },
     stats: { hp: 100, maxHp: 100, attack: 30, defense: 5, speed: 7, range: 3 },
-    ability: { name: 'Arcane Blast', description: 'High damage magic attack', cooldown: 2 },
+    ability: { name: 'Arcane Bomb', description: 'High damage magic attack', cooldown: 2 },
   },
   {
-    id: 'lightning_knight', name: 'Lightning Knight', element: 'lightning', cost: 4, tier: 2, role: 'tank',
+    id: 'lightning_knight', name: 'Thundorian Soldier', element: 'lightning', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'yellow', shape: 'squircle' },
     stats: { hp: 160, maxHp: 160, attack: 20, defense: 14, speed: 8, range: 1 },
-    ability: { name: 'Thunder Strike', description: 'Stuns target and deals bonus damage', cooldown: 3 },
+    ability: { name: 'Thunder ', description: 'Stuns target and deals bonus damage', cooldown: 3 },
   },
   {
-    id: 'ice_guardian', name: 'Ice Guardian', element: 'ice', cost: 4, tier: 2, role: 'tank',
+    id: 'ice_guardian', name: 'Frost Guardian IceBur', element: 'ice', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'blue', shape: 'squircle' },
     stats: { hp: 200, maxHp: 200, attack: 15, defense: 18, speed: 3, range: 1 },
     ability: { name: 'Frozen Wall', description: 'Grants shield (bonus defense for 3 turns) and slows all enemies', cooldown: 4 },
   },
   {
-    id: 'arcane_assassin', name: 'Arcane Assassin', element: 'arcane', cost: 3, tier: 2, role: 'skirmisher',
+    id: 'arcane_assassin', name: 'Arcane Shadow', element: 'arcane', cost: 4, tier: 2, role: 'skirmisher',
     visual: { color: 'purple', shape: 'rhombus' },
-    stats: { hp: 85, maxHp: 85, attack: 35, defense: 4, speed: 11, range: 1 },
+    stats: { hp: 85, maxHp: 85, attack: 35, defense: 4, speed: 11, range: 2 },
     ability: { name: 'Shadow Strike', description: 'Critical hit with bonus damage', cooldown: 2 },
   },
   {
-    id: 'nature_spirit', name: 'Nature Spirit', element: 'earth', cost: 4, tier: 2, role: 'healer',
+    id: 'nature_spirit', name: 'Shape Spirit Runi', element: 'earth', cost: 4, tier: 2, role: 'healer',
     visual: { color: 'green', shape: 'squircle' },
     stats: { hp: 120, maxHp: 120, attack: 10, defense: 12, speed: 5, range: 2 },
     ability: { name: 'Rejuvenate', description: 'Heals all allies for 15 HP', cooldown: 3, healAmount: 15 },
   },
   {
-    id: 'arcane_priest', name: 'Arcane Priest', element: 'arcane', cost: 4, tier: 2, role: 'healer',
+    id: 'arcane_priest', name: 'Arcane Sorcerer', element: 'arcane', cost: 4, tier: 2, role: 'healer',
     visual: { color: 'pink', shape: 'square' },
     stats: { hp: 100, maxHp: 100, attack: 15, defense: 8, speed: 6, range: 3 },
     ability: { name: 'Arcane Restoration', description: 'Heals lowest HP ally for 25 HP + grants shield', cooldown: 2, healAmount: 25 },
   },
   {
-    id: 'blood_knight', name: 'Blood Knight', element: 'fire', cost: 4, tier: 2, role: 'tank',
+    id: 'blood_knight', name: 'Vamp General Parasect', element: 'fire', cost: 4, tier: 2, role: 'tank', trait: 'vampire',
     visual: { color: 'pink', shape: 'squircle' },
     stats: { hp: 170, maxHp: 170, attack: 24, defense: 10, speed: 6, range: 1 },
     ability: { name: 'Crimson Cleave', description: 'Cleaves adjacent enemies, heals 30% of total damage', cooldown: 3, maxTargets: 3 },
   },
   {
-    id: 'konji_shaman', name: 'Konji Shaman', element: 'earth', cost: 4, tier: 2, role: 'caster',
+    id: 'konji_shaman', name: 'Plague Caster Fuu', element: 'earth', cost: 4, tier: 2, role: 'caster',
     visual: { color: 'green', shape: 'circle' },
     stats: { hp: 130, maxHp: 130, attack: 18, defense: 9, speed: 5, range: 2 },
     ability: { name: 'Plague Cloud', description: 'Poisons all enemies for 2 turns + minor damage', cooldown: 4 },
   },
   {
-    id: 'void_knight', name: 'Void Knight', element: 'void', cost: 3, tier: 2, isVoid: true, role: 'tank',
+    id: 'void_knight', name: 'Void Berserker Zeku', element: 'void', cost: 4, tier: 2, isVoid: true, role: 'tank',
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 180, maxHp: 180, attack: 28, defense: 10, speed: 6, range: 1 },
     ability: { name: 'Corruption Strike', description: 'Deals bonus damage and weakens target', cooldown: 3 },
   },
   {
-    id: 'void_blighter', name: 'Void Blighter', element: 'void', cost: 4, tier: 2, isVoid: true, role: 'caster',
+    id: 'void_blighter', name: 'Void Curser Ukez', element: 'void', cost: 4, tier: 2, isVoid: true, role: 'caster',
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 160, maxHp: 160, attack: 25, defense: 8, speed: 6, range: 2 },
     ability: { name: 'Cursed Wound', description: 'Applies Wound to enemies, reducing healing by 50%', cooldown: 3 },
+  },  {
+    id: 'earth_enforcer', name: 'Shape Enforcer Ooglong', element: 'earth', cost: 4, tier: 2, role: 'tank',
+    visual: { color: 'green', shape: 'squircle' },
+    stats: { hp: 160, maxHp: 160, attack: 22, defense: 14, speed: 5, range: 1 },
+    ability: { name: 'Ground Slam', description: 'Heavy hit that knocks target back 1 row', cooldown: 3 },
   },
-
+  {
+    id: 'lightning_hunter', name: 'Thundorian Elite Danza', element: 'lightning', cost: 4, tier: 2, role: 'skirmisher',
+    visual: { color: 'yellow', shape: 'rhombus' },
+    stats: { hp: 110, maxHp: 110, attack: 24, defense: 6, speed: 10, range: 2 },
+    ability: { name: 'Grapple Pull', description: 'Pulls target 1 row forward into danger', cooldown: 3 },
+  },
+  {
+    id: 'fire_ravager', name: 'Inferno Ravager Rye', element: 'fire', cost: 4, tier: 2, role: 'skirmisher',
+    visual: { color: 'red', shape: 'rhombus' },
+    stats: { hp: 130, maxHp: 130, attack: 26, defense: 7, speed: 8, range: 1 },
+    ability: { name: 'Rampage', description: 'Cleaves 2 targets; grows stronger with each kill', cooldown: 2 },
+    killStackBonus: { atkPerKill: 0.1, maxBonus: 0.5 },
+  },
   // ── TIER 3 ──────────────────────────────────────────────────────────────────
   {
-    id: 'fire_demon', name: 'Fire Demon', element: 'fire', cost: 6, tier: 3, role: 'caster',
+    id: 'fire_demon', name: 'Daemon The Incinerator', element: 'fire', cost: 6, tier: 3, role: 'caster',
     visual: { color: 'red', shape: 'square' },
     stats: { hp: 200, maxHp: 200, attack: 30, defense: 12, speed: 5, range: 2 },
     ability: { name: 'Hellfire', description: 'Fire damage to up to 3 enemies in range', cooldown: 4, maxTargets: 3 },
   },
   {
-    id: 'martial_master', name: 'Martial Master', element: 'earth', cost: 6, tier: 3, role: 'tank',
+    id: 'martial_master', name: 'Shape Boxer Tysr', element: 'earth', cost: 6, tier: 3, role: 'tank',
     visual: { color: 'green', shape: 'rhombus' },
     stats: { hp: 280, maxHp: 280, attack: 35, defense: 20, speed: 8, range: 1 },
     ability: { name: 'Thousand Fists', description: 'Multiple rapid strikes', cooldown: 3 },
   },
   {
-    id: 'lightning_lord', name: 'Lightning Lord', element: 'lightning', cost: 6, tier: 3, role: 'sniper',
+    id: 'lightning_lord', name: 'Thundorian King Zesper', element: 'lightning', cost: 6, tier: 3, role: 'sniper',
     visual: { color: 'yellow', shape: 'rhombus' },
     stats: { hp: 180, maxHp: 180, attack: 45, defense: 10, speed: 10, range: 3 },
     ability: { name: 'Thunder Storm', description: 'Hits all enemies with chain lightning', cooldown: 4 },
   },
   {
-    id: 'ice_empress', name: 'Ice Empress', element: 'ice', cost: 5, tier: 3, role: 'caster',
+    id: 'ice_empress', name: 'Ice Queen Elaine', element: 'ice', cost: 6, tier: 3, role: 'caster',
     visual: { color: 'blue', shape: 'rhombus' },
     stats: { hp: 220, maxHp: 220, attack: 32, defense: 16, speed: 6, range: 3 },
     ability: { name: 'Blizzard', description: 'Freezes and damages all enemies', cooldown: 5 },
   },
   {
-    id: 'life_guardian', name: 'Life Guardian', element: 'earth', cost: 5, tier: 3, role: 'healer',
+    id: 'life_guardian', name: 'Shape Guardian Ari', element: 'earth', cost: 6, tier: 3, role: 'healer',
     visual: { color: 'green', shape: 'squircle' },
     stats: { hp: 200, maxHp: 200, attack: 12, defense: 18, speed: 4, range: 2 },
     ability: { name: "Guardian's Blessing", description: 'Heals all allies 30 HP + applies barrier', cooldown: 4, healAmount: 30 },
   },
   {
-    id: 'void_horror', name: 'Void Horror', element: 'void', cost: 5, tier: 3, isVoid: true, role: 'caster',
+    id: 'void_horror', name: 'Void Horror Yui', element: 'void', cost: 6, tier: 3, isVoid: true, role: 'caster',
     visual: { color: 'pink', shape: 'rhombus' },
     stats: { hp: 300, maxHp: 300, attack: 38, defense: 12, speed: 4, range: 2 },
     ability: { name: 'Void Rupture', description: 'AoE dark damage that ignores defense', cooldown: 4 },
   },
+  {
+    id: 'arcane_illusionist', name: 'Arcane Illusionist Shera', element: 'arcane', cost: 6, tier: 3, role: 'caster',
+    visual: { color: 'purple', shape: 'square' },
+    stats: { hp: 170, maxHp: 170, attack: 28, defense: 10, speed: 7, range: 3 },
+    ability: { name: 'Mirage', description: 'Damages and blinds all enemies (30% miss chance)', cooldown: 4 },
+  },
 
   // ── BOSSES (tier 4, enemy-only) ─────────────────────────────────────────────
   {
-    id: 'boss_flame_tyrant', name: '🔥 FLAME TYRANT', element: 'fire', cost: 0, tier: 4, isBoss: true,
+    id: 'boss_flame_tyrant', name: '🔥 SUN DRAGON SEL', element: 'fire', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'red', shape: 'squircle' },
     stats: { hp: 425, maxHp: 425, attack: 32, defense: 14, speed: 5, range: 4 },
     ability: { name: "Tyrant's Wrath", description: 'AoE fire damage to all enemies', cooldown: 4 },
@@ -237,7 +295,7 @@ const UNIT_DEFINITIONS = [
     ],
   },
   {
-    id: 'boss_frost_colossus', name: '🧊 FROST COLOSSUS', element: 'ice', cost: 0, tier: 4, isBoss: true,
+    id: 'boss_frost_colossus', name: '🧊 FROST GIANT ANVALOG', element: 'ice', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'blue', shape: 'circle' },
     stats: { hp: 675, maxHp: 675, attack: 30, defense: 22, speed: 3, range: 4 },
     ability: { name: 'Absolute Zero', description: 'Freezes all enemies for 2 turns + self-heal 80 HP', cooldown: 5, freezeDuration: 2, healAmount: 80 },
@@ -247,14 +305,37 @@ const UNIT_DEFINITIONS = [
     ],
   },
   {
-    id: 'boss_chaos_overlord', name: '⚡ CHAOS OVERLORD', element: 'arcane', cost: 0, tier: 4, isBoss: true,
+    id: 'boss_chaos_overlord', name: '🕳️ THE VOID SUPREME', element: 'void', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'purple', shape: 'square' },
     stats: { hp: 450, maxHp: 450, attack: 45, defense: 20, speed: 7, range: 4 },
-    ability: { name: 'Elemental Cataclysm', description: 'Unleashes all elements + enrage at low HP', cooldown: 4 },
+    ability: { name: 'Void Cataclysm', description: 'Unleashes void energy + enrage at low HP', cooldown: 4 },
     bossPhases: [
-      { hpThreshold: 1.0, phaseHp: 300, name: 'Awakening',   statModifiers: {},                                        description: 'The Chaos Overlord awakens!' },
+      { hpThreshold: 1.0, phaseHp: 300, name: 'Awakening',   statModifiers: {},                                        description: 'The Void Supreme awakens!' },
       { hpThreshold: 0.66, phaseHp: 350, name: 'Corruption',  statModifiers: { attackMult: 1.3, speedMult: 1.2 },      description: 'Phase 2: CORRUPTION! (+30% ATK, +20% SPD)' },
       { hpThreshold: 0.33, phaseHp: 400, name: 'Cataclysm',   statModifiers: { attackMult: 1.6, speedMult: 1.5, defenseMult: 0.7 }, description: 'FINAL PHASE: CATACLYSM!' },
+    ],
+  },
+
+  // ── VOID CAMPAIGN BOSSES (Wave 20 & 25) ─────────────────────────────────────
+  {
+    id: 'boss_void_leviathan', name: '🕳️ VOID LEVIATHAN', element: 'void', cost: 0, tier: 4, isBoss: true, isVoid: true,
+    visual: { color: 'purple', shape: 'circle' },
+    stats: { hp: 800, maxHp: 800, attack: 52, defense: 25, speed: 5, range: 4 },
+    ability: { name: 'Abyssal Devour', description: 'Consumes target HP, heals self, applies wound + weaken', cooldown: 4, healAmount: 60 },
+    bossPhases: [
+      { hpThreshold: 1.0, phaseHp: 500, name: 'Emergence',   statModifiers: {},                                        description: 'The Void Leviathan emerges from the abyss!' },
+      { hpThreshold: 0.5, phaseHp: 600, name: 'Deep Hunger', statModifiers: { attackMult: 1.4, speedMult: 1.3 },      description: 'Phase 2: DEEP HUNGER! (+40% ATK, +30% SPD)' },
+    ],
+  },
+  {
+    id: 'boss_void_architect', name: '🕳️ THE VOID ARCHITECT', element: 'void', cost: 0, tier: 4, isBoss: true, isVoid: true,
+    visual: { color: 'purple', shape: 'rhombus' },
+    stats: { hp: 600, maxHp: 600, attack: 60, defense: 18, speed: 8, range: 4 },
+    ability: { name: 'Reality Tear', description: 'Massive void damage to all + blind + poison', cooldown: 5 },
+    bossPhases: [
+      { hpThreshold: 1.0,  phaseHp: 400, name: 'Blueprint',      statModifiers: {},                                                            description: 'The Void Architect studies your formation!' },
+      { hpThreshold: 0.66, phaseHp: 450, name: 'Reconstruction',  statModifiers: { attackMult: 1.3, defenseMult: 1.3 },                        description: 'Phase 2: RECONSTRUCTION! (+30% ATK & DEF)' },
+      { hpThreshold: 0.33, phaseHp: 500, name: 'Annihilation',    statModifiers: { attackMult: 1.8, speedMult: 1.5, defenseMult: 0.5 },        description: 'FINAL PHASE: ANNIHILATION!' },
     ],
   },
 ];
@@ -272,7 +353,10 @@ const GOOD_FACES = {
   frost_fairy: 'k',     nature_spirit: 'k',     arcane_priest: 'k',   life_guardian: 'h',
   void_shade: 'l',      void_knight: 'h',       void_horror: 'f',     void_blighter: 'l',
   blood_sprite: 'l',    blood_knight: 'h',      konji_scout: 'l',     konji_shaman: 'k',
+  arcane_pupil: 'k',    earth_enforcer: 'h',    lightning_hunter: 'l',
+  fire_ravager: 'f',    arcane_illusionist: 'l',
   boss_flame_tyrant: 'h', boss_frost_colossus: 'h', boss_chaos_overlord: 'f',
+  boss_void_leviathan: 'h', boss_void_architect: 'f',
   default: 'k',
 };
 
@@ -285,7 +369,10 @@ const EVIL_FACES = {
   frost_fairy: 'c',     nature_spirit: 'i',      arcane_priest: 'd',   life_guardian: 'i',
   void_shade: 'g',      void_knight: 'b',        void_horror: 'g',     void_blighter: 'g',
   blood_sprite: 'g',    blood_knight: 'b',       konji_scout: 'd',     konji_shaman: 'b',
+  arcane_pupil: 'c',    earth_enforcer: 'i',     lightning_hunter: 'g',
+  fire_ravager: 'b',    arcane_illusionist: 'd',
   boss_flame_tyrant: 'g', boss_frost_colossus: 'b', boss_chaos_overlord: 'g',
+  boss_void_leviathan: 'g', boss_void_architect: 'g',
   default: 'g',
 };
 
@@ -362,15 +449,47 @@ const GRID_CONFIG = {
   battleLineRow: 2,
 };
 
+// ─── Campaign Modes ───────────────────────────────────────────────────────────
+const CAMPAIGN_MODES = {
+  normal: {
+    id: 'normal', name: 'Normal Campaign', waveCount: 15,
+    description: '15 waves — defeat the Void Supreme!',
+    unlocked: true,
+  },
+  void: {
+    id: 'void', name: 'Void Campaign', waveCount: 25,
+    description: '25 waves — descend into the Void Abyss!',
+    unlocked: false,  // requires localStorage 'shape_strikers_void_unlocked'
+  },
+};
+
+// Enemy stat scaling for waves 16+ (Void Campaign hard mode)
+// Applied multiplicatively to base stats of spawned enemies
+const HARD_MODE_SCALING = {
+  16: { hp: 1.15, attack: 1.10, defense: 1.10, speed: 1.05 },
+  17: { hp: 1.20, attack: 1.15, defense: 1.15, speed: 1.05 },
+  18: { hp: 1.30, attack: 1.20, defense: 1.20, speed: 1.10 },
+  19: { hp: 1.40, attack: 1.25, defense: 1.25, speed: 1.10 },
+  20: { hp: 1.50, attack: 1.30, defense: 1.30, speed: 1.15 },  // Boss wave
+  21: { hp: 1.55, attack: 1.35, defense: 1.35, speed: 1.15 },
+  22: { hp: 1.65, attack: 1.40, defense: 1.40, speed: 1.20 },
+  23: { hp: 1.75, attack: 1.45, defense: 1.45, speed: 1.20 },
+  24: { hp: 1.85, attack: 1.50, defense: 1.50, speed: 1.25 },
+  25: { hp: 2.00, attack: 1.60, defense: 1.55, speed: 1.30 },  // Final boss
+};
+
 // ─── Wave Templates (seeded + rules + bias) ──────────────────────────────────
 // Boss waves (5, 10, 15) are fixed. Non-boss waves use templates with role slots.
 // Roles: tank, skirmisher, sniper, caster, healer
 // Difficulty: 'easy' | 'standard' | 'hard' | 'variant'
 
 const BOSS_WAVES = {
-  5:  { bonusGold: 15, enemies: [{ unitId: 'boss_flame_tyrant', count: 1 }, { role: 'skirmisher', count: 3 }] },
-  10: { bonusGold: 25, enemies: [{ unitId: 'boss_frost_colossus', count: 1 }, { role: 'tank', count: 2 }, { role: 'healer', count: 1 }, { role: 'sniper', count: 2 }] },
-  15: { bonusGold: 50, enemies: [{ unitId: 'boss_chaos_overlord', count: 1 }, { role: 'caster', count: 2 }, { role: 'tank', count: 2 }, { role: 'skirmisher', count: 3 }] },
+  5:  { bonusGold: 15, enemies: [{ unitId: 'boss_flame_tyrant', count: 1 }, { role: 'skirmisher', count: 3 }, { role: 'tank', count: 1 }, { role: 'sniper', count: 1 }] },
+  10: { bonusGold: 25, enemies: [{ unitId: 'boss_frost_colossus', count: 1 }, { role: 'tank', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
+  15: { bonusGold: 50, enemies: [{ unitId: 'boss_chaos_overlord', count: 1 }, { role: 'caster', count: 3 }, { role: 'tank', count: 3 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 1 }] },
+  // Void Campaign bosses
+  20: { bonusGold: 40, enemies: [{ unitId: 'boss_void_leviathan', count: 1 }, { role: 'tank', count: 3 }, { role: 'caster', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
+  25: { bonusGold: 75, enemies: [{ unitId: 'boss_void_architect', count: 1 }, { role: 'caster', count: 4 }, { role: 'tank', count: 4 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }] },
 };
 
 const WAVE_TEMPLATES = [
@@ -438,6 +557,50 @@ const WAVE_TEMPLATES = [
     { slots: [{ role: 'tank', count: 3 }, { role: 'caster', count: 3 }, { role: 'skirmisher', count: 3 }, { role: 'sniper', count: 2 }, { role: 'healer', count: 1 }] },
     { slots: [{ role: 'caster', count: 4 }, { role: 'tank', count: 3 }, { role: 'skirmisher', count: 2 }, { role: 'sniper', count: 2 }] },
   ]},
+
+  // ── VOID CAMPAIGN WAVES (16–25) ─────────────────────────────────────────────
+  // Wave 16 — Void Campaign begins, enemy stats scale via HARD_MODE_SCALING
+  { wave: 16, bonusGold: 22, difficulty: ['hard', 'variant'], templates: [
+    { slots: [{ role: 'tank', count: 3 }, { role: 'caster', count: 3 }, { role: 'skirmisher', count: 2 }, { role: 'healer', count: 1 }, { role: 'sniper', count: 2 }] },
+    { slots: [{ role: 'skirmisher', count: 4 }, { role: 'tank', count: 3 }, { role: 'caster', count: 2 }, { role: 'sniper', count: 2 }] },
+  ]},
+  // Wave 17
+  { wave: 17, bonusGold: 24, difficulty: ['hard', 'variant'], templates: [
+    { slots: [{ role: 'tank', count: 3 }, { role: 'caster', count: 3 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 1 }, { role: 'sniper', count: 2 }] },
+    { slots: [{ role: 'caster', count: 4 }, { role: 'tank', count: 3 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 1 }] },
+  ]},
+  // Wave 18
+  { wave: 18, bonusGold: 26, difficulty: ['hard', 'variant'], templates: [
+    { slots: [{ role: 'tank', count: 4 }, { role: 'caster', count: 3 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
+    { slots: [{ role: 'caster', count: 4 }, { role: 'tank', count: 4 }, { role: 'skirmisher', count: 2 }, { role: 'sniper', count: 2 }, { role: 'healer', count: 1 }] },
+  ]},
+  // Wave 19
+  { wave: 19, bonusGold: 30, difficulty: ['hard', 'variant'], templates: [
+    { slots: [{ role: 'tank', count: 4 }, { role: 'caster', count: 4 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
+    { slots: [{ role: 'skirmisher', count: 4 }, { role: 'caster', count: 4 }, { role: 'tank', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 1 }] },
+  ]},
+  // Wave 20 = boss_void_leviathan (defined in BOSS_WAVES)
+  // Wave 21
+  { wave: 21, bonusGold: 32, difficulty: ['variant'], templates: [
+    { slots: [{ role: 'tank', count: 4 }, { role: 'caster', count: 4 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
+    { slots: [{ role: 'caster', count: 5 }, { role: 'tank', count: 4 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 1 }] },
+  ]},
+  // Wave 22
+  { wave: 22, bonusGold: 34, difficulty: ['variant'], templates: [
+    { slots: [{ role: 'tank', count: 5 }, { role: 'caster', count: 4 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
+    { slots: [{ role: 'skirmisher', count: 5 }, { role: 'tank', count: 4 }, { role: 'caster', count: 4 }, { role: 'healer', count: 2 }] },
+  ]},
+  // Wave 23
+  { wave: 23, bonusGold: 36, difficulty: ['variant'], templates: [
+    { slots: [{ role: 'tank', count: 5 }, { role: 'caster', count: 5 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
+    { slots: [{ role: 'caster', count: 5 }, { role: 'tank', count: 4 }, { role: 'skirmisher', count: 4 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
+  ]},
+  // Wave 24
+  { wave: 24, bonusGold: 40, difficulty: ['variant'], templates: [
+    { slots: [{ role: 'tank', count: 5 }, { role: 'caster', count: 5 }, { role: 'skirmisher', count: 4 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 3 }] },
+    { slots: [{ role: 'caster', count: 6 }, { role: 'tank', count: 5 }, { role: 'skirmisher', count: 4 }, { role: 'healer', count: 2 }] },
+  ]},
+  // Wave 25 = boss_void_architect (defined in BOSS_WAVES)
 ];
 
 // ─── Seeded Wave Generator ────────────────────────────────────────────────────
@@ -781,3 +944,53 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 
   return canvas;
 }
+
+// ─── Patch Notes ──────────────────────────────────────────────────────────────
+// Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
+const PATCH_NOTES = [
+  {
+    version: '0.8.0',
+    date: 'April 16, 2026',
+    title: 'Online Leaderboards',
+    notes: [
+      '🏆 Global leaderboards — compete for the highest scores worldwide',
+      '📅 Daily & Weekly challenge leaderboards with separate rankings',
+      '👤 Personal score history — track your best runs',
+      '📤 Submit scores after every game (win or lose)',
+      '🔒 Anonymous accounts — no sign-up required',
+    ],
+  },
+  {
+    version: '0.7.3',
+    date: 'April 15, 2026',
+    title: 'Daily & Weekly Challenges',
+    notes: [
+      '📅 New daily challenge — same seed for everyone, resets at midnight',
+      '📆 Weekly challenges with 8 unique modifiers (Glass Cannon, Purity, etc.)',
+      '🏅 Challenge completion badges on the title screen',
+      '📊 Stats tracking for challenge attempts and best scores',
+    ],
+  },
+  {
+    version: '0.7.2',
+    date: 'April 14, 2026',
+    title: 'Achievements & Meta-Progression',
+    notes: [
+      '🏅 10 achievements to unlock (First Blood, Void Conqueror, and more)',
+      '🏆 Post-game accolades — MVP, Executioner, Lifeline, Iron Wall',
+      '📈 4 new upgrades: Scouts Intel, Bargain Hunter, Army Expansion, Elemental Mastery',
+      '📊 Kill tracking per unit across your run',
+    ],
+  },
+  {
+    version: '0.7.1',
+    date: 'April 13, 2026',
+    title: 'Void Campaign',
+    notes: [
+      '🕳️ 25-wave Void Campaign — unlocked after beating Normal mode',
+      '👾 2 new bosses: Void Leviathan (W20) and Void Architect (W25)',
+      '⚡ Hard mode scaling for waves 16–25',
+      '🟣 Void element units available in Void Campaign',
+    ],
+  },
+];
