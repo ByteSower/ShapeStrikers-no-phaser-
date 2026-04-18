@@ -146,7 +146,7 @@ html, body {
 #screen-game {
   background:
     linear-gradient(160deg, rgba(20,15,10,0.35) 0%, rgba(10,10,20,0.25) 50%, rgba(20,15,10,0.35) 100%),
-    url('public/bg_horizontal_BF.png') center / contain no-repeat;
+    url('public/bg_horizontal_BF.png') center / cover no-repeat;
   position: relative;
 }
 
@@ -1050,7 +1050,7 @@ html, body {
 [data-theme="dark"] #screen-game {
   background:
     linear-gradient(160deg, rgba(5,10,20,0.5) 0%, rgba(10,15,25,0.4) 50%, rgba(5,10,20,0.5) 100%),
-    url('public/bg_horizontal_BF.png') center / contain no-repeat;
+    url('public/bg_horizontal_BF.png') center / cover no-repeat;
 }
 [data-theme="dark"] #top-bar {
   background: rgba(10,14,22,0.75);
