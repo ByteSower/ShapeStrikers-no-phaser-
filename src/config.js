@@ -11,16 +11,20 @@ const Element = Object.freeze({
   EARTH:     'earth',
   ARCANE:    'arcane',
   VOID:      'void',
+  BLOOD:     'blood',
+  PLAGUE:    'plague',
 });
 
 const ELEMENT_EMOJI = {
   fire: '🔥', ice: '🧊', lightning: '⚡',
   earth: '🌍', arcane: '✨', void: '🕳️',
+  blood: '🩸', plague: '☠️',
 };
 
 const ELEMENT_COLORS = {
   fire: '#ff4422', ice: '#44ccff', lightning: '#c8a000',
   earth: '#88cc44', arcane: '#bb44ff', void: '#7744aa',
+  blood: '#cc2244', plague: '#66aa22',
 };
 
 // ─── Element Synergies ────────────────────────────────────────────────────────
@@ -37,6 +41,10 @@ const ELEMENT_SYNERGIES = [
   { element: 'arcane',    requiredCount: 3, bonus: { stat: 'speed',   multiplier: 1.25 }, description: '3✨: +30% SPD' },
   { element: 'void',      requiredCount: 2, bonus: { stat: 'attack',  multiplier: 1.25 }, description: '2🕳️: +30% ATK' },
   { element: 'void',      requiredCount: 3, bonus: { stat: 'hp',      multiplier: 1.20 }, description: '3🕳️: +40% HP' },
+  { element: 'blood',     requiredCount: 2, bonus: { stat: 'attack',  multiplier: 1.15 }, description: '2🩸: +15% Lifesteal' },
+  { element: 'blood',     requiredCount: 3, bonus: { stat: 'attack',  multiplier: 1.25 }, description: '3🩸: +25% Lifesteal' },
+  { element: 'plague',    requiredCount: 2, bonus: { stat: 'attack',  multiplier: 1.10 }, description: '2☠️: +1 Poison Turn' },
+  { element: 'plague',    requiredCount: 3, bonus: { stat: 'attack',  multiplier: 1.20 }, description: '3☠️: +50% Poison DMG' },
 ];
 
 // ─── Upgrades ─────────────────────────────────────────────────────────────────
@@ -47,17 +55,17 @@ const UPGRADES = [
   { id: 'war_chest',      name: '📈 War Chest',      description: '+10% interest on gold(Stackable)',     cost: 6, maxLevel: 3, effect: { type: 'interestRate',      value: 0.1  } },
   { id: 'victory_bonus',  name: '🏆 Victory Bonus',  description: '+2 gold per wave won',      cost: 5, maxLevel: 3, effect: { type: 'goldPerWave',       value: 2    } },
   { id: 'refresh_master', name: '🔄 Refresh Master', description: '+1 refresh per round(Max 3)',      cost: 6, maxLevel: 2, effect: { type: 'refreshesPerRound', value: 1    } },
-  { id: 'scouts_intel',   name: '🔭 Scout\'s Intel', description: 'See enemy details in wave preview', cost: 4, maxLevel: 2, effect: { type: 'scoutLevel',        value: 1    } },
-  { id: 'elite_training', name: '⬆️ Elite Training', description: '+5% ATK & DEF to all units',       cost: 7, maxLevel: 3, effect: { type: 'statBonus',         value: 0.05 } },
+  { id: 'scouts_intel',   name: '🔭 Scout\'s Intel', description: 'Preview next wave enemies, stats & abilities', cost: 25, maxLevel: 1, effect: { type: 'scoutLevel',        value: 1    } },
+  { id: 'elite_training', name: '⬆️ Elite Training', description: 'T1: +5% ATK/SPD, T2: +10% ATK/+5% SPD, T3: +10% ATK/DEF/+5% SPD', cost: 7, maxLevel: 3, effect: { type: 'eliteTraining', value: 1 } },
   { id: 'mercenary',      name: '📜 Mercenary',      description: '+1 shop card per refresh',          cost: 6, maxLevel: 2, effect: { type: 'shopCards',          value: 1    } },
-  { id: 'double_edge',    name: '⚔️ Double Edge',    description: '+20% ATK, −10% DEF all units',     cost: 5, maxLevel: 1, effect: { type: 'doubleEdge',        value: 1    } },
+  { id: 'double_edge',    name: '⚔️ Double Edge',    description: '+20% ATK, −20% DEF all units',     cost: 5, maxLevel: 1, effect: { type: 'doubleEdge',        value: 1    } },
 ];
 
 // ─── Achievements ─────────────────────────────────────────────────────────────
 const ACHIEVEMENTS = [
-  { id: 'first_victory',    name: 'First Victory',    icon: '🏆', description: 'Win the Normal Campaign' },
-  { id: 'void_conqueror',   name: 'Void Conqueror',   icon: '🕳️', description: 'Win the Void Campaign' },
-  { id: 'boss_slayer',      name: 'Boss Slayer',      icon: '👑', description: 'Defeat all 5 bosses across runs' },
+  { id: 'first_victory',    name: 'First Victory',    icon: '🏆', description: 'Win the Normal Campaign',       badge: 'public/sprites/first_vict_badge.png' },
+  { id: 'void_conqueror',   name: 'Void Conqueror',   icon: '🕳️', description: 'Win the Void Campaign',        badge: 'public/sprites/void_conqueror_badge.png' },
+  { id: 'boss_slayer',      name: 'Boss Slayer',      icon: '👑', description: 'Defeat all 5 bosses across runs', badge: 'public/sprites/boss_slayer_badge.png' },
   { id: 'full_army',        name: 'Full Army',        icon: '🏰', description: 'Fill all unit slots on the board' },
   { id: 'synergy_master',   name: 'Synergy Master',   icon: '🔗', description: 'Activate 3+ element synergies at once' },
   { id: 'untouchable',      name: 'Untouchable',      icon: '🛡️', description: 'Win a wave without losing any unit' },
@@ -125,13 +133,13 @@ const UNIT_DEFINITIONS = [
     ability: { name: 'Frost Blessing', description: 'Heals lowest HP ally for 25 HP', cooldown: 2, healAmount: 25 },
   },
   {
-    id: 'blood_sprite', name: 'Vamp Kid Yoi', element: 'fire', cost: 2, tier: 1, role: 'skirmisher', trait: 'vampire',
+    id: 'blood_sprite', name: 'Vamp Kid Yoi', element: 'blood', cost: 2, tier: 1, role: 'skirmisher', trait: 'vampire',
     visual: { color: 'pink', shape: 'circle' },
     stats: { hp: 75, maxHp: 75, attack: 14, defense: 5, speed: 7, range: 1 },
     ability: { name: 'Drain Bite', description: 'Drains enemy HP, healing self for 40% of damage', cooldown: 2 },
   },
   {
-    id: 'konji_scout', name: 'Plague Son Yav', element: 'earth', cost: 2, tier: 1, role: 'sniper',
+    id: 'konji_scout', name: 'Plague Son Yav', element: 'plague', cost: 2, tier: 1, role: 'sniper',
     visual: { color: 'yellow', shape: 'square' },
     stats: { hp: 70, maxHp: 70, attack: 12, defense: 6, speed: 8, range: 2 },
     ability: { name: 'Toxic Dart', description: 'Ranged attack that poisons target for 3 turns', cooldown: 2 },
@@ -198,13 +206,13 @@ const UNIT_DEFINITIONS = [
     ability: { name: 'Arcane Restoration', description: 'Heals lowest HP ally for 25 HP + grants shield', cooldown: 2, healAmount: 25 },
   },
   {
-    id: 'blood_knight', name: 'Vamp General Parasect', element: 'fire', cost: 4, tier: 2, role: 'tank', trait: 'vampire',
+    id: 'blood_knight', name: 'Vamp General Parasect', element: 'blood', cost: 4, tier: 2, role: 'tank', trait: 'vampire',
     visual: { color: 'pink', shape: 'squircle' },
     stats: { hp: 170, maxHp: 170, attack: 24, defense: 10, speed: 6, range: 1 },
     ability: { name: 'Crimson Cleave', description: 'Cleaves adjacent enemies, heals 30% of total damage', cooldown: 3, maxTargets: 3 },
   },
   {
-    id: 'konji_shaman', name: 'Plague Caster Fuu', element: 'earth', cost: 4, tier: 2, role: 'caster',
+    id: 'konji_shaman', name: 'Plague Caster Fuu', element: 'plague', cost: 4, tier: 2, role: 'caster',
     visual: { color: 'green', shape: 'circle' },
     stats: { hp: 130, maxHp: 130, attack: 18, defense: 9, speed: 5, range: 2 },
     ability: { name: 'Plague Cloud', description: 'Poisons all enemies for 2 turns + minor damage', cooldown: 4 },
@@ -281,6 +289,46 @@ const UNIT_DEFINITIONS = [
     visual: { color: 'purple', shape: 'square' },
     stats: { hp: 170, maxHp: 170, attack: 28, defense: 10, speed: 7, range: 3 },
     ability: { name: 'Mirage', description: 'Damages and blinds all enemies (30% miss chance)', cooldown: 4 },
+  },
+
+  // ── BLOOD FACTION (new units) ───────────────────────────────────────────────
+  {
+    id: 'blood_imp', name: 'Blood Imp Rix', element: 'blood', cost: 2, tier: 1, role: 'skirmisher', trait: 'vampire',
+    visual: { color: 'red', shape: 'triangle' },
+    stats: { hp: 65, maxHp: 65, attack: 13, defense: 4, speed: 9, range: 1 },
+    ability: { name: 'Frenzy Bite', description: 'Attacks twice, heals 20% of total damage', cooldown: 2 },
+  },
+  {
+    id: 'crimson_mage', name: 'Crimson Mage Vael', element: 'blood', cost: 4, tier: 2, role: 'caster', trait: 'vampire',
+    visual: { color: 'red', shape: 'hexagon' },
+    stats: { hp: 140, maxHp: 140, attack: 22, defense: 8, speed: 6, range: 2 },
+    ability: { name: 'Sanguine Bolt', description: 'Ranged blood bolt, heals self 30% of damage', cooldown: 3 },
+  },
+  {
+    id: 'blood_lord', name: 'Blood Lord Draven', element: 'blood', cost: 6, tier: 3, role: 'tank', trait: 'vampire',
+    visual: { color: 'red', shape: 'star' },
+    stats: { hp: 260, maxHp: 260, attack: 32, defense: 16, speed: 5, range: 1 },
+    ability: { name: 'Crimson Tide', description: 'AoE cleave hitting 3 enemies, heals 25% of total damage', cooldown: 4, maxTargets: 3 },
+  },
+
+  // ── PLAGUE FACTION (new units) ──────────────────────────────────────────────
+  {
+    id: 'plague_rat', name: 'Plague Rat Skrit', element: 'plague', cost: 2, tier: 1, role: 'skirmisher',
+    visual: { color: 'green', shape: 'pentagon' },
+    stats: { hp: 60, maxHp: 60, attack: 11, defense: 4, speed: 10, range: 1 },
+    ability: { name: 'Infect', description: 'Poisons target for 3 turns on attack', cooldown: 2 },
+  },
+  {
+    id: 'blight_weaver', name: 'Blight Weaver Morra', element: 'plague', cost: 4, tier: 2, role: 'caster',
+    visual: { color: 'green', shape: 'oval' },
+    stats: { hp: 120, maxHp: 120, attack: 20, defense: 7, speed: 5, range: 3 },
+    ability: { name: 'Miasma', description: 'Poisons and weakens up to 2 enemies in range', cooldown: 3, maxTargets: 2 },
+  },
+  {
+    id: 'plague_sovereign', name: 'Plague Sovereign Vex', element: 'plague', cost: 6, tier: 3, role: 'caster',
+    visual: { color: 'green', shape: 'hexagon' },
+    stats: { hp: 210, maxHp: 210, attack: 30, defense: 14, speed: 4, range: 3 },
+    ability: { name: 'Pandemic', description: 'Poisons all enemies for 3 turns + deals tick damage', cooldown: 5 },
   },
 
   // ── BOSSES (tier 4, enemy-only) ─────────────────────────────────────────────
@@ -424,6 +472,32 @@ function preloadSprites(basePath = 'public/sprites/shapes') {
 }
 
 // ─── Game Config ──────────────────────────────────────────────────────────────
+
+// Slash animation frame definitions (for melee VFX)
+const SLASH_ANIMS = [
+  { key: 'slash_claw',        path: 'public/sprites/slash_claw/image/slash4_', count: 12, pad: 5 },
+  { key: 'slash_down_impact', path: 'public/sprites/slash_down_impact/image/slash2_', count: 9, pad: 5 },
+];
+
+function preloadSlashSprites() {
+  const entries = [];
+  for (const anim of SLASH_ANIMS) {
+    for (let i = 1; i <= anim.count; i++) {
+      const num = String(i).padStart(anim.pad, '0');
+      const key = `${anim.key}_${i}`;
+      entries.push({ key, src: `${anim.path}${num}.png` });
+    }
+  }
+  return Promise.all(entries.map(({ key, src }) =>
+    new Promise(resolve => {
+      const img = new Image();
+      img.onload  = () => { SPRITE_CACHE[key] = img; resolve(); };
+      img.onerror = () => resolve();
+      img.src = src;
+    })
+  ));
+}
+
 const GAME_CONFIG = {
   startingGold:          10,
   goldPerWave:            7,
@@ -948,6 +1022,20 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '0.8.1',
+    date: 'April 18, 2026',
+    title: 'Tutorial & Tips Polish',
+    notes: [
+      '💡 New "In-Game Tips" checkbox — toggle contextual tips on/off from the title screen',
+      '🎓 Streamlined onboarding tutorial (3 focused steps instead of 7)',
+      '📝 8 contextual tips that appear at the right moment (first unit placed, first synergy, first boss, etc.)',
+      '⏸️ Battle auto-pauses while a tip is shown so you can read without pressure',
+      '🩹 Color-coded buff/debuff status pills with emoji icons and stack counts',
+      '🖼️ Background image now shows more of the scene (less zoomed in)',
+      '🐛 Fixed tips not appearing after re-enabling the tutorial',
+    ],
+  },
   {
     version: '0.8.0',
     date: 'April 16, 2026',

@@ -6,6 +6,12 @@
 
 const VFX = (() => {
 
+  // Speed multiplier for projectile timing (synced with game speed)
+  let _speedMult = 1;
+  const BASE_PROJ_DURATION = 0.28;  // seconds
+  const BASE_TRAIL_DURATION = 0.32;
+  const BASE_CLEANUP_MS = 600;
+
   // ═══════════════════════════════════════════════════════════════════════════
   // 1. PARTICLE POOL — reuse DOM nodes instead of create/destroy
   // ═══════════════════════════════════════════════════════════════════════════
@@ -104,6 +110,8 @@ const VFX = (() => {
     earth:     { char: '🪨', trail: '▪', trailCount: 2 },
     arcane:    { char: '✨', trail: '✧', trailCount: 3 },
     void:      { char: '🕳️', trail: '◦', trailCount: 3 },
+    blood:     { char: '🩸', trail: '•', trailCount: 3 },
+    plague:    { char: '☠️', trail: '▪', trailCount: 2 },
   };
 
   function elementProjectile(fromRow, fromCol, toRow, toCol, element) {
@@ -124,6 +132,11 @@ const VFX = (() => {
     const color = ELEMENT_COLORS[element] || '#ffffff';
     const shape = ELEM_SHAPES[element] || ELEM_SHAPES.fire;
 
+    // Scale durations with speed multiplier
+    const projDur  = BASE_PROJ_DURATION / _speedMult;
+    const trailDur = BASE_TRAIL_DURATION / _speedMult;
+    const cleanupMs = Math.max(200, BASE_CLEANUP_MS / _speedMult);
+
     // Main projectile
     const proj = _acquire('vfx-projectile');
     proj.className = `vfx-projectile vfx-proj-${element}`;
@@ -132,6 +145,7 @@ const VFX = (() => {
     proj.style.top  = startY + 'px';
     proj.style.opacity = '1';
     proj.style.setProperty('--proj-color', color);
+    proj.style.transition = `left ${projDur}s ease-in, top ${projDur}s ease-in, opacity ${projDur}s ease-in`;
     container.appendChild(proj);
 
     // Trail particles
@@ -144,7 +158,8 @@ const VFX = (() => {
       trail.style.top  = startY + 'px';
       trail.style.opacity = String(0.7 - i * 0.15);
       trail.style.setProperty('--trail-color', color);
-      trail.style.transitionDelay = (i * 0.04) + 's';
+      trail.style.transition = `left ${trailDur}s ease-in, top ${trailDur}s ease-in, opacity ${trailDur * 0.9}s ease-in`;
+      trail.style.transitionDelay = (i * 0.04 / _speedMult) + 's';
       container.appendChild(trail);
       trails.push(trail);
     }
@@ -164,11 +179,11 @@ const VFX = (() => {
     }
 
     proj.addEventListener('transitionend', () => _release(proj), { once: true });
-    setTimeout(() => { if (proj.parentNode) _release(proj); }, 600);
+    setTimeout(() => { if (proj.parentNode) _release(proj); }, cleanupMs);
 
     for (const trail of trails) {
       trail.addEventListener('transitionend', () => _release(trail), { once: true });
-      setTimeout(() => { if (trail.parentNode) _release(trail); }, 600);
+      setTimeout(() => { if (trail.parentNode) _release(trail); }, cleanupMs);
     }
   }
 
@@ -471,6 +486,47 @@ const VFX = (() => {
 
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // 8. MELEE SLASH — frame-by-frame sprite animation on target tile
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function meleeSlash(row, col) {
+    const tile = Grid.getTileEl(row, col);
+    if (!tile) return;
+
+    // Pick a random slash animation
+    const anim = SLASH_ANIMS[Math.floor(Math.random() * SLASH_ANIMS.length)];
+    const totalDuration = 400 / _speedMult; // ms for full animation
+    const frameTime = totalDuration / anim.count;
+
+    // Create overlay element
+    const el = document.createElement('div');
+    el.className = 'vfx-melee-slash';
+    tile.appendChild(el);
+
+    let frame = 1;
+    const img = SPRITE_CACHE[`${anim.key}_${frame}`];
+    if (img) el.style.backgroundImage = `url('${img.src}')`;
+
+    const interval = setInterval(() => {
+      frame++;
+      if (frame > anim.count) {
+        clearInterval(interval);
+        if (el.parentNode) el.parentNode.removeChild(el);
+        return;
+      }
+      const frameImg = SPRITE_CACHE[`${anim.key}_${frame}`];
+      if (frameImg) el.style.backgroundImage = `url('${frameImg.src}')`;
+    }, frameTime);
+
+    // Safety cleanup
+    setTimeout(() => {
+      clearInterval(interval);
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, totalDuration + 100);
+  }
+
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // PUBLIC API
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -486,6 +542,9 @@ const VFX = (() => {
 
     // Projectiles
     elementProjectile,
+
+    // Speed sync
+    setSpeed(mult) { _speedMult = mult; },
 
     // Ability VFX
     burnSpread,
@@ -504,5 +563,8 @@ const VFX = (() => {
     healSingle,
     healAoE,
     drainLife,
+
+    // Melee VFX
+    meleeSlash,
   };
 })();

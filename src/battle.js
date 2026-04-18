@@ -48,6 +48,18 @@ class BattleSystem {
     clearTimeout(this._turnTimer);
   }
 
+  pause() {
+    if (!this._running) return;
+    this._paused = true;
+    clearTimeout(this._turnTimer);
+  }
+
+  resume() {
+    if (!this._paused) return;
+    this._paused = false;
+    if (this._running) this._scheduleRound();
+  }
+
   setSpeed(multiplier) {
     this._actionDelay = Math.max(80, 500 / multiplier);
     this._turnDelay   = Math.max(50, 300 / multiplier);

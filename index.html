@@ -45,6 +45,7 @@
     </div>
     <div class="title-options">
       <label class="option-label"><input type="checkbox" id="opt-tutorial" checked> Show Tutorial</label>
+      <label class="option-label"><input type="checkbox" id="opt-tips" checked> 💡 In-Game Tips</label>
       <label class="option-label"><input type="checkbox" id="opt-speed"> Enable Speed Controls</label>
       <label class="option-label"><input type="checkbox" id="opt-dark-mode"> 🌙 Dark Mode</label>
       <label class="option-label"><input type="checkbox" id="opt-mute"> 🔇 Mute Audio</label>
@@ -66,6 +67,7 @@
     <span id="hud-units">⚔️ <span id="units-val">0</span> / <span id="max-units-val">7</span></span>
     <span id="hud-phase" class="phase-badge shop">SHOP</span>
     <button class="btn btn-secondary btn-sm" id="btn-mute" title="Toggle Audio">🔊</button>
+    <button class="btn btn-secondary btn-sm" id="btn-achievements-hud" title="Achievements">🏅</button>
     <button class="btn btn-secondary btn-sm" id="btn-help" title="Help">❓</button>
   </div>
 
@@ -175,6 +177,7 @@
       <span id="gameover-submit-status" class="submit-status"></span>
     </div>
     <button class="btn btn-fire btn-lg" id="btn-gameover-restart">↺ Play Again</button>
+    <button class="btn btn-secondary btn-lg" id="btn-gameover-menu">🏠 Main Menu</button>
   </div>
 </div>
 
@@ -191,6 +194,7 @@
       <span id="win-submit-status" class="submit-status"></span>
     </div>
     <button class="btn btn-primary btn-lg" id="btn-win-restart">↺ Play Again</button>
+    <button class="btn btn-secondary btn-lg" id="btn-win-menu">🏠 Main Menu</button>
   </div>
 </div>
 
@@ -209,6 +213,8 @@
       <button class="filter-btn" data-filter="earth">🌍 Earth</button>
       <button class="filter-btn" data-filter="arcane">✨ Arcane</button>
       <button class="filter-btn" data-filter="void">🕳️ Void</button>
+      <button class="filter-btn" data-filter="blood">🩸 Blood</button>
+      <button class="filter-btn" data-filter="plague">☠️ Plague</button>
     </div>
     <div id="glossary-grid"></div>
   </div>

@@ -78,6 +78,8 @@ const Game = (() => {
     const el = document.getElementById('wave-preview');
     if (!el || !_currentWaveDef) { if (el) el.classList.add('hidden'); return; }
     const scoutLevel = state?.upgradeLevels?.['scouts_intel'] || 0;
+
+    // Always show current wave basic info
     const enemies = _currentWaveDef.enemies || [];
     let html = `<div class="wave-preview-title">🔍 Wave ${state.wave} Scout</div>`;
     let total = 0;
@@ -87,17 +89,41 @@ const Game = (() => {
       const emoji = ELEMENT_EMOJI[def.element] || '❓';
       const bossTag = def.isBoss ? ' <b style="color:#ff4422">BOSS</b>' : '';
       html += `<div class="wave-preview-row"><span class="wp-icon">${emoji}</span><span class="wp-name">${def.name}${bossTag}</span><span class="wp-count">×${e.count}</span></div>`;
-      // Scout's Intel L1: show HP and ATK
-      if (scoutLevel >= 1 && def.stats) {
-        html += `<div style="font-size:10px;color:#8899aa;padding-left:24px">HP:${def.stats.hp} ATK:${def.stats.attack} DEF:${def.stats.defense}</div>`;
-      }
-      // Scout's Intel L2: show ability
-      if (scoutLevel >= 2 && def.ability) {
-        html += `<div style="font-size:10px;color:#aa88cc;padding-left:24px">⚡ ${def.ability.name}: ${def.ability.description}</div>`;
-      }
       total += e.count;
     }
     html += `<div style="margin-top:4px;font-weight:700;color:#8899aa;font-size:11px">Total: ${total} enemies</div>`;
+
+    // Scout's Intel: preview NEXT wave with full details
+    if (scoutLevel >= 1) {
+      const totalWaves = _campaignMode === 'void' ? 25 : (GAME_CONFIG.waveCount || 15);
+      const nextW = state.wave + 1;
+      if (nextW <= totalWaves) {
+        const nextDef = WaveGenerator.generate(nextW);
+        const nextEnemies = nextDef.enemies || [];
+        html += `<hr style="border-color:#334;margin:6px 0">`;
+        html += `<div class="wave-preview-title" style="color:#ffaa44">🔭 Next Wave ${nextW}</div>`;
+        let nextTotal = 0;
+        for (const e of nextEnemies) {
+          const def = UNIT_MAP[e.unitId];
+          if (!def) continue;
+          const emoji = ELEMENT_EMOJI[def.element] || '❓';
+          const bossTag = def.isBoss ? ' <b style="color:#ff4422">BOSS</b>' : '';
+          html += `<div class="wave-preview-row"><span class="wp-icon">${emoji}</span><span class="wp-name">${def.name}${bossTag}</span><span class="wp-count">×${e.count}</span></div>`;
+          if (def.stats) {
+            html += `<div style="font-size:10px;color:#8899aa;padding-left:24px">HP:${def.stats.hp} ATK:${def.stats.attack} DEF:${def.stats.defense}</div>`;
+          }
+          if (def.ability) {
+            html += `<div style="font-size:10px;color:#aa88cc;padding-left:24px">⚡ ${def.ability.name}: ${def.ability.description}</div>`;
+          }
+          nextTotal += e.count;
+        }
+        html += `<div style="margin-top:4px;font-weight:700;color:#8899aa;font-size:11px">Total: ${nextTotal} enemies</div>`;
+      } else {
+        html += `<hr style="border-color:#334;margin:6px 0">`;
+        html += `<div class="wave-preview-title" style="color:#ffaa44">🔭 Final wave — no next wave!</div>`;
+      }
+    }
+
     el.innerHTML = html;
     el.classList.remove('hidden');
   }
@@ -261,31 +287,66 @@ const Game = (() => {
     if (_totalUpgradesBought >= 10) _unlockAchievement('big_spender');
   }
 
-  // ── Upgrade Stat Buffs (applied at battle start, removed after) ────────
+  // ── Upgrade Stat Buffs (permanent for the run) ────────────────────────
 
-  function _applyUpgradeBuffs() {
+  /** Apply elite_training + double_edge to a single unit (uses base stats) */
+  function _applyUpgradeBuffsToUnit(u) {
     const eliteLevel = state.upgradeLevels['elite_training'] || 0;
     const deLevel = state.upgradeLevels['double_edge'] || 0;
     if (eliteLevel === 0 && deLevel === 0) return;
 
-    const eliteBonus = 0.05 * eliteLevel;  // +5% ATK & DEF per level
-    const deAtkBonus = 0.20 * deLevel;     // +20% ATK per level
-    const deDefPenalty = 0.10 * deLevel;   // −10% DEF per level
+    const eliteAtk = [0, 0.05, 0.15, 0.25][eliteLevel];
+    const eliteDef = [0, 0, 0, 0.10][eliteLevel];
+    const eliteSpd = [0, 0.05, 0.10, 0.15][eliteLevel];
+    const deAtkBonus = 0.20 * deLevel;
+    const deDefPenalty = 0.20 * deLevel;
 
-    for (const u of state.playerUnits) {
-      // Save original stats for restoration
-      u._origAttack = u.attack;
-      u._origDefense = u.defense;
-      // Elite Training: +ATK and +DEF
-      u.attack = Math.floor(u.attack * (1 + eliteBonus + deAtkBonus));
-      u.defense = Math.max(0, Math.floor(u.defense * (1 + eliteBonus - deDefPenalty)));
-    }
+    // Always compute from base definition stats
+    const base = u.definition.stats;
+    u.attack  = Math.floor(base.attack  * (1 + eliteAtk + deAtkBonus));
+    u.defense = Math.max(0, Math.floor(base.defense * (1 + eliteDef - deDefPenalty)));
+    u.speed   = Math.floor(base.speed   * (1 + eliteSpd));
+    u.stats.attack  = u.attack;
+    u.stats.defense = u.defense;
+    u.stats.speed   = u.speed;
   }
 
-  function _removeUpgradeBuffs() {
+  /** Re-apply upgrade buffs to ALL player units (called on upgrade purchase) */
+  function _applyUpgradeBuffsToAll() {
+    for (const u of state.playerUnits) _applyUpgradeBuffsToUnit(u);
+  }
+
+  // ── Synergy Display Helpers ───────────────────────────────────────────────
+
+  /** Get active synergies for a specific unit based on current team composition */
+  function _getActiveSynergiesForUnit(unit) {
+    const counts = {};
+    for (const u of state.playerUnits) counts[u.definition.element] = (counts[u.definition.element] || 0) + 1;
+    const elem = unit.definition.element;
+    const byKey = {};
+    for (const syn of ELEMENT_SYNERGIES) {
+      if (syn.element === elem && (counts[elem] || 0) >= syn.requiredCount) {
+        byKey[syn.bonus.stat] = syn; // highest tier wins
+      }
+    }
+    return Object.values(byKey);
+  }
+
+  /** Refresh synergy icons on all player unit tiles */
+  function _refreshSynergyIcons() {
+    const counts = {};
+    for (const u of state.playerUnits) counts[u.definition.element] = (counts[u.definition.element] || 0) + 1;
+    const activeSynsByElement = {};
+    for (const syn of ELEMENT_SYNERGIES) {
+      if ((counts[syn.element] || 0) >= syn.requiredCount) {
+        if (!activeSynsByElement[syn.element]) activeSynsByElement[syn.element] = {};
+        activeSynsByElement[syn.element][syn.bonus.stat] = syn;
+      }
+    }
     for (const u of state.playerUnits) {
-      if (u._origAttack !== undefined) { u.attack = u._origAttack; delete u._origAttack; }
-      if (u._origDefense !== undefined) { u.defense = u._origDefense; delete u._origDefense; }
+      const elem = u.definition.element;
+      const syns = activeSynsByElement[elem] ? Object.values(activeSynsByElement[elem]) : [];
+      Grid.updateSynergyIcons(u.row, u.col, syns, elem);
     }
   }
 
@@ -496,6 +557,7 @@ const Game = (() => {
     UI.clearUnitDetail();
     state.selectedUnit = null;
     UI.updateSynergies(state.playerUnits);
+    _refreshSynergyIcons();
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
     UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
     _refreshHUD();
@@ -546,7 +608,7 @@ const Game = (() => {
         _inspectedUnit = unit;
         Grid.clearSelection();
         Grid.selectTile(row, col);
-        UI.showUnitDetail(unit);
+        UI.showUnitDetail(unit, state.upgradeLevels, !unit.isEnemy ? _getActiveSynergiesForUnit(unit) : null);
         UI.switchTab('unit');
       }
       return;
@@ -568,19 +630,27 @@ const Game = (() => {
       // Deduct gold NOW on actual placement
       state.gold -= def.cost;
       const unit = _mkUnit(def, targetRow, col);
+      _applyUpgradeBuffsToUnit(unit);
       state.playerUnits.push(unit);
       state.shopUnits[state.selectedShopIdx] = null;
       state.selectedShopIdx = null;
       Grid.placeUnit(unit, targetRow, col);
+      Grid.updateUpgradeIcons(targetRow, col, state.upgradeLevels);
       Grid.clearHighlights();
       Grid.clearSelection();
       Audio.play('place');
       UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
       UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
       UI.updateSynergies(state.playerUnits);
-      UI.showUnitDetail(unit);
+      UI.showUnitDetail(unit, state.upgradeLevels, _getActiveSynergiesForUnit(unit));
       UI.showMessage('');
+      _refreshSynergyIcons();
       _refreshHUD();
+
+      // Contextual tips
+      _showContextualTip('first_unit_placed');
+      const syns = _getActiveSynergiesForUnit(unit);
+      if (syns.length > 0) _showContextualTip('first_synergy');
       return;
       }
     }
@@ -592,8 +662,10 @@ const Game = (() => {
       Grid.removeUnitFromTile(u.row, u.col);
       u.row = row; u.col = col;
       Grid.placeUnit(u, row, col);
+      Grid.updateUpgradeIcons(row, col, state.upgradeLevels);
       Grid.clearSelection();
       Grid.clearHighlights();
+      _refreshSynergyIcons();
       state.selectedUnit = null;
       UI.showMessage('');
       return;
@@ -612,8 +684,9 @@ const Game = (() => {
       state.selectedUnit = clickedUnit;
       Grid.clearSelection();
       Grid.selectTile(row, col);
-      UI.showUnitDetail(clickedUnit);
+      UI.showUnitDetail(clickedUnit, state.upgradeLevels, _getActiveSynergiesForUnit(clickedUnit));
       UI.showMessage(`${clickedUnit.definition.name} — Click again to deselect | Right-click to sell | Click empty tile to move`);
+      _showContextualTip('stat_card_explain');
 
       // Highlight moveable tiles
       const empties = [];
@@ -792,11 +865,15 @@ const Game = (() => {
 
     Audio.play('waveStart');
 
+    // Contextual tips
+    _showContextualTip('first_battle');
+    const hasBoss = enemies.some(e => e.definition.isBoss);
+    if (hasBoss) _showContextualTip('first_boss');
+
     // Save player unit positions to restore after battle
     _preBattlePositions = state.playerUnits.map(u => ({ id: u.id, row: u.row, col: u.col }));
 
-    // Apply upgrade stat buffs (Elite Training + Double Edge)
-    _applyUpgradeBuffs();
+    // Upgrade stat buffs are already permanent — no per-battle apply needed
 
     // Boss intro cinematic
     const boss = enemies.find(e => e.definition.isBoss);
@@ -826,9 +903,12 @@ const Game = (() => {
   function _onUnitAttack(attacker, target) {
     Grid.animateAttack(attacker.row, attacker.col);
     Audio.play('attack');
-    // Ranged projectile with element-specific VFX trails
     if ((attacker.stats.range || 1) > 1) {
+      // Ranged projectile with element-specific VFX trails
       VFX.elementProjectile(attacker.row, attacker.col, target.row, target.col, attacker.definition.element);
+    } else {
+      // Melee slash animation on target
+      VFX.meleeSlash(target.row, target.col);
     }
   }
 
@@ -841,7 +921,15 @@ const Game = (() => {
     Grid.updateStatusIcons(unit.row, unit.col, unit.statusEffects);
     Grid.updateStatusAuras(unit.row, unit.col, unit.statusEffects);
     if (_inspectedUnit && _inspectedUnit.id === unit.id) {
-      UI.showUnitDetail(unit);
+      UI.showUnitDetail(unit, state.upgradeLevels, !unit.isEnemy ? _getActiveSynergiesForUnit(unit) : null);
+    }
+    // Contextual tips for first buff/debuff on player units
+    if (!unit.isEnemy && unit.statusEffects?.length > 0) {
+      const NEGATIVES = ['burn','poison','freeze','slow','weaken','wound','blind'];
+      const hasDebuff = unit.statusEffects.some(s => NEGATIVES.includes(s.type));
+      const hasBuff = unit.statusEffects.some(s => !NEGATIVES.includes(s.type));
+      if (hasDebuff) _showContextualTip('first_debuff');
+      if (hasBuff) _showContextualTip('first_buff');
     }
   }
 
@@ -869,7 +957,7 @@ const Game = (() => {
     Grid.animateDamageNumber(target.row, target.col, dmg, elemColor);
     // Live-refresh detail panel if this unit is being inspected
     if (_inspectedUnit && _inspectedUnit.id === target.id) {
-      UI.showUnitDetail(target);
+      UI.showUnitDetail(target, state.upgradeLevels, !target.isEnemy ? _getActiveSynergiesForUnit(target) : null);
     }
     // Track stats
     if (sourceId && _battleStats) {
@@ -1002,8 +1090,7 @@ const Game = (() => {
     state.phase = 'result';
     battle = null;
     _inspectedUnit = null;
-    // Remove temporary upgrade stat buffs
-    _removeUpgradeBuffs();
+    // Upgrade stat buffs are permanent — no post-battle removal
 
     if (playerWon) {
       Audio.play('waveClear');
@@ -1030,6 +1117,8 @@ const Game = (() => {
       // Check wave-end achievements
       _checkAchievementsOnWaveEnd(true);
       UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
+      _refreshUpgradeIcons();
+      _refreshSynergyIcons();
       _refreshHUD();
     } else {
       _handleGameOver();
@@ -1073,6 +1162,7 @@ const Game = (() => {
       const saved = _preBattlePositions.find(p => p.id === u.id);
       if (saved) { u.row = saved.row; u.col = saved.col; }
       Grid.placeUnit(u, u.row, u.col);
+      Grid.updateUpgradeIcons(u.row, u.col, state.upgradeLevels);
     }
     _preBattlePositions = null;
   }
@@ -1210,6 +1300,24 @@ const Game = (() => {
     _updateRefreshBtn();
     _refreshHUD();
     UI.updateSynergies(state.playerUnits);
+
+    // Update upgrade badges on all player units
+    if (id === 'elite_training' || id === 'double_edge') {
+      _applyUpgradeBuffsToAll();
+      _refreshUpgradeIcons();
+      VFX.screenFlash(id === 'elite_training' ? '#44dd44' : '#ff5544', 200);
+    }
+
+    _showContextualTip('first_upgrade');
+  }
+
+  function _refreshUpgradeIcons() {
+    const eliteLevel = state.upgradeLevels['elite_training'] || 0;
+    const deLevel = state.upgradeLevels['double_edge'] || 0;
+    if (eliteLevel === 0 && deLevel === 0) return;
+    for (const u of state.playerUnits) {
+      Grid.updateUpgradeIcons(u.row, u.col, state.upgradeLevels);
+    }
   }
 
   // ── Speed Control ─────────────────────────────────────────────────────────
@@ -1217,6 +1325,7 @@ const Game = (() => {
   function setSpeed(mult) {
     _currentSpeedMult = mult;
     battle?.setSpeed(mult);
+    VFX.setSpeed(mult);
     document.querySelectorAll('.btn-speed').forEach(b => {
       b.classList.toggle('active', parseFloat(b.dataset.speed) === mult);
     });
@@ -1385,6 +1494,20 @@ const Game = (() => {
     }
   }
 
+  function _returnToTitle() {
+    if (battle) battle.stop();
+    battle = null;
+    _challengeMode = null;
+    _challengeModifier = null;
+    _challengeElement = null;
+    // Hide end-game overlays so they don't stay on top
+    document.getElementById('overlay-gameover')?.classList.add('hidden');
+    document.getElementById('overlay-win')?.classList.add('hidden');
+    UI.showScreen('screen-title');
+    Audio.playMusic('ss_title_music_full.mp3');
+    _updateTitleUnlocks();
+  }
+
   // ── Achievements Overlay ────────────────────────────────────────────────
 
   function _showAchievements() {
@@ -1402,9 +1525,12 @@ const Game = (() => {
       const dateStr = isUnlocked
         ? `<div class="achievement-date">Unlocked ${new Date(unlocked[a.id]).toLocaleDateString()}</div>`
         : '';
+      const iconHtml = (a.badge && isUnlocked)
+        ? `<img class="achievement-badge" src="${a.badge}" alt="${a.name}">`
+        : `<div class="achievement-icon">${a.icon}</div>`;
       return `
         <div class="achievement-card ${isUnlocked ? 'unlocked' : 'locked'}">
-          <div class="achievement-icon">${a.icon}</div>
+          ${iconHtml}
           <div class="achievement-info">
             <div class="achievement-name">${a.name}</div>
             <div class="achievement-desc">${a.description}</div>
@@ -1642,6 +1768,33 @@ const Game = (() => {
       });
     }
 
+    // Tutorial toggle (persist to localStorage)
+    const tutToggle = document.getElementById('opt-tutorial');
+    if (tutToggle) {
+      const savedTut = localStorage.getItem('shape_strikers_tutorial');
+      if (savedTut !== null) tutToggle.checked = savedTut === '1';
+      tutToggle.addEventListener('change', () => {
+        localStorage.setItem('shape_strikers_tutorial', tutToggle.checked ? '1' : '0');
+      });
+    }
+
+    // In-Game Tips toggle (persist to localStorage)
+    const tipsToggle = document.getElementById('opt-tips');
+    if (tipsToggle) {
+      const savedTips = localStorage.getItem('shape_strikers_tips_enabled');
+      if (savedTips !== null) tipsToggle.checked = savedTips === '1';
+      tipsToggle.addEventListener('change', () => {
+        localStorage.setItem('shape_strikers_tips_enabled', tipsToggle.checked ? '1' : '0');
+        // Reset seen tips when user re-enables so they see them again
+        if (tipsToggle.checked) {
+          for (const key of Object.keys(_seenTips)) {
+            if (key !== '_v') delete _seenTips[key];
+          }
+          localStorage.setItem('shape_strikers_tips_seen', JSON.stringify(_seenTips));
+        }
+      });
+    }
+
     // Mute toggle (title screen checkbox)
     const muteToggle = document.getElementById('opt-mute');
     if (muteToggle) {
@@ -1678,6 +1831,7 @@ const Game = (() => {
 
     // Achievements overlay
     document.getElementById('btn-achievements')?.addEventListener('click', () => _showAchievements());
+    document.getElementById('btn-achievements-hud')?.addEventListener('click', () => _showAchievements());
     document.getElementById('btn-achievements-close')?.addEventListener('click', () => {
       document.getElementById('overlay-achievements')?.classList.add('hidden');
     });
@@ -1716,15 +1870,7 @@ const Game = (() => {
     document.getElementById('btn-refresh')?.addEventListener('click', () => refreshShop(false));
     document.getElementById('btn-glossary')?.addEventListener('click', () => UI.showGlossary());
     document.getElementById('btn-slots')?.addEventListener('click', _openSlots);
-    document.getElementById('btn-quit')?.addEventListener('click', () => {
-      if (battle) battle.stop();
-      _challengeMode = null;
-      _challengeModifier = null;
-      _challengeElement = null;
-      UI.showScreen('screen-title');
-      Audio.playMusic('ss_title_music_full.mp3');
-      _updateTitleUnlocks();
-    });
+    document.getElementById('btn-quit')?.addEventListener('click', _returnToTitle);
 
     // Speed buttons
     document.querySelectorAll('.btn-speed').forEach(b => {
@@ -1735,6 +1881,8 @@ const Game = (() => {
     document.getElementById('btn-next-wave')?.addEventListener('click', nextWave);
     document.getElementById('btn-gameover-restart')?.addEventListener('click', restart);
     document.getElementById('btn-win-restart')?.addEventListener('click', restart);
+    document.getElementById('btn-gameover-menu')?.addEventListener('click', _returnToTitle);
+    document.getElementById('btn-win-menu')?.addEventListener('click', _returnToTitle);
 
     // Glossary close + filter
     document.getElementById('btn-glossary-close')?.addEventListener('click', () => UI.hideGlossary());
@@ -1774,7 +1922,7 @@ const Game = (() => {
     const achievements = _getAchievements();
     const unlockedCount = Object.keys(achievements).length;
     if (unlockedCount > 0) {
-      el.innerHTML += `<br><span class="unlock-badge" style="cursor:pointer" onclick="Game.showAchievements()">🏅 ${unlockedCount}/${ACHIEVEMENTS.length} Achievements</span>`;
+      el.innerHTML += `<br><span class="unlock-badge">🏅 ${unlockedCount}/${ACHIEVEMENTS.length} Achievements</span>`;
     }
 
     // Challenge status on title screen
@@ -1800,18 +1948,15 @@ const Game = (() => {
   // ── Tutorial System ───────────────────────────────────────────────────────
 
   const TUTORIAL_STEPS = [
-    { text: '👋 <b>Welcome!</b> This is the <b>grid</b> — your bottom 2 rows are where you place units. Enemies spawn in the top rows.', highlight: '#grid-area', position: 'right' },
-    { text: '🛒 <b>Shop cards</b> appear here. Click a card to buy a unit, then click an empty tile in your zone to place it.', highlight: '#shop-units', position: 'top' },
-    { text: '🔄 Use <b>Refresh</b> to get new shop units (costs gold). <b>Right-click</b> a placed unit to sell it back.', highlight: '#btn-refresh', position: 'top' },
-    { text: '🔥 <b>Element synergies!</b> Place 2+ units of the same element (Fire, Ice, etc.) to activate bonus stats for those units.', highlight: '#synergy-list', position: 'left' },
-    { text: '⬆️ Check the <b>Stats tab</b> for upgrades — Army Expansion adds slots, Field Medic heals between waves, and more.', highlight: '#upgrade-list', position: 'left' },
-    { text: '⚔️ When ready, press <b>Fight!</b> — units auto-battle, moving toward enemies and using abilities. Faster units act first.', highlight: '#btn-battle', position: 'top' },
-    { get text() { return `🏆 Defeat ${_campaignMode === 'void' ? 25 : 15} waves to win! <b>Enemy units</b> have a red skull badge 💀 — look for it on the grid. Good luck!`; }, highlight: '#top-bar', position: 'bottom' },
+    { text: '👋 <b>Welcome to Shape Strikers!</b> Your <b>bottom 2 rows</b> are where you place units. Enemies will spawn in the top rows.', highlight: '#grid-area', position: 'right' },
+    { text: '🛒 Click a <b>shop card</b> to buy a unit, then click an <b>empty tile</b> in your zone to place it. <b>Right-click</b> a placed unit to sell it back.', highlight: '#shop-units', position: 'top' },
+    { text: '⚔️ When ready, press <b>Fight!</b> — your units will auto-battle. Buy more units and upgrades between waves. Good luck!', highlight: '#btn-battle', position: 'top' },
   ];
 
   let tutorialStep = -1;
 
   function _startTutorial() {
+    if (_challengeMode) return; // skip tutorial for challenges
     if (!document.getElementById('opt-tutorial')?.checked) return;
     tutorialStep = 0;
     _showTutorialStep();
@@ -1825,6 +1970,12 @@ const Game = (() => {
     if (!overlay || tutorialStep < 0 || tutorialStep >= TUTORIAL_STEPS.length) {
       overlay?.classList.add('hidden');
       _clearTutorialHighlight();
+      if (tutorialStep >= TUTORIAL_STEPS.length) {
+        // Tutorial completed — default OFF for future games
+        const tutToggle = document.getElementById('opt-tutorial');
+        if (tutToggle) tutToggle.checked = false;
+        localStorage.setItem('shape_strikers_tutorial', '0');
+      }
       tutorialStep = -1;
       return;
     }
@@ -1864,6 +2015,7 @@ const Game = (() => {
 
   function _positionTutorialBox(box, rect, pos) {
     const gap = 12;
+    const boxW = 400; // max-width of tutorial-box
     box.style.position = 'fixed';
     box.style.bottom = 'auto';
     box.style.left = 'auto';
@@ -1872,20 +2024,20 @@ const Game = (() => {
     switch (pos) {
       case 'right':
         box.style.top = Math.max(8, rect.top) + 'px';
-        box.style.left = Math.min(rect.right + gap, window.innerWidth - 400) + 'px';
+        box.style.left = Math.min(rect.right + gap, window.innerWidth - boxW - 8) + 'px';
         break;
       case 'left':
         box.style.top = Math.max(8, rect.top) + 'px';
-        box.style.left = Math.max(8, rect.left - 400 - gap) + 'px';
+        box.style.left = Math.max(8, rect.left - boxW - gap) + 'px';
         break;
       case 'top':
         box.style.top = Math.max(8, rect.top - box.offsetHeight - gap) + 'px';
-        box.style.left = Math.max(8, rect.left + rect.width / 2 - 200) + 'px';
+        box.style.left = Math.min(Math.max(8, rect.left + rect.width / 2 - 200), window.innerWidth - boxW - 8) + 'px';
         break;
       case 'bottom':
       default:
         box.style.top = (rect.bottom + gap) + 'px';
-        box.style.left = Math.max(8, rect.left + rect.width / 2 - 200) + 'px';
+        box.style.left = Math.min(Math.max(8, rect.left + rect.width / 2 - 200), window.innerWidth - boxW - 8) + 'px';
         break;
     }
   }
@@ -1901,6 +2053,141 @@ const Game = (() => {
     document.getElementById('overlay-tutorial')?.classList.add('hidden');
   }
 
+  // ── Contextual Tips ─────────────────────────────────────────────────────
+
+  const _TIP_VERSION = 1; // bump to reset tips when definitions change
+  const _storedTips = JSON.parse(localStorage.getItem('shape_strikers_tips_seen') || '{}');
+  const _seenTips = _storedTips._v === _TIP_VERSION ? _storedTips : { _v: _TIP_VERSION };
+  let _tipTimer = null;
+  let _pendingTipId = null; // track which tip is queued so we don't lose it
+
+  const CONTEXTUAL_TIPS = {
+    first_unit_placed: {
+      text: '📋 <b>Unit Card!</b> Click any placed unit to see its stats, abilities, and active buffs in the <b>Unit tab</b> on the right.',
+      highlight: '#tab-unit',
+      position: 'left',
+    },
+    first_synergy: {
+      text: '🔥 <b>Synergy activated!</b> You placed 2+ units of the same element. Matching units get <b>bonus stats</b> — look for the <b>synergy pill</b> and <b>strikethrough → boosted</b> numbers on this unit card!',
+      highlight: '#unit-detail',
+      position: 'left',
+    },
+    first_battle: {
+      text: '⚔️ <b>Battle started!</b> Units attack automatically. Click any unit during combat to see its <b>live HP, status effects, and damage</b> in real-time.',
+      highlight: '#tab-unit',
+      position: 'left',
+    },
+    first_debuff: {
+      text: '🔴 <b>Debuff applied!</b> Your unit got a negative status effect. Look for <b>red pills</b> on the unit card — they show what\'s affecting your unit and how long it lasts.',
+      highlight: '#tab-unit',
+      position: 'left',
+    },
+    first_buff: {
+      text: '🟢 <b>Buff active!</b> Your unit gained a positive effect. <b>Green pills</b> on the unit card show active buffs like shields and barriers.',
+      highlight: '#tab-unit',
+      position: 'left',
+    },
+    first_upgrade: {
+      text: '⬆️ <b>Upgrade purchased!</b> Upgrade bonuses apply to <b>all your units</b>. Elite Training and Double Edge show as badges on unit cards.',
+      highlight: '#upgrade-list',
+      position: 'left',
+    },
+    first_boss: {
+      text: '👑 <b>Boss wave incoming!</b> Bosses have <b>multiple phases</b> — when their HP drops to a threshold, they power up. Focus your strongest units!',
+      highlight: '#grid-area',
+      position: 'right',
+    },
+    stat_card_explain: {
+      text: '📊 <b>Reading the Unit Card</b> — <b>ATK</b> is raw power (reduced by target\'s DEF). <b>Strikethrough</b> numbers show base stats, colored numbers show synergy-boosted values. <b>SPD</b> determines turn order.',
+      highlight: '#tab-unit',
+      position: 'left',
+    },
+  };
+
+  function _showContextualTip(tipId) {
+    if (_seenTips[tipId]) return;
+    if (tutorialStep >= 0) return; // don't overlap with onboarding tutorial
+    if (_challengeMode) return;    // skip tips during challenges
+    // Respect the In-Game Tips toggle
+    const tipsToggle = document.getElementById('opt-tips');
+    if (tipsToggle && !tipsToggle.checked) return;
+
+    const tip = CONTEXTUAL_TIPS[tipId];
+    if (!tip) return;
+
+    // If another tip is pending, don't cancel it — skip this one instead
+    if (_pendingTipId && _pendingTipId !== tipId) return;
+
+    // Pause battle if one is running so the player isn't rushed
+    const wasBattling = battle && battle._running;
+    if (wasBattling) battle.pause();
+
+    _pendingTipId = tipId;
+    clearTimeout(_tipTimer);
+    _tipTimer = setTimeout(() => {
+      // Mark as seen ONLY when we actually display
+      _seenTips[tipId] = true;
+      localStorage.setItem('shape_strikers_tips_seen', JSON.stringify(_seenTips));
+      _pendingTipId = null;
+
+      const overlay = document.getElementById('overlay-tutorial');
+      const content = document.getElementById('tutorial-content');
+      const progress = document.getElementById('tutorial-progress');
+      const tutorialBox = document.getElementById('tutorial-box');
+      const nextBtn = document.getElementById('btn-tutorial-next');
+      const skipBtn = document.getElementById('btn-tutorial-skip');
+
+      if (!overlay || !content) return;
+
+      content.innerHTML = tip.text;
+      progress.textContent = '💡 Tip';
+      if (nextBtn) nextBtn.textContent = 'Got it! ✓';
+      if (skipBtn) skipBtn.textContent = 'Don\'t show tips';
+
+      overlay.classList.remove('hidden');
+
+      _clearTutorialHighlight();
+      if (tip.highlight) {
+        const target = document.querySelector(tip.highlight);
+        if (target && tutorialBox) {
+          target.classList.add('tutorial-spotlight');
+          tutorialBox.removeAttribute('style');
+          const rect = target.getBoundingClientRect();
+          const pos = tip.position || 'bottom';
+          tutorialBox.dataset.position = pos;
+          _positionTutorialBox(tutorialBox, rect, pos);
+        }
+      }
+
+      // Override buttons for contextual tips
+      const _dismiss = () => {
+        overlay.classList.add('hidden');
+        _clearTutorialHighlight();
+        nextBtn?.removeEventListener('click', nextHandler);
+        skipBtn?.removeEventListener('click', disableHandler);
+        nextBtn?.addEventListener('click', _nextTutorialStep);
+        skipBtn?.addEventListener('click', _skipTutorial);
+        if (nextBtn) nextBtn.textContent = 'Next →';
+        if (skipBtn) skipBtn.textContent = 'Skip Tutorial';
+        // Resume battle if we paused it
+        if (wasBattling && battle) battle.resume();
+      };
+      const nextHandler = () => _dismiss();
+      const disableHandler = () => {
+        // Disable all future tips
+        for (const key of Object.keys(CONTEXTUAL_TIPS)) _seenTips[key] = true;
+        localStorage.setItem('shape_strikers_tips_seen', JSON.stringify(_seenTips));
+        _dismiss();
+      };
+
+      // Temporarily replace button handlers
+      nextBtn?.removeEventListener('click', _nextTutorialStep);
+      skipBtn?.removeEventListener('click', _skipTutorial);
+      nextBtn?.addEventListener('click', nextHandler);
+      skipBtn?.addEventListener('click', disableHandler);
+    }, 600);
+  }
+
   // ── Fortune Spinner (Slot Machine) — Under Construction ────────────────────
 
   function _openSlots() {
@@ -1911,6 +2198,7 @@ const Game = (() => {
 
   function init() {
     preloadSprites(); // fire-and-forget — sprites ready before user enters game
+    preloadSlashSprites(); // melee slash animation frames
     Audio.init();
     Backend.init(); // fire-and-forget — leaderboards degrade gracefully
     _wireDOMButtons();

@@ -54,10 +54,4 @@ CREATE POLICY "Users insert own scores"
   WITH CHECK (auth.uid() = player_id);
 
 -- No UPDATE or DELETE — scores are immutable
--- (If you want users to delete their own scores later, add a policy here)
 
--- ══════════════════════════════════════════════════════════════════════════════
--- 4. Enable anonymous sign-in (do this in Supabase Dashboard)
--- ══════════════════════════════════════════════════════════════════════════════
--- Go to: Authentication → Providers → Anonymous Sign-In → Enable
--- This allows players to submit scores without creating an account.

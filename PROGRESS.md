@@ -115,7 +115,7 @@
 - [x] Challenge-safe unlocks — challenges don't grant campaign unlocks or achievements
 - [x] Title screen challenge badges — shows ✅ for completed daily/weekly
 
-### Phase 8 — Backend & Leaderboards ✨ LATEST
+### Phase 8 — Backend & Leaderboards
 - [x] Supabase integration (PostgreSQL + anonymous auth via CDN)
 - [x] `src/backend.js` — IIFE module: init, auth, submitScore, fetchGlobal/Challenge/Personal
 - [x] Anonymous sign-in — no account required, sessions persist via Supabase auth
@@ -126,6 +126,16 @@
 - [x] Graceful degradation — game fully playable if backend unavailable
 - [x] Supabase schema provided (`supabase_schema.sql`)
 - [x] Patch notes system — `PATCH_NOTES` array in config.js, "What's New" overlay on title screen
+
+### Phase 8.1 — Tutorial & Tips Polish ✨ LATEST
+- [x] Streamlined onboarding tutorial from 7 steps to 3 focused steps
+- [x] 8 contextual tips triggered at the right moment (first unit, synergy, battle, boss, etc.)
+- [x] Battle auto-pauses while a contextual tip is displayed
+- [x] "In-Game Tips" checkbox on title screen — toggle tips on/off, resets seen tips on re-enable
+- [x] Tips version system — stale localStorage auto-cleared when tip definitions change
+- [x] Color-coded buff/debuff status pills with emoji icons and stack counts
+- [x] Background image adjusted to show more of the scene (contain instead of cover)
+- [x] Viewport clamping for tutorial/tip box positioning
 
 ---
 
@@ -163,6 +173,8 @@
 | `shape_strikers_daily_challenge` | JSON: `{ "YYYY-MM-DD": { bestScore, attempts, completed } }` | On challenge end |
 | `shape_strikers_weekly_challenge` | JSON: `{ "YYYY-WNN": { bestScore, attempts, completed } }` | On challenge end |
 | `shape_strikers_player_name` | Leaderboard display name (max 20 chars) | On first score submit |
+| `shape_strikers_tips_seen` | JSON object of seen contextual tip IDs (versioned) | On tip display |
+| `shape_strikers_tips_enabled` | In-Game Tips toggle preference | Toggle in title |
 
 ---
 
@@ -178,6 +190,8 @@
 | Void button always visible | Generic `.hidden` CSS rule | 7A |
 | Boss phaseHp not scaled in hard mode | Scale with HARD_MODE_SCALING | 7A |
 | Tutorial "15 waves" in void campaign | Getter-based dynamic text | 7A |
+| Contextual tips not appearing after tutorial re-enable | Version-gated tip reset + deferred seen-marking | 8.1 |
+| Background image too zoomed in | Changed `cover` to `contain` on game screen | 8.1 |
 
 ---
 

@@ -157,11 +157,11 @@ const UI = (() => {
 
   // ── Unit Detail Tab ───────────────────────────────────────────────────────
 
-  function showUnitDetail(unit) {
+  function showUnitDetail(unit, upgradeLevels, activeSynergies) {
     // unit = live unit object or just a definition
     const def = unit.definition || unit;
     const liveHp   = unit.hp    !== undefined ? unit.hp    : def.stats.hp;
-    const liveMaxHp = unit.maxHp !== undefined ? unit.maxHp : def.stats.maxHp;
+    const liveMaxHp = unit.maxHp !== undefined ? unit.maxHp : def.stats.hp;
 
     document.getElementById('unit-detail-empty').style.display = 'none';
     const detail = document.getElementById('unit-detail');
@@ -173,31 +173,97 @@ const UI = (() => {
     const hpPct = Math.max(0, (liveHp / liveMaxHp) * 100);
     const hpColor = hpPct < 25 ? '#ff4422' : hpPct < 60 ? '#ffaa22' : '#44ff88';
 
+    // Compute synergy-projected stat values (only during prep — during battle, stats are already boosted)
+    const synergyBoosts = {};
+    const alreadyBoosted = !!unit._baseStats; // _baseStats exists during battle = synergies already in stats
+    if (activeSynergies && activeSynergies.length > 0 && !alreadyBoosted) {
+      for (const syn of activeSynergies) {
+        synergyBoosts[syn.bonus.stat] = syn.bonus.multiplier;
+      }
+    }
+
+    const baseAtk = unit.stats?.attack  ?? def.stats.attack;
+    const baseDef = unit.stats?.defense ?? def.stats.defense;
+    const baseSpd = unit.stats?.speed   ?? def.stats.speed;
+
+    const projAtk = synergyBoosts.attack  ? Math.floor(baseAtk * synergyBoosts.attack)  : baseAtk;
+    const projDef = synergyBoosts.defense ? Math.floor(baseDef * synergyBoosts.defense) : baseDef;
+    const projSpd = synergyBoosts.speed   ? Math.floor(baseSpd * synergyBoosts.speed)   : baseSpd;
+    const projMaxHp = synergyBoosts.hp    ? Math.floor(liveMaxHp * synergyBoosts.hp)    : liveMaxHp;
+    const projHp = synergyBoosts.hp       ? Math.min(liveHp + (projMaxHp - liveMaxHp), projMaxHp) : liveHp;
+
+    const _buffVal = (base, proj, color) => {
+      if (proj !== base) return `<span style="color:#667788;font-size:10px;text-decoration:line-through">${base}</span> <span style="color:${color}">${proj}</span>`;
+      return `<span style="color:${color}">${base}</span>`;
+    };
+
+    const hpVal = synergyBoosts.hp
+      ? `<span style="color:#667788;font-size:10px;text-decoration:line-through">${liveHp}/${liveMaxHp}</span> <span style="color:#44ff88">${projHp}/${projMaxHp}</span>`
+      : `${liveHp} / ${liveMaxHp}`;
+
     const statRows = [
-      { label: 'HP',  val: `${liveHp} / ${liveMaxHp}`, color: '#44ff88' },
-      { label: 'ATK', val: unit.stats?.attack  ?? def.stats.attack,  color: '#ff6644' },
-      { label: 'DEF', val: unit.stats?.defense ?? def.stats.defense, color: '#66bbff' },
-      { label: 'SPD', val: unit.stats?.speed   ?? def.stats.speed,   color: '#ffff66' },
-      { label: 'RNG', val: def.stats.range, color: '#cccccc' },
-      { label: 'Cost', val: def.cost + 'g',  color: '#ffd700' },
+      { label: 'HP',  val: hpVal, color: '#44ff88' },
+      { label: 'ATK', val: _buffVal(baseAtk, projAtk, '#ff6644'), color: '#ff6644' },
+      { label: 'DEF', val: _buffVal(baseDef, projDef, '#66bbff'), color: '#66bbff' },
+      { label: 'SPD', val: _buffVal(baseSpd, projSpd, '#ffff66'), color: '#ffff66' },
+      { label: 'RNG', val: `<span style="color:#cccccc">${def.stats.range}</span>`, color: '#cccccc' },
+      { label: 'Cost', val: `<span style="color:#ffd700">${def.cost}g</span>`,  color: '#ffd700' },
     ];
 
     const statGrid = statRows.map(s =>
-      `<div class="unit-stat-cell"><div class="s-label">${s.label}</div><div class="s-val" style="color:${s.color}">${s.val}</div></div>`
+      `<div class="unit-stat-cell"><div class="s-label">${s.label}</div><div class="s-val">${s.val}</div></div>`
     ).join('');
 
+    // HP bar should reflect projected maxHp
+    const dispHpPct = Math.max(0, (projHp / projMaxHp) * 100);
+    const dispHpColor = dispHpPct < 25 ? '#ff4422' : dispHpPct < 60 ? '#ffaa22' : '#44ff88';
+    const hpBarLabel = synergyBoosts.hp
+      ? `<span style="color:#667788">HP</span><span style="color:${dispHpColor}">${projHp} / ${projMaxHp}</span>`
+      : `<span style="color:#667788">HP</span><span style="color:${hpColor}">${liveHp} / ${liveMaxHp}</span>`;
+
+    const DEBUFFS = ['burn','poison','freeze','slow','weaken','wound','blind'];
+    const STATUS_EMOJI = { burn:'🔥', poison:'☠️', freeze:'🧊', slow:'🐌', weaken:'⬇️', wound:'🩸', blind:'😵', shield:'🛡️', barrier:'✨', untargetable:'👻' };
     const statusHtml = (unit.statusEffects?.length > 0)
-      ? `<div class="status-effect-list">${unit.statusEffects.map(e => `<span class="status-pill">${e.type} (${e.duration}t)</span>`).join('')}</div>`
+      ? `<div class="status-effect-list">${unit.statusEffects.map(e => {
+          const isDebuff = DEBUFFS.includes(e.type);
+          const cls = isDebuff ? 'status-pill debuff' : 'status-pill buff';
+          const icon = STATUS_EMOJI[e.type] || '';
+          const stackStr = e.stacks > 1 ? ` ×${e.stacks}` : '';
+          return `<span class="${cls}">${icon} ${e.type}${stackStr} (${e.duration}t)</span>`;
+        }).join('')}</div>`
       : '';
+
+    // Upgrade indicators (only for player units with active upgrades)
+    let upgradeHtml = '';
+    if (upgradeLevels && !unit.isEnemy) {
+      const pills = [];
+      const el = upgradeLevels['elite_training'] || 0;
+      const de = upgradeLevels['double_edge'] || 0;
+      if (el > 0) pills.push(`<span class="upgrade-pill elite">⬆ Elite L${el}</span>`);
+      if (de > 0) pills.push(`<span class="upgrade-pill dedge">⚔ Double Edge</span>`);
+      if (pills.length) upgradeHtml = `<div class="upgrade-pill-list">${pills.join('')}</div>`;
+    }
+
+    // Synergy indicators (for player units with active element synergies)
+    let synergyHtml = '';
+    if (activeSynergies && activeSynergies.length > 0 && !unit.isEnemy) {
+      const synergyPills = activeSynergies.map(syn => {
+        const color = ELEMENT_COLORS[syn.element] || '#aaaaaa';
+        return `<span class="synergy-detail-pill" style="border-color:${color};color:${color}">${syn.description}</span>`;
+      });
+      synergyHtml = `<div class="synergy-pill-list">${synergyPills.join('')}</div>`;
+    }
 
     detail.innerHTML = `
       <div class="unit-name" style="color:${elemColor}">${elem} ${def.name}</div>
       <div class="unit-tier">${tier}</div>
       <div class="unit-tab-hp">
-        <div class="unit-tab-hp-label"><span style="color:#667788">HP</span><span style="color:${hpColor}">${liveHp} / ${liveMaxHp}</span></div>
-        <div class="unit-tab-hp-bar"><div class="unit-tab-hp-fill" style="width:${hpPct}%;background:${hpColor}"></div></div>
+        <div class="unit-tab-hp-label">${hpBarLabel}</div>
+        <div class="unit-tab-hp-bar"><div class="unit-tab-hp-fill" style="width:${dispHpPct}%;background:${dispHpColor}"></div></div>
       </div>
       <div class="unit-stat-grid">${statGrid}</div>
+      ${upgradeHtml}
+      ${synergyHtml}
       <div class="ability-box">
         <div class="ability-name">⚡ ${def.ability.name}</div>
         <div class="ability-desc">${def.ability.description}</div>

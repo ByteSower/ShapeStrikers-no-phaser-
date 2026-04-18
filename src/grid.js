@@ -145,7 +145,7 @@ const Grid = (() => {
     if (existing) existing.remove();
     tile.classList.remove('occupied', 'selected', 'enemy-unit', 'boss-tile');
     // Clean up status auras, icons, and floating elements
-    tile.querySelectorAll('.status-aura, .status-icons, .dmg-float, .ability-float, .boss-crown').forEach(el => el.remove());
+    tile.querySelectorAll('.status-aura, .status-icons, .upgrade-icons, .synergy-icons, .dmg-float, .ability-float, .boss-crown').forEach(el => el.remove());
     for (const t of AURA_TYPES) tile.classList.remove('has-' + t);
   }
 
@@ -168,6 +168,7 @@ const Grid = (() => {
     slow:         '🐌',
     weaken:       '⬇️',
     wound:        '🩸',
+    blind:        '😵',
     shield:       '🛡️',
     barrier:      '✨',
     untargetable: '👻',
@@ -218,6 +219,70 @@ const Grid = (() => {
       aura.className = `status-aura status-aura-${eff.type}`;
       tile.appendChild(aura);
       tile.classList.add('has-' + eff.type);
+    }
+  }
+
+  // ── Synergy Indicator Badges on Tiles ────────────────────────────────────────
+
+  const SYNERGY_STAT_ICONS = { attack: '⚔', defense: '🛡', speed: '💨', hp: '❤' };
+
+  function updateSynergyIcons(row, col, activeSynergies, element) {
+    const tile = getTileEl(row, col);
+    if (!tile) return;
+    let container = tile.querySelector('.synergy-icons');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'synergy-icons';
+      tile.appendChild(container);
+    }
+    container.innerHTML = '';
+    if (!activeSynergies || activeSynergies.length === 0) return;
+    const color = ELEMENT_COLORS[element] || '#aaaaaa';
+    for (const syn of activeSynergies) {
+      const el = document.createElement('span');
+      el.className = 'synergy-icon';
+      el.style.color = color;
+      el.style.textShadow = `0 0 6px ${color}, 0 0 12px ${color}80`;
+      el.textContent = SYNERGY_STAT_ICONS[syn.bonus.stat] || '✦';
+      el.title = syn.description;
+      container.appendChild(el);
+    }
+  }
+
+  // ── Upgrade Indicator Badges on Tiles ──────────────────────────────────────
+
+  function updateUpgradeIcons(row, col, upgradeLevels) {
+    const tile = getTileEl(row, col);
+    if (!tile) return;
+    let container = tile.querySelector('.upgrade-icons');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'upgrade-icons';
+      tile.appendChild(container);
+    }
+    container.innerHTML = '';
+    if (!upgradeLevels) return;
+    const eliteLevel = upgradeLevels['elite_training'] || 0;
+    const deLevel = upgradeLevels['double_edge'] || 0;
+    if (eliteLevel > 0) {
+      const el = document.createElement('span');
+      el.className = 'upgrade-icon elite';
+      el.textContent = '⬆';
+      if (eliteLevel > 1) {
+        const stack = document.createElement('span');
+        stack.className = 'upgrade-stack';
+        stack.textContent = eliteLevel;
+        el.appendChild(stack);
+      }
+      el.title = `Elite Training Lv${eliteLevel}`;
+      container.appendChild(el);
+    }
+    if (deLevel > 0) {
+      const el = document.createElement('span');
+      el.className = 'upgrade-icon double-edge';
+      el.textContent = '⚔';
+      el.title = 'Double Edge';
+      container.appendChild(el);
     }
   }
 
@@ -391,6 +456,10 @@ const Grid = (() => {
     fromTile.querySelectorAll('.status-aura').forEach(el => toTile.appendChild(el));
     const icons = fromTile.querySelector('.status-icons');
     if (icons) toTile.appendChild(icons);
+    const upgradeIcons = fromTile.querySelector('.upgrade-icons');
+    if (upgradeIcons) toTile.appendChild(upgradeIcons);
+    const synergyIcons = fromTile.querySelector('.synergy-icons');
+    if (synergyIcons) toTile.appendChild(synergyIcons);
     for (const t of AURA_TYPES) {
       if (fromTile.classList.contains('has-' + t)) {
         fromTile.classList.remove('has-' + t);
@@ -522,6 +591,8 @@ const Grid = (() => {
     updateUnitHp,
     updateStatusIcons,
     updateStatusAuras,
+    updateSynergyIcons,
+    updateUpgradeIcons,
     selectTile,
     clearSelection,
     highlightTiles,
