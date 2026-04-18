@@ -1389,6 +1389,7 @@ const Game = (() => {
     _initGameStats();
     _totalUpgradesBought = 0;
     _unitsLostThisRun = 0;
+    _seenTips = {};          // reset contextual tips each run
     battle = null;
     nextUnitId = 1;
     _currentWaveDef = null;
@@ -1785,13 +1786,6 @@ const Game = (() => {
       if (savedTips !== null) tipsToggle.checked = savedTips === '1';
       tipsToggle.addEventListener('change', () => {
         localStorage.setItem('shape_strikers_tips_enabled', tipsToggle.checked ? '1' : '0');
-        // Reset seen tips when user re-enables so they see them again
-        if (tipsToggle.checked) {
-          for (const key of Object.keys(_seenTips)) {
-            if (key !== '_v') delete _seenTips[key];
-          }
-          localStorage.setItem('shape_strikers_tips_seen', JSON.stringify(_seenTips));
-        }
       });
     }
 
@@ -1975,6 +1969,7 @@ const Game = (() => {
         const tutToggle = document.getElementById('opt-tutorial');
         if (tutToggle) tutToggle.checked = false;
         localStorage.setItem('shape_strikers_tutorial', '0');
+        _unlockAchievement('tutorial_complete');
       }
       tutorialStep = -1;
       return;
@@ -2055,11 +2050,9 @@ const Game = (() => {
 
   // ── Contextual Tips ─────────────────────────────────────────────────────
 
-  const _TIP_VERSION = 1; // bump to reset tips when definitions change
-  const _storedTips = JSON.parse(localStorage.getItem('shape_strikers_tips_seen') || '{}');
-  const _seenTips = _storedTips._v === _TIP_VERSION ? _storedTips : { _v: _TIP_VERSION };
+  let _seenTips = {};      // session-only — resets each new game
   let _tipTimer = null;
-  let _pendingTipId = null; // track which tip is queued so we don't lose it
+  let _pendingTipId = null;
 
   const CONTEXTUAL_TIPS = {
     first_unit_placed: {
@@ -2125,9 +2118,7 @@ const Game = (() => {
     _pendingTipId = tipId;
     clearTimeout(_tipTimer);
     _tipTimer = setTimeout(() => {
-      // Mark as seen ONLY when we actually display
       _seenTips[tipId] = true;
-      localStorage.setItem('shape_strikers_tips_seen', JSON.stringify(_seenTips));
       _pendingTipId = null;
 
       const overlay = document.getElementById('overlay-tutorial');
@@ -2174,9 +2165,9 @@ const Game = (() => {
       };
       const nextHandler = () => _dismiss();
       const disableHandler = () => {
-        // Disable all future tips
-        for (const key of Object.keys(CONTEXTUAL_TIPS)) _seenTips[key] = true;
-        localStorage.setItem('shape_strikers_tips_seen', JSON.stringify(_seenTips));
+        // Uncheck the In-Game Tips toggle so tips stay off
+        const toggle = document.getElementById('opt-tips');
+        if (toggle) { toggle.checked = false; localStorage.setItem('shape_strikers_tips_enabled', '0'); }
         _dismiss();
       };
 

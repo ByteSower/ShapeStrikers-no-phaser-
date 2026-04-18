@@ -73,6 +73,7 @@ const ACHIEVEMENTS = [
   { id: 'big_spender',      name: '💰 Big Spender',   icon: '💰', description: 'Buy 10+ upgrades in a single run' },
   { id: 'extinction',       name: 'Extinction',        icon: '💀', description: 'Kill 100+ enemies in a single run' },
   { id: 'flawless_run',     name: 'Flawless Run',     icon: '✨', description: 'Win the game without losing any unit' },
+  { id: 'tutorial_complete', name: 'Good Student',      icon: '🎓', description: 'Complete the tutorial',                badge: 'public/sprites/tutorial_complete_badge.png' },
 ];
 
 // ─── Challenge Modifiers (for Weekly Challenges) ──────────────────────────────
