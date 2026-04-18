@@ -1033,8 +1033,6 @@ const PATCH_NOTES = [
       '📝 8 contextual tips that appear at the right moment (first unit placed, first synergy, first boss, etc.)',
       '⏸️ Battle auto-pauses while a tip is shown so you can read without pressure',
       '🩹 Color-coded buff/debuff status pills with emoji icons and stack counts',
-      '🖼️ Background image now shows more of the scene (less zoomed in)',
-      '🐛 Fixed tips not appearing after re-enabling the tutorial',
     ],
   },
   {
