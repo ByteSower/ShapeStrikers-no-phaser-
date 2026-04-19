@@ -2040,6 +2040,9 @@ const Game = (() => {
     if (vw <= 640) {
       const centerLeft = Math.max(8, (vw - boxW) / 2);
       box.style.left = centerLeft + 'px';
+      // Scroll the target into view first so the user can see it
+      const target = document.querySelector('.tutorial-spotlight');
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
       // Try below target; if no room, go above
       if (rect.bottom + gap + 120 < vh) {
         box.style.top = (rect.bottom + gap) + 'px';

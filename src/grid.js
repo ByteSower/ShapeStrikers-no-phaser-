@@ -40,8 +40,13 @@ const Grid = (() => {
     // Compute responsive tile size for small screens
     const gap = 4;
     const padding = 12;
-    const availW = window.innerWidth - padding * 2;
-    const availH = window.innerHeight * 0.55; // grid should use ~55% of viewport height
+    // In landscape, grid can use more vertical space since layout is side-by-side
+    const isLandscape = window.innerWidth > window.innerHeight && window.innerHeight <= 500;
+    const vRatio = isLandscape ? 0.75 : 0.55;
+    // In landscape, reserve space for the right panel (~28vw clamped 140-220px)
+    const panelW = isLandscape ? Math.min(220, Math.max(140, window.innerWidth * 0.28)) : 0;
+    const availW = window.innerWidth - padding * 2 - panelW;
+    const availH = window.innerHeight * vRatio;
     const maxByW = Math.floor((availW - (cols - 1) * gap) / cols);
     const maxByH = Math.floor((availH - (rows - 1) * gap) / rows);
     const responsiveSize = Math.min(tileSize, maxByW, maxByH);
@@ -595,8 +600,11 @@ const Grid = (() => {
     const { cols, rows, tileSize } = GRID_CONFIG;
     const gap = 4;
     const padding = 12;
-    const availW = window.innerWidth - padding * 2;
-    const availH = window.innerHeight * 0.55;
+    const isLandscape = window.innerWidth > window.innerHeight && window.innerHeight <= 500;
+    const vRatio = isLandscape ? 0.75 : 0.55;
+    const panelW = isLandscape ? Math.min(220, Math.max(140, window.innerWidth * 0.28)) : 0;
+    const availW = window.innerWidth - padding * 2 - panelW;
+    const availH = window.innerHeight * vRatio;
     const maxByW = Math.floor((availW - (cols - 1) * gap) / cols);
     const maxByH = Math.floor((availH - (rows - 1) * gap) / rows);
     const size = Math.min(tileSize, maxByW, maxByH);

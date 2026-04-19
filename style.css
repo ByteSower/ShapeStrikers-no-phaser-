@@ -1408,19 +1408,19 @@ html, body {
 
 /* ── Small screens (phones portrait) ───────────────────────────────────────── */
 @media (max-width: 640px) {
-  html, body { overflow: auto; }
+  html, body { overflow: auto; overscroll-behavior: none; }
 
   #screen-game {
     overflow-y: auto; overflow-x: hidden;
-    height: auto; min-height: 100vh; min-height: 100dvh;
-    -webkit-overflow-scrolling: touch;
+    height: auto; min-height: 100vh; min-height: 100svh;
+    overscroll-behavior-y: contain;
   }
 
   /* Stack layout vertically */
   #layout { flex-direction: column; overflow: visible; }
 
   /* Grid area — centred, scrollable if needed */
-  #grid-area { padding: 6px 4px; gap: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
+  #grid-area { padding: 6px 4px; gap: 0; overflow: auto; }
   #grid-container { gap: 3px; padding: 4px; }
   .unit-canvas { width: 40px; height: 40px; }
   #grid-labels-left, #grid-labels-right { display: none; }
@@ -1429,7 +1429,7 @@ html, body {
   #right-panel {
     width: 100%; border-left: none; border-top: 2px solid var(--border);
     max-height: 200px; min-height: 0;
-    box-shadow: none; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    box-shadow: none; overflow-y: auto;
   }
   .tab-content { padding: 8px; }
 
@@ -1441,7 +1441,7 @@ html, body {
   /* Bottom bar / shop — stack vertically so cards + controls don't overlap */
   #bottom-bar { padding: 6px 6px 4px; min-height: 0; max-height: none; flex-shrink: 0; }
   #shop-area { flex-direction: column; gap: 6px; }
-  #shop-units { gap: 5px; overflow-x: auto; flex-shrink: 0; -webkit-overflow-scrolling: touch; }
+  #shop-units { gap: 5px; overflow-x: auto; flex-shrink: 0; }
   .shop-card { min-width: 105px; max-width: 150px; flex: 0 0 auto; }
   .shop-card .card-name { font-size: 11px; }
   .card-body { padding: 5px 7px; gap: 2px; }
@@ -1462,9 +1462,14 @@ html, body {
   .title-buttons { flex-direction: column; gap: 8px; }
 
   /* Overlays — wider and scrollable */
-  .overlay-box { padding: 20px 16px; width: 95%; max-height: 85vh; max-height: 85dvh; overflow-y: auto; }
-  .glossary-box { padding: 14px 10px; width: 98%; max-height: 85vh; max-height: 85dvh; }
+  .overlay-box { padding: 20px 16px; width: 95%; max-height: 85vh; max-height: 85svh; overflow-y: auto; }
+  .glossary-box { padding: 14px 10px; width: 98%; max-height: 85vh; max-height: 85svh; }
   #glossary-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+
+  /* Tutorial overlay — let user scroll/tap through on mobile */
+  #overlay-tutorial { pointer-events: none; }
+  #overlay-tutorial .tutorial-box { pointer-events: auto; }
+  .tutorial-spotlight { pointer-events: auto !important; }
 
   /* Tab text size */
   .tab-btn { font-size: 11px; padding: 6px 2px; }
@@ -1479,7 +1484,7 @@ html, body {
   #message-bar { font-size: 11px; }
 
   /* Title screen scrollable on small phones */
-  #screen-title { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #screen-title { overflow-y: auto; }
   .title-content { padding: 20px 10px; }
 }
 
@@ -1495,28 +1500,28 @@ html, body {
 
 /* ── Landscape phones ──────────────────────────────────────────────────────── */
 @media (max-height: 500px) and (orientation: landscape) {
-  html, body { overflow: auto; }
+  html, body { overflow: auto; overscroll-behavior: none; }
 
   #screen-game {
     overflow-y: auto; overflow-x: hidden;
-    height: auto; min-height: 100vh; min-height: 100dvh;
-    -webkit-overflow-scrolling: touch;
+    height: auto; min-height: 100vh; min-height: 100svh;
   }
 
-  /* Keep side-by-side but let it scroll */
+  /* Side-by-side: grid dominant, panel secondary */
   #layout { flex-direction: row; overflow: visible; flex-wrap: nowrap; }
 
-  /* Grid takes left side, shrink to fit viewport height */
-  #grid-area { flex: 0 0 auto; padding: 4px; overflow: visible; }
+  /* Grid takes majority of space */
+  #grid-area { flex: 1; padding: 4px; overflow: visible; min-width: 0; }
   #grid-container { gap: 2px; padding: 3px; }
   .unit-canvas { width: 36px; height: 36px; }
   #grid-labels-left, #grid-labels-right { display: none; }
 
-  /* Right panel takes remaining space */
+  /* Right panel — capped width, scrollable */
   #right-panel {
-    flex: 1; min-width: 0; max-height: none;
+    flex: 0 0 auto; width: clamp(140px, 28vw, 220px);
+    min-width: 0; max-height: none;
     border-left: 2px solid var(--border); border-top: none;
-    overflow-y: auto; -webkit-overflow-scrolling: touch;
+    overflow-y: auto;
   }
 
   /* Compact top bar */
@@ -1525,7 +1530,7 @@ html, body {
   .phase-badge { padding: 2px 8px; font-size: 9px; }
 
   /* Compact bottom bar */
-  #bottom-bar { padding: 4px 6px; min-height: 0; max-height: 100px; }
+  #bottom-bar { padding: 4px 6px; min-height: 0; max-height: 90px; }
   #shop-units { gap: 4px; }
   .shop-card { min-width: 90px; max-width: 130px; }
   .shop-card .card-name { font-size: 10px; }
@@ -1533,12 +1538,17 @@ html, body {
   .card-preview { display: none; }
   #shop-controls .btn { padding: 4px 8px; font-size: 10px; }
 
+  /* Tutorial overlay — pass-through on landscape too */
+  #overlay-tutorial { pointer-events: none; }
+  #overlay-tutorial .tutorial-box { pointer-events: auto; }
+  .tutorial-spotlight { pointer-events: auto !important; }
+
   /* Overlays */
-  .overlay-box { width: 90%; max-height: 90vh; max-height: 90dvh; overflow-y: auto; }
-  .glossary-box { width: 95%; max-height: 90vh; max-height: 90dvh; }
+  .overlay-box { width: 90%; max-height: 90vh; max-height: 90svh; overflow-y: auto; }
+  .glossary-box { width: 95%; max-height: 90vh; max-height: 90svh; }
 
   /* Title screen */
-  #screen-title { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #screen-title { overflow-y: auto; }
   .title-content { padding: 10px 8px; }
   .game-title { font-size: 28px; }
   .game-subtitle { font-size: 10px; }
