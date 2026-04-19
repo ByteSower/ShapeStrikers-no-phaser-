@@ -635,10 +635,12 @@ const Game = (() => {
       state.playerUnits.push(unit);
       state.shopUnits[state.selectedShopIdx] = null;
       state.selectedShopIdx = null;
+      state.selectedUnit = unit;
       Grid.placeUnit(unit, targetRow, col);
       Grid.updateUpgradeIcons(targetRow, col, state.upgradeLevels);
       Grid.clearHighlights();
       Grid.clearSelection();
+      Grid.selectTile(targetRow, col);
       Audio.play('place');
       UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
       UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
@@ -686,7 +688,7 @@ const Game = (() => {
       Grid.clearSelection();
       Grid.selectTile(row, col);
       UI.showUnitDetail(clickedUnit, state.upgradeLevels, _getActiveSynergiesForUnit(clickedUnit));
-      UI.showMessage(`${clickedUnit.definition.name} — Click again to deselect | Right-click to sell | Click empty tile to move`);
+      UI.showMessage(`${clickedUnit.definition.name} — Click again to deselect | Right-click or use Sell Unit to sell | Click empty tile to move`);
       _showContextualTip('stat_card_explain');
 
       // Highlight moveable tiles
@@ -2252,16 +2254,37 @@ const Game = (() => {
 
     UI.showScreen('screen-title');
 
-    // Show splash overlay — dismissing it is the user interaction that unlocks audio
+    // Show splash overlay — allow button, tap, or Enter/Space to dismiss on all devices
     const splashEl = document.getElementById('splash-overlay');
     if (splashEl) {
       splashEl.classList.remove('hidden');
-      document.getElementById('btn-splash-dismiss')?.addEventListener('click', () => {
+      splashEl.tabIndex = 0;
+
+      const onSplashKeydown = (e) => {
+        if (splashEl.classList.contains('hidden')) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          dismissSplash();
+        }
+      };
+
+      const dismissSplash = () => {
+        if (splashEl.classList.contains('hidden')) return;
         splashEl.classList.add('hidden');
+        document.removeEventListener('keydown', onSplashKeydown);
         Audio.playMusic('ss_title_music_full.mp3');
-        // Clean up after fade
         setTimeout(() => splashEl.remove(), 600);
-      }, { once: true });
+      };
+
+      document.addEventListener('keydown', onSplashKeydown);
+      document.getElementById('btn-splash-dismiss')?.addEventListener('click', dismissSplash, { once: true });
+      splashEl.addEventListener('click', (e) => {
+        if (e.target.id === 'splash-overlay' || e.target.closest('.splash-box')) dismissSplash();
+      });
+
+      requestAnimationFrame(() => {
+        document.getElementById('btn-splash-dismiss')?.focus({ preventScroll: true });
+      });
     }
   }
 

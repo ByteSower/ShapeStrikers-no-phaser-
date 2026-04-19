@@ -166,6 +166,7 @@ const UI = (() => {
 
     document.getElementById('unit-detail-empty').style.display = 'none';
     const detail = document.getElementById('unit-detail');
+    detail.classList.remove('js-hidden');
     detail.style.display = 'block';
 
     const elem = ELEMENT_EMOJI[def.element] || '';
@@ -273,16 +274,30 @@ const UI = (() => {
       ${statusHtml}`;
 
     const sellBtn = document.getElementById('btn-sell-unit');
-    if (sellBtn) sellBtn.style.display = '';
+    const canSell = !unit.isEnemy && Number.isInteger(unit.row) && Number.isInteger(unit.col);
+    if (sellBtn) {
+      if (canSell) {
+        sellBtn.classList.remove('js-hidden');
+        sellBtn.style.display = '';
+      } else {
+        sellBtn.style.display = 'none';
+        sellBtn.classList.add('js-hidden');
+      }
+    }
 
     switchTab('unit');
   }
 
   function clearUnitDetail() {
     document.getElementById('unit-detail-empty').style.display = '';
-    document.getElementById('unit-detail').style.display = 'none';
+    const detail = document.getElementById('unit-detail');
+    detail.style.display = 'none';
+    detail.classList.add('js-hidden');
     const sellBtn = document.getElementById('btn-sell-unit');
-    if (sellBtn) sellBtn.style.display = 'none';
+    if (sellBtn) {
+      sellBtn.style.display = 'none';
+      sellBtn.classList.add('js-hidden');
+    }
   }
 
   // ── Battle Log ────────────────────────────────────────────────────────────
