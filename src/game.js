@@ -2129,14 +2129,19 @@ const Game = (() => {
     if (_pendingTipId && _pendingTipId !== tipId) return;
 
     // Pause battle if one is running so the player isn't rushed
-    const wasBattling = battle && battle._running;
-    if (wasBattling) battle.pause();
+    // Note: we check & pause both now AND inside the timeout, because
+    // some tips fire before battle.start() and the battle begins during the delay.
+    if (battle && battle._running) battle.pause();
 
     _pendingTipId = tipId;
     clearTimeout(_tipTimer);
     _tipTimer = setTimeout(() => {
       _seenTips[tipId] = true;
       _pendingTipId = null;
+
+      // Ensure battle is paused when the overlay actually appears
+      const battleActive = battle && battle._running;
+      if (battleActive) battle.pause();
 
       const overlay = document.getElementById('overlay-tutorial');
       const content = document.getElementById('tutorial-content');
@@ -2178,7 +2183,7 @@ const Game = (() => {
         if (nextBtn) nextBtn.textContent = 'Next →';
         if (skipBtn) skipBtn.textContent = 'Skip Tutorial';
         // Resume battle if we paused it
-        if (wasBattling && battle) battle.resume();
+        if (battle && battle._paused) battle.resume();
       };
       const nextHandler = () => _dismiss();
       const disableHandler = () => {
