@@ -2027,16 +2027,32 @@ const Game = (() => {
 
   function _positionTutorialBox(box, rect, pos) {
     const gap = 12;
-    const boxW = 400; // max-width of tutorial-box
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const boxW = Math.min(400, vw - 16); // clamp to viewport
     box.style.position = 'fixed';
     box.style.bottom = 'auto';
     box.style.left = 'auto';
     box.style.transform = 'none';
+    box.style.maxWidth = boxW + 'px';
+
+    // On small screens, always center horizontally and place below or above target
+    if (vw <= 640) {
+      const centerLeft = Math.max(8, (vw - boxW) / 2);
+      box.style.left = centerLeft + 'px';
+      // Try below target; if no room, go above
+      if (rect.bottom + gap + 120 < vh) {
+        box.style.top = (rect.bottom + gap) + 'px';
+      } else {
+        box.style.top = Math.max(8, rect.top - 140 - gap) + 'px';
+      }
+      return;
+    }
 
     switch (pos) {
       case 'right':
         box.style.top = Math.max(8, rect.top) + 'px';
-        box.style.left = Math.min(rect.right + gap, window.innerWidth - boxW - 8) + 'px';
+        box.style.left = Math.min(rect.right + gap, vw - boxW - 8) + 'px';
         break;
       case 'left':
         box.style.top = Math.max(8, rect.top) + 'px';
@@ -2044,12 +2060,12 @@ const Game = (() => {
         break;
       case 'top':
         box.style.top = Math.max(8, rect.top - box.offsetHeight - gap) + 'px';
-        box.style.left = Math.min(Math.max(8, rect.left + rect.width / 2 - 200), window.innerWidth - boxW - 8) + 'px';
+        box.style.left = Math.min(Math.max(8, rect.left + rect.width / 2 - 200), vw - boxW - 8) + 'px';
         break;
       case 'bottom':
       default:
         box.style.top = (rect.bottom + gap) + 'px';
-        box.style.left = Math.min(Math.max(8, rect.left + rect.width / 2 - 200), window.innerWidth - boxW - 8) + 'px';
+        box.style.left = Math.min(Math.max(8, rect.left + rect.width / 2 - 200), vw - boxW - 8) + 'px';
         break;
     }
   }

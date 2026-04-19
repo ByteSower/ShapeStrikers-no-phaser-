@@ -37,9 +37,18 @@ const Grid = (() => {
 
     const { cols, rows, tileSize, battleLineRow, playerZoneRows, enemyZoneRows } = GRID_CONFIG;
 
+    // Compute responsive tile size for small screens
+    const gap = 4;
+    const padding = 12;
+    const availW = window.innerWidth - padding * 2;
+    const availH = window.innerHeight * 0.55; // grid should use ~55% of viewport height
+    const maxByW = Math.floor((availW - (cols - 1) * gap) / cols);
+    const maxByH = Math.floor((availH - (rows - 1) * gap) / rows);
+    const responsiveSize = Math.min(tileSize, maxByW, maxByH);
+
     // Set CSS variable for tile size
-    container.style.setProperty('--tile-size', tileSize + 'px');
-    document.documentElement.style.setProperty('--tile-size', tileSize + 'px');
+    container.style.setProperty('--tile-size', responsiveSize + 'px');
+    document.documentElement.style.setProperty('--tile-size', responsiveSize + 'px');
 
     for (let row = 0; row < rows; row++) {
       tileEls[row] = [];
@@ -468,7 +477,8 @@ const Grid = (() => {
     }
 
     // Animate slide
-    const tileSize = GRID_CONFIG.tileSize + 4; // tile + gap
+    const actualTileSize = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tile-size')) || GRID_CONFIG.tileSize;
+    const tileSize = actualTileSize + 4; // tile + gap
     const dx = (fromCol - toCol) * tileSize;
     const dy = (fromRow - toRow) * tileSize;
     unitEl.style.transition = 'none';
@@ -576,6 +586,29 @@ const Grid = (() => {
 
   function _handleClick(row, col)      { if (_onClick)      _onClick(row, col); }
   function _handleRightClick(row, col) { if (_onRightClick) _onRightClick(row, col); }
+
+  // ── Responsive resize ──────────────────────────────────────────────────
+
+  function _recalcTileSize() {
+    const container = document.getElementById('grid-container');
+    if (!container) return;
+    const { cols, rows, tileSize } = GRID_CONFIG;
+    const gap = 4;
+    const padding = 12;
+    const availW = window.innerWidth - padding * 2;
+    const availH = window.innerHeight * 0.55;
+    const maxByW = Math.floor((availW - (cols - 1) * gap) / cols);
+    const maxByH = Math.floor((availH - (rows - 1) * gap) / rows);
+    const size = Math.min(tileSize, maxByW, maxByH);
+    container.style.setProperty('--tile-size', size + 'px');
+    document.documentElement.style.setProperty('--tile-size', size + 'px');
+  }
+
+  let _resizeTimer = 0;
+  window.addEventListener('resize', () => {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(_recalcTileSize, 150);
+  });
 
   // ── Public API ────────────────────────────────────────────────────────────
 

@@ -51,7 +51,7 @@ const ELEMENT_SYNERGIES = [
 const UPGRADES = [
   { id: 'army_expansion', name: '🏰 Army Expansion', description: '+1 max unit slot',          cost: 8, maxLevel: 5, effect: { type: 'maxUnits',         value: 1    } },
   { id: 'field_medic',    name: '💚 Field Medic',    description: '+15% post-battle healing',  cost: 5, maxLevel: 3, effect: { type: 'healingRate',       value: 0.15 } },
-  { id: 'bargain_hunter', name: '🤝 Bargain Hunter',  description: '-1 shop refresh cost (stackable)',     cost: 4, maxLevel: 2, effect: { type: 'shopRefresh',       value: -1   } },
+  { id: 'bargain_hunter', name: 'Hovs Handouts',     description: '-1 shop refresh cost (stackable)',     cost: 4, maxLevel: 2, effect: { type: 'shopRefresh',       value: -1   } },
   { id: 'war_chest',      name: '📈 War Chest',      description: '+10% interest on gold (stackable)',    cost: 6, maxLevel: 3, effect: { type: 'interestRate',      value: 0.1  } },
   { id: 'victory_bonus',  name: '🏆 Victory Bonus',  description: '+2 gold per wave won',      cost: 5, maxLevel: 3, effect: { type: 'goldPerWave',       value: 2    } },
   { id: 'refresh_master', name: '🔄 Refresh Master', description: '+1 refresh per round (max 3)',        cost: 6, maxLevel: 2, effect: { type: 'refreshesPerRound', value: 1    } },
