@@ -512,7 +512,7 @@ const Game = (() => {
     // Always show unit detail when clicking a shop card (even if can't buy)
     UI.showUnitDetail({ definition: def, hp: def.stats.hp, maxHp: def.stats.hp, stats: { ...def.stats }, statusEffects: [] });
 
-    if (state.phase !== 'prep') { UI.showMessage('Can only buy during prep phase.'); return; }
+    if (state.phase !== 'prep') { UI.showMessage('Can only buy during the shop phase.'); return; }
     if (state.playerUnits.length >= _maxUnits()) { UI.showMessage('Army is full! Upgrade Army Expansion.'); return; }
     if (state.gold < def.cost) { UI.showMessage('Not enough gold!'); return; }
 
@@ -547,7 +547,7 @@ const Game = (() => {
   // ── Sell unit ─────────────────────────────────────────────────────────────
 
   function _sellUnit(unit) {
-    if (state.phase !== 'prep') { UI.showMessage('Can only sell during prep phase.'); return; }
+    if (state.phase !== 'prep') { UI.showMessage('Can only sell during the shop phase.'); return; }
     const sellValue = Math.max(GAME_CONFIG.minSellValue || 1, Math.floor(unit.definition.cost * (GAME_CONFIG.sellRefundPercent || 0.5)));
     state.gold += sellValue;
     state.playerUnits = state.playerUnits.filter(u => u !== unit);

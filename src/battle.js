@@ -213,7 +213,7 @@ class BattleSystem {
     const dmg = this._calcDamage(attacker, target);
     this._applyDamage(target, dmg);
     if (this.onUnitHit) this.onUnitHit(target, dmg, attacker.definition.element, attacker.id);
-    this._log(`${this._n(attacker)} attacks ${this._n(target)} for ${dmg} dmg`, 'attack', this._side(attacker));
+    this._log(`${this._n(attacker)} attacks ${this._n(target)} for ${dmg} damage`, 'attack', this._side(attacker));
 
     // Lifesteal (vampire trait)
     if (attacker.definition.trait === 'vampire') {
@@ -385,7 +385,7 @@ class BattleSystem {
           const dmg = Math.max(1, Math.floor(unit.stats.attack * 1.2));
           this._applyDamage(t, dmg);
           if (this.onUnitHit) this.onUnitHit(t, dmg, 'void', unit.id);
-          this._log(`💥 ${this._n(t)} takes ${dmg} void dmg`, 'attack', this._side(unit));
+          this._log(`💥 ${this._n(t)} takes ${dmg} Void damage`, 'attack', this._side(unit));
           if (t.hp <= 0) this._killUnit(t, unit);
         }
         break;
@@ -437,7 +437,7 @@ class BattleSystem {
       const dmg = this._calcDamage(unit, target, mult);
       this._applyDamage(target, dmg);
       if (this.onUnitHit) this.onUnitHit(target, dmg, unit.definition.element, unit.id);
-      this._log(`💥 ${this._n(target)} takes ${dmg} ability dmg`, 'attack', this._side(unit));
+      this._log(`💥 ${this._n(target)} takes ${dmg} ability damage`, 'attack', this._side(unit));
       if (lifesteal || unit.definition.trait === 'vampire') {
         const pct = unit.definition.trait === 'vampire' ? 0.4 : lifestealPct;
         const raw = Math.floor(dmg * pct);
@@ -644,7 +644,7 @@ class BattleSystem {
         const baseDmg = eff.value || 5;
         const dmg = baseDmg * eff.stacks;
         unit.hp = Math.max(0, unit.hp - dmg);
-        this._log(`${eff.type === 'burn' ? '🔥' : '☠️'} ${this._n(unit)} takes ${dmg} ${eff.type} dmg (×${eff.stacks})`, 'attack');
+        this._log(`${eff.type === 'burn' ? '🔥' : '☠️'} ${this._n(unit)} takes ${dmg} ${eff.type === 'burn' ? 'Burn' : 'Poison'} damage (×${eff.stacks})`, 'attack');
         if (this.onUnitHit) this.onUnitHit(unit, dmg, eff.type === 'burn' ? 'fire' : 'earth', null);
       }
       // Freeze duration is managed in the freeze-skip block, not here

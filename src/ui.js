@@ -29,7 +29,8 @@ const UI = (() => {
     document.getElementById('max-units-val').textContent = maxUnits;
 
     const badge = document.getElementById('hud-phase');
-    badge.textContent = phase.toUpperCase();
+    const phaseLabel = phase === 'prep' ? 'SHOP' : phase.toUpperCase();
+    badge.textContent = phaseLabel;
     badge.className = 'phase-badge ' + phase;
 
     // Stats tab
@@ -228,8 +229,9 @@ const UI = (() => {
           const isDebuff = DEBUFFS.includes(e.type);
           const cls = isDebuff ? 'status-pill debuff' : 'status-pill buff';
           const icon = STATUS_EMOJI[e.type] || '';
+          const name = e.type.charAt(0).toUpperCase() + e.type.slice(1);
           const stackStr = e.stacks > 1 ? ` ×${e.stacks}` : '';
-          return `<span class="${cls}">${icon} ${e.type}${stackStr} (${e.duration}t)</span>`;
+          return `<span class="${cls}">${icon} ${name}${stackStr} (${e.duration}t)</span>`;
         }).join('')}</div>`
       : '';
 
@@ -248,8 +250,7 @@ const UI = (() => {
     let synergyHtml = '';
     if (activeSynergies && activeSynergies.length > 0 && !unit.isEnemy) {
       const synergyPills = activeSynergies.map(syn => {
-        const color = ELEMENT_COLORS[syn.element] || '#aaaaaa';
-        return `<span class="synergy-detail-pill" style="border-color:${color};color:${color}">${syn.description}</span>`;
+        return `<span class="synergy-detail-pill">${syn.description}</span>`;
       });
       synergyHtml = `<div class="synergy-pill-list">${synergyPills.join('')}</div>`;
     }
