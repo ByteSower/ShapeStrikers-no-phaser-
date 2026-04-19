@@ -14,11 +14,15 @@ const Backend = (() => {
 
   const PLAYER_NAME_KEY = 'shape_strikers_player_name';
   const MAX_NAME_LENGTH = 20;
+  const REQUEST_TIMEOUT_MS = 8000;
+  const SUBMIT_COOLDOWN_MS = 5000;
 
   let _supabase = null;
   let _user = null;        // auth.users record
   let _playerName = null;  // display name from localStorage (or profile)
   let _ready = false;
+  let _submitInFlight = false;
+  let _lastSubmitAt = 0;
 
   // ── Initialization ────────────────────────────────────────────────────────
 
@@ -46,14 +50,28 @@ const Backend = (() => {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
 
+  async function _withTimeout(promise, label = 'Request') {
+    let timer = null;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${label} timed out`)), REQUEST_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   async function _ensureAuth() {
-    const { data: { session } } = await _supabase.auth.getSession();
+    const { data: { session } } = await _withTimeout(_supabase.auth.getSession(), 'Session lookup');
     if (session?.user) {
       _user = session.user;
       return;
     }
     // Sign in anonymously
-    const { data, error } = await _supabase.auth.signInAnonymously();
+    const { data, error } = await _withTimeout(_supabase.auth.signInAnonymously(), 'Anonymous sign-in');
     if (error) throw error;
     _user = data.user;
   }
@@ -86,33 +104,47 @@ const Backend = (() => {
    * @param {boolean} opts.won
    * @returns {Promise<{ok: boolean, data?: any, error?: string}>}
    */
-  async function submitScore(opts) {
+  async function submitScore(opts = {}) {
     if (!_ready || !_user) return { ok: false, error: 'Not connected' };
     if (!_playerName) return { ok: false, error: 'No player name set' };
+    if (_submitInFlight) return { ok: false, error: 'Score submission already in progress' };
+    if (Date.now() - _lastSubmitAt < SUBMIT_COOLDOWN_MS) {
+      return { ok: false, error: 'Please wait a few seconds before submitting again' };
+    }
 
+    const campaignMode = ['normal', 'void'].includes(opts.campaignMode) ? opts.campaignMode : 'normal';
+    const challengeType = ['daily', 'weekly'].includes(opts.challengeType) ? opts.challengeType : null;
     const row = {
       player_id:      _user.id,
       player_name:    _playerName,
-      score:          opts.score || 0,
-      wave_reached:   opts.waveReached || 0,
-      campaign_mode:  opts.campaignMode || 'normal',
-      challenge_type: opts.challengeType || null,
-      challenge_key:  opts.challengeKey || null,
-      units_used:     opts.unitsUsed || 0,
-      won:            opts.won ?? false,
+      score:          Math.max(0, Number(opts.score) || 0),
+      wave_reached:   Math.max(0, Number(opts.waveReached) || 0),
+      campaign_mode:  campaignMode,
+      challenge_type: challengeType,
+      challenge_key:  challengeType ? (opts.challengeKey || null) : null,
+      units_used:     Math.max(0, Number(opts.unitsUsed) || 0),
+      won:            opts.won === true,
     };
 
-    const { data, error } = await _supabase
-      .from('leaderboard')
-      .insert(row)
-      .select()
-      .single();
+    _submitInFlight = true;
+    try {
+      const { data, error } = await _withTimeout(
+        _supabase.from('leaderboard').insert(row).select().single(),
+        'Score submission'
+      );
 
-    if (error) {
-      console.error('[Backend] Submit error:', error.message);
-      return { ok: false, error: error.message };
+      if (error) {
+        console.error('[Backend] Submit error:', error.message);
+        return { ok: false, error: error.message };
+      }
+      _lastSubmitAt = Date.now();
+      return { ok: true, data };
+    } catch (error) {
+      console.error('[Backend] Submit error:', error?.message || error);
+      return { ok: false, error: error?.message || 'Submission failed' };
+    } finally {
+      _submitInFlight = false;
     }
-    return { ok: true, data };
   }
 
   // ── Leaderboard Queries ───────────────────────────────────────────────────
@@ -125,15 +157,22 @@ const Backend = (() => {
   async function fetchGlobal(limit = 50) {
     if (!_ready) return { ok: false, error: 'Not connected' };
 
-    const { data, error } = await _supabase
-      .from('leaderboard')
-      .select('player_name, score, wave_reached, campaign_mode, won, created_at')
-      .is('challenge_type', null)
-      .order('score', { ascending: false })
-      .limit(limit);
+    try {
+      const { data, error } = await _withTimeout(
+        _supabase
+          .from('leaderboard')
+          .select('player_name, score, wave_reached, campaign_mode, won, created_at')
+          .is('challenge_type', null)
+          .order('score', { ascending: false })
+          .limit(limit),
+        'Global leaderboard fetch'
+      );
 
-    if (error) return { ok: false, error: error.message };
-    return { ok: true, rows: data };
+      if (error) return { ok: false, error: error.message };
+      return { ok: true, rows: data };
+    } catch (error) {
+      return { ok: false, error: error?.message || 'Leaderboard fetch failed' };
+    }
   }
 
   /**
@@ -145,17 +184,25 @@ const Backend = (() => {
    */
   async function fetchChallenge(challengeType, challengeKey, limit = 50) {
     if (!_ready) return { ok: false, error: 'Not connected' };
+    if (!['daily', 'weekly'].includes(challengeType)) return { ok: false, error: 'Invalid challenge type' };
 
-    const { data, error } = await _supabase
-      .from('leaderboard')
-      .select('player_name, score, wave_reached, won, created_at')
-      .eq('challenge_type', challengeType)
-      .eq('challenge_key', challengeKey)
-      .order('score', { ascending: false })
-      .limit(limit);
+    try {
+      const { data, error } = await _withTimeout(
+        _supabase
+          .from('leaderboard')
+          .select('player_name, score, wave_reached, won, created_at')
+          .eq('challenge_type', challengeType)
+          .eq('challenge_key', challengeKey)
+          .order('score', { ascending: false })
+          .limit(limit),
+        'Challenge leaderboard fetch'
+      );
 
-    if (error) return { ok: false, error: error.message };
-    return { ok: true, rows: data };
+      if (error) return { ok: false, error: error.message };
+      return { ok: true, rows: data };
+    } catch (error) {
+      return { ok: false, error: error?.message || 'Challenge fetch failed' };
+    }
   }
 
   /**
@@ -166,15 +213,22 @@ const Backend = (() => {
   async function fetchPersonal(limit = 20) {
     if (!_ready || !_user) return { ok: false, error: 'Not connected' };
 
-    const { data, error } = await _supabase
-      .from('leaderboard')
-      .select('score, wave_reached, campaign_mode, challenge_type, won, created_at')
-      .eq('player_id', _user.id)
-      .order('score', { ascending: false })
-      .limit(limit);
+    try {
+      const { data, error } = await _withTimeout(
+        _supabase
+          .from('leaderboard')
+          .select('score, wave_reached, campaign_mode, challenge_type, won, created_at')
+          .eq('player_id', _user.id)
+          .order('score', { ascending: false })
+          .limit(limit),
+        'Personal leaderboard fetch'
+      );
 
-    if (error) return { ok: false, error: error.message };
-    return { ok: true, rows: data };
+      if (error) return { ok: false, error: error.message };
+      return { ok: true, rows: data };
+    } catch (error) {
+      return { ok: false, error: error?.message || 'Personal fetch failed' };
+    }
   }
 
   // ── Public API ────────────────────────────────────────────────────────────

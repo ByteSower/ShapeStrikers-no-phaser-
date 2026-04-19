@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="description" content="Shape Strikers is a vanilla JavaScript lane-based auto-battler with 44 units, 8 elements, boss waves, challenges, and online leaderboards." />
   <title>Shape Strikers</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -66,9 +67,9 @@
     <span id="hud-score">🏆 <span id="score-val">0</span></span>
     <span id="hud-units">⚔️ <span id="units-val">0</span> / <span id="max-units-val">7</span></span>
     <span id="hud-phase" class="phase-badge shop">SHOP</span>
-    <button class="btn btn-secondary btn-sm" id="btn-mute" title="Toggle Audio">🔊</button>
-    <button class="btn btn-secondary btn-sm" id="btn-achievements-hud" title="Achievements">🏅</button>
-    <button class="btn btn-secondary btn-sm" id="btn-help" title="Help">❓</button>
+    <button class="btn btn-secondary btn-sm" id="btn-mute" title="Toggle Audio" aria-label="Toggle audio">🔊</button>
+    <button class="btn btn-secondary btn-sm" id="btn-achievements-hud" title="Achievements" aria-label="Open achievements">🏅</button>
+    <button class="btn btn-secondary btn-sm" id="btn-help" title="Help" aria-label="Open how to play">❓</button>
   </div>
 
   <!-- MAIN LAYOUT -->
@@ -118,8 +119,8 @@
       <!-- UNIT TAB -->
       <div id="tab-unit" class="tab-content">
         <div id="unit-detail-empty" class="empty-hint">Click a unit on the grid to inspect it.</div>
-        <div id="unit-detail" style="display:none"></div>
-        <button class="btn btn-secondary btn-sm" id="btn-sell-unit" style="display:none">🪙 Sell Unit</button>
+        <div id="unit-detail" class="js-hidden"></div>
+        <button class="btn btn-secondary btn-sm js-hidden" id="btn-sell-unit">🪙 Sell Unit</button>
       </div>
 
       <!-- LOG TAB -->
@@ -230,7 +231,7 @@
     <div class="help-content">
       <div class="help-section">
         <h3>🎯 Goal</h3>
-        <p>Defeat 15 waves of enemies and 3 bosses to win! Build an army of elemental units and use synergies to gain the advantage.</p>
+        <p>Clear 15 waves in Normal mode or survive the full 25-wave Void Campaign. Build an army of elemental units and use synergies, positioning, and upgrades to outlast each boss wave.</p>
       </div>
       <div class="help-section">
         <h3>🛒 Shop Phase</h3>
@@ -242,7 +243,7 @@
       </div>
       <div class="help-section">
         <h3>🔥 Elements & Synergies</h3>
-        <p>Each unit has an element: <span class="fire">Fire</span>, <span class="ice">Ice</span>, <span class="lightning">Lightning</span>, <span class="earth">Earth</span>, <span class="arcane">Arcane</span>, and <span class="void">Void</span> (unlockable). Having 2+ units of the same element activates synergy bonuses!</p>
+        <p>Units belong to 8 elements: <span class="fire">Fire</span>, <span class="ice">Ice</span>, <span class="lightning">Lightning</span>, <span class="earth">Earth</span>, <span class="blood">Blood</span>, <span class="plague">Plague</span>, plus <span class="arcane">Arcane</span> and <span class="void">Void</span> as unlockables. Fielding 2 or more of the same element activates synergy bonuses.</p>
       </div>
       <div class="help-section">
         <h3>⬆️ Upgrades</h3>

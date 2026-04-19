@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: April 16, 2026
+> **Last Updated**: April 19, 2026
 
 ---
 
@@ -11,14 +11,14 @@
 
 | Metric | Value |
 |--------|-------|
-| Source lines | ~7,700 (JS + CSS + HTML) |
+| Source lines | ~8,500 (JS + CSS + HTML) |
 | Source files | 8 JS modules, 1 CSS, 1 HTML |
 | Dependencies | **Zero** — fully vanilla |
-| Units | 38 (33 playable + 5 bosses) |
-| Elements | 6 (Fire, Ice, Lightning, Earth, Arcane, Void) |
+| Units | 44 (39 playable + 5 bosses) |
+| Elements | 8 (Fire, Ice, Lightning, Earth, Arcane, Void, Blood, Plague) |
 | Status effects | 10 |
 | Upgrades | 10 |
-| Achievements | 10 |
+| Achievements | 11 |
 | Waves | 15 (Normal) / 25 (Void Campaign) |
 | Bosses | 5 (W5, W10, W15, W20, W25) |
 
@@ -28,7 +28,7 @@
 
 ### Phase 1 — Core Game
 - [x] 6×5 grid, shop, placement, selling, movement
-- [x] 33 playable units + 3 bosses, 6 elements, 15 waves
+- [x] 39 playable units + 5 bosses, 8 elements, 15 waves
 - [x] Turn-based battle system with abilities & status effects
 - [x] Elemental synergies (2+ same element = stat bonus)
 - [x] Boss phases (Chaos Overlord W15: 3 phases with HP reset)
@@ -93,7 +93,7 @@
 - [x] Dynamic tutorial text (15 vs 25 waves)
 
 ### Phase 7B — Meta-Progression & Unlocks
-- [x] Achievement system — 10 achievements tracked in localStorage with overlay UI
+- [x] Achievement system — 11 achievements tracked in localStorage with overlay UI
 - [x] Achievement badges displayed on title screen with progress counter
 - [x] Post-game per-unit accolades (🌟 MVP, 💀 Executioner, 💚 Lifeline)
 - [x] Per-unit kill tracking — kills attributed via battle callback with killer param

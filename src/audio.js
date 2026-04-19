@@ -24,7 +24,7 @@ const Audio = (() => {
     damage:     ['11_human_damage_1.wav', '11_human_damage_2.wav', '11_human_damage_3.wav'],
   };
 
-  let _musicEl  = null;  // <audio> element for BGM
+  let _musicEl  = null;  // current Audio object for BGM
   let _sfxVol   = 0.35;
   let _musicVol = 0.25;
   let _muted    = false;
@@ -32,13 +32,18 @@ const Audio = (() => {
   // Cache of pre-created Audio objects for faster playback
   const _cache = {};
 
+  function _clampVolume(value, fallback) {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : fallback;
+  }
+
   // ── Initialise ────────────────────────────────────────────────────────────
 
   function init() {
     // Restore mute state
     _muted = localStorage.getItem('shape_strikers_muted') === '1';
-    _sfxVol = parseFloat(localStorage.getItem('shape_strikers_sfx_vol') || '0.35');
-    _musicVol = parseFloat(localStorage.getItem('shape_strikers_music_vol') || '0.25');
+    _sfxVol = _clampVolume(localStorage.getItem('shape_strikers_sfx_vol'), 0.35);
+    _musicVol = _clampVolume(localStorage.getItem('shape_strikers_music_vol'), 0.25);
   }
 
   // ── Background music ─────────────────────────────────────────────────────
@@ -52,7 +57,13 @@ const Audio = (() => {
   }
 
   function stopMusic() {
-    if (_musicEl) { _musicEl.pause(); _musicEl.currentTime = 0; _musicEl = null; }
+    if (_musicEl) {
+      _musicEl.pause();
+      _musicEl.currentTime = 0;
+      _musicEl.removeAttribute('src');
+      try { _musicEl.load(); } catch (_) {}
+      _musicEl = null;
+    }
   }
 
   function setMusicVolume(v) {

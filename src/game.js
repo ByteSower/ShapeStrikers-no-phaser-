@@ -22,6 +22,7 @@ const Game = (() => {
   let _challengeModifier = null; // current CHALLENGE_MODIFIERS entry (weekly only)
   let _challengeSeed = 0;        // deterministic seed for challenge runs
   let _challengeElement = null;  // for 'purity' modifier — the single allowed element
+  let _keydownHandler = null;    // stored ref to remove on restart (prevent listener leak)
 
   function _freshState() {
     return {
@@ -1412,9 +1413,9 @@ const Game = (() => {
     UI.showScreen('screen-game');
     UI.hideAllOverlays();
 
-    // Escape key cancels shop selection or unit selection
-    document.addEventListener('keydown', (e) => {
-      // Don't trigger shortcuts when typing in an input
+    // Keyboard shortcuts — attach once, remove old listener to prevent leak on restart
+    if (_keydownHandler) document.removeEventListener('keydown', _keydownHandler);
+    _keydownHandler = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       const key = e.key.toLowerCase();
       if (key === 'escape') {
@@ -1441,7 +1442,8 @@ const Game = (() => {
         const speedBtn = document.querySelector(`[data-speed="${speeds[key]}"]`);
         if (speedBtn) speedBtn.click();
       }
-    });
+    };
+    document.addEventListener('keydown', _keydownHandler);
     UI.clearLog();
     UI.clearUnitDetail();
     UI.switchTab('stats');
@@ -1687,6 +1689,9 @@ const Game = (() => {
     const nameInput = document.getElementById(`${prefix}-name`);
     const savedName = Backend.getPlayerName();
     if (nameInput && savedName) nameInput.value = savedName;
+    // Re-enable submit button (may have been disabled from a previous game)
+    const btn = document.getElementById(`btn-${prefix}-submit`);
+    if (btn) btn.disabled = false;
     // Reset status
     const status = document.getElementById(`${prefix}-submit-status`);
     if (status) { status.textContent = ''; status.className = 'submit-status'; }

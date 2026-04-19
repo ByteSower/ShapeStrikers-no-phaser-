@@ -19,12 +19,12 @@ const Grid = (() => {
   const STATUS_DESCRIPTIONS = {
     burn:          'Burn — takes fire damage each turn (stacks increase damage)',
     poison:        'Poison — takes damage each turn (stacks increase damage)',
-    freeze:        'Freeze — skips next action (consumed on skip)',
-    slow:          'Slow — speed halved for duration',
-    weaken:        'Weaken — attack reduced by 30% for duration',
-    wound:         'Wound — healing received halved for duration',
-    shield:        'Shield — absorbs next incoming hit, then expires',
-    barrier:       'Barrier — blocks all damage for duration',
+    freeze:        'Freeze — skips actions and loses 1 stack when the turn is skipped',
+    slow:          'Slow — reduces speed by 10% per stack (to a minimum of 20%)',
+    weaken:        'Weaken — reduces attack by 8% per stack (up to 50%)',
+    wound:         'Wound — healing received is halved',
+    shield:        'Shield — grants bonus defense while active',
+    barrier:       'Barrier — blocks incoming negative status effects',
     untargetable:  'Untargetable — cannot be targeted by attacks or abilities',
   };
 
@@ -442,10 +442,17 @@ const Grid = (() => {
     void unit.offsetWidth; // reflow
     unit.classList.add(cls);
     if (tracked) _trackAnim();
-    unit.addEventListener('animationend', () => {
+
+    let released = false;
+    const cleanup = () => {
+      if (released) return;
+      released = true;
       unit.classList.remove(cls);
       if (tracked) _releaseAnim();
-    }, { once: true });
+    };
+
+    unit.addEventListener('animationend', cleanup, { once: true });
+    setTimeout(cleanup, 700);
   }
 
   /**

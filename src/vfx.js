@@ -473,15 +473,19 @@ const VFX = (() => {
     _shaking = true;
 
     const shakeClass = `anim-shake-${type}`; // light, medium, heavy, rumble
+    let cleanedUp = false;
+    const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      grid.classList.remove(shakeClass);
+      _shaking = false;
+    };
+
     grid.classList.remove('anim-shake-light', 'anim-shake-medium', 'anim-shake-heavy', 'anim-shake-rumble', 'anim-shake');
     void grid.offsetWidth;
     grid.classList.add(shakeClass);
-    grid.addEventListener('animationend', () => {
-      grid.classList.remove(shakeClass);
-      _shaking = false;
-    }, { once: true });
-    // Safety
-    setTimeout(() => { grid.classList.remove(shakeClass); _shaking = false; }, 800);
+    grid.addEventListener('animationend', cleanup, { once: true });
+    setTimeout(cleanup, 800);
   }
 
 

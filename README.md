@@ -14,7 +14,7 @@ Shape Strikers is a rogue-like auto-battler where you buy, place, and upgrade sh
 
 ### Features
 
-- **38 unique units** across 4 tiers and 6 elements (33 playable + 5 bosses)
+- **44 unique units** across 4 tiers and 8 elements (39 playable + 5 bosses)
 - **Lane-based combat** on a 6×5 grid with automatic pathfinding
 - **5 boss fights** with multi-phase mechanics (Waves 5, 10, 15, 20, 25)
 - **2 campaign modes** — Normal (15 waves) and Void Campaign (25 waves with hard mode scaling)
@@ -37,7 +37,9 @@ Shape Strikers is a rogue-like auto-battler where you buy, place, and upgrade sh
 | 🧊 Ice | +DEF |
 | ⚡ Lightning | +SPD |
 | 🌍 Earth | +HP |
-| ✨ Arcane | +ATK / +SPD |
+| 🩸 Blood | +ATK |
+| ☠️ Plague | +ATK |
+| ✨ Arcane | +ATK / +SPD (unlockable) |
 | 🕳️ Void | +ATK / +HP (unlockable) |
 
 ## How to Play

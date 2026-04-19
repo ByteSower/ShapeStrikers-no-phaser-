@@ -1077,7 +1077,7 @@ const PATCH_NOTES = [
     date: 'April 14, 2026',
     title: 'Achievements & Meta-Progression',
     notes: [
-      '🏅 10 achievements to unlock (First Victory, Void Conqueror, and more)',
+      '🏅 11 achievements to unlock (First Victory, Void Conqueror, and more)',
       '🏆 Post-game accolades — MVP, Executioner, Lifeline, Iron Wall',
       '📈 4 new upgrades: Scouts Intel, Bargain Hunter, Army Expansion, Elemental Mastery',
       '📊 Kill tracking per unit across your run',

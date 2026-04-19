@@ -35,8 +35,8 @@
 Shape Strikers is a **lane-based auto-battler** where players buy and place procedurally-drawn shape units on a grid, then watch them fight enemy waves automatically. Strategic depth comes from **element synergies**, **unit positioning**, **ability interactions**, and **economy management**.
 
 **Key Features:**
-- 6 elements with synergy bonuses
-- 38 unique units (33 playable + 5 bosses) across 4 tiers
+- 8 elements with synergy bonuses
+- 44 unique units (39 playable + 5 bosses) across 4 tiers
 - 5 boss fights with multi-phase mechanics (Waves 5, 10, 15, 20, 25)
 - 2 campaign modes: Normal (15 waves) and Void Campaign (25 waves)
 - Hard mode stat scaling for waves 16–25
@@ -650,20 +650,21 @@ During Void Campaign, **void units become available** in the player shop.
 
 ## Achievements
 
-10 achievements tracked via `localStorage.shape_strikers_achievements` (JSON object).
+11 achievements tracked via `localStorage.shape_strikers_achievements` (JSON object).
 
 | Achievement | Condition | Icon |
 |-------------|-----------|------|
-| First Blood | Win your first battle | ⚔️ |
-| Dragon Slayer | Defeat the Sun Dragon (W5 boss) | 🐉 |
-| Frost Breaker | Defeat the Frost Giant (W10 boss) | 🧊 |
-| Void Conqueror | Complete the Void Campaign | 🕳️ |
-| Untouchable | Win a battle without losing any units | 🛡️ |
-| Flawless Run | Complete a full campaign without losing any unit | 💎 |
+| First Victory | Win the Normal Campaign | 🏆 |
+| Void Conqueror | Win the Void Campaign | 🕳️ |
+| Boss Slayer | Defeat all 5 bosses across runs | 👑 |
+| Full Army | Fill all unit slots on the board | 🏰 |
+| Synergy Master | Activate 3+ element synergies at once | 🔗 |
+| Untouchable | Win a wave without losing any unit | 🛡️ |
+| Speed Demon | Win a battle on 4× speed | ⚡ |
 | Big Spender | Buy 10+ upgrades in a single run | 💰 |
-| Army Builder | Have 12 units on the grid simultaneously | 🏰 |
-| Executioner | Have a single unit score 10+ kills in one run | 💀 |
-| Speed Demon | Win a battle on 3× speed | ⚡ |
+| Extinction | Kill 100+ enemies in a single run | 💀 |
+| Flawless Run | Win the game without losing any unit | ✨ |
+| Good Student | Complete the tutorial | 🎓 |
 
 ### Post-Game Accolades
 

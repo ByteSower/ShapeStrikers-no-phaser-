@@ -109,7 +109,7 @@ index.html
 - Handles browser autoplay restrictions with fallback triggers
 
 ### Config (`config.js`)
-- 38 unit definitions (33 playable + 5 bosses) across 4 tiers and 6 elements
+- 44 unit definitions (39 playable + 5 bosses) across 4 tiers and 8 elements
 - Seeded wave generator for variety (25 wave templates for Void Campaign)
 - 6 upgrade types (Army Expansion, Field Medic, Bargain Hunter, War Chest, Victory Bonus, Refresh Master)
 - Hard mode scaling table (waves 16–25)
