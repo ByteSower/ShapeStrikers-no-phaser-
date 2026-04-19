@@ -1900,23 +1900,39 @@ const Game = (() => {
   function _updateTitleUnlocks() {
     const el = document.getElementById('title-unlocks');
     if (!el) return;
-    const badges = [];
+
+    // Faction unlock badges
+    const factionBadges = [];
     if (localStorage.getItem('shape_strikers_void_unlocked') === '1') {
-      badges.push('<span class="unlock-badge void">🌑 Void Unlocked</span>');
+      factionBadges.push('<span class="unlock-badge void">🌑 Void Unlocked</span>');
     }
     if (localStorage.getItem('shape_strikers_arcane_unlocked') === '1') {
-      badges.push('<span class="unlock-badge">✨ Arcane Unlocked</span>');
+      factionBadges.push('<span class="unlock-badge">✨ Arcane Unlocked</span>');
     }
     if (localStorage.getItem('shape_strikers_void_campaign_cleared') === '1') {
-      badges.push('<span class="unlock-badge void">🕳️ Void Conqueror</span>');
+      factionBadges.push('<span class="unlock-badge void">🕳️ Void Conqueror</span>');
     }
-    el.innerHTML = badges.length ? badges.join('') : '<span style="font-size:11px;color:var(--text-dim)">Complete the game to unlock factions!</span>';
+    let html = factionBadges.length
+      ? factionBadges.join('')
+      : '<span style="font-size:11px;color:var(--text-dim)">Complete the game to unlock factions!</span>';
 
-    // Achievement progress summary on title screen
+    // Achievement badge row — visual icons for each achievement
     const achievements = _getAchievements();
     const unlockedCount = Object.keys(achievements).length;
+    html += '<div class="achievement-badge-row">';
+    for (const a of ACHIEVEMENTS) {
+      const unlocked = !!achievements[a.id];
+      const cls = unlocked ? 'badge-icon unlocked' : 'badge-icon locked';
+      const title = unlocked ? `${a.icon} ${a.name}` : '🔒 ???';
+      if (a.badge) {
+        html += `<div class="${cls}" title="${title}"><img src="${a.badge}" alt="${a.name}"></div>`;
+      } else {
+        html += `<div class="${cls}" title="${title}"><span>${unlocked ? a.icon : '🔒'}</span></div>`;
+      }
+    }
+    html += '</div>';
     if (unlockedCount > 0) {
-      el.innerHTML += `<br><span class="unlock-badge">🏅 ${unlockedCount}/${ACHIEVEMENTS.length} Achievements</span>`;
+      html += `<span class="unlock-badge" style="margin-top:2px">🏅 ${unlockedCount}/${ACHIEVEMENTS.length}</span>`;
     }
 
     // Challenge status on title screen
@@ -1928,8 +1944,9 @@ const Game = (() => {
       let cBadges = '';
       if (dailyData?.completed) cBadges += '<span class="unlock-badge">📅 Daily ✅</span> ';
       if (weeklyData?.completed) cBadges += '<span class="unlock-badge">📆 Weekly ✅</span>';
-      el.innerHTML += `<br>${cBadges}`;
+      html += `<br>${cBadges}`;
     }
+    el.innerHTML = html;
 
     // Show/hide Void Campaign button
     const voidBtn = document.getElementById('btn-start-void');

@@ -1342,7 +1342,8 @@ html, body {
   width: 16px; height: 16px; accent-color: #3388ff;
 }
 #title-unlocks {
-  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: center;
+  flex-direction: column;
   font-size: 12px; font-weight: 700; margin-top: 4px;
 }
 .unlock-badge {
@@ -1351,6 +1352,24 @@ html, body {
   border: 1px solid rgba(100,70,200,0.3); color: #bb99ff;
 }
 .unlock-badge.void { background: rgba(50,30,80,0.6); color: #bb99ff; border-color: rgba(100,70,200,0.4); }
+
+/* ── Achievement Badge Row on Title Screen ────────────────────────────────── */
+.achievement-badge-row {
+  display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+  width: 100%; margin-top: 6px;
+}
+.badge-icon {
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; border: 2px solid rgba(100,70,200,0.3);
+  background: rgba(30,20,50,0.5); transition: transform 0.15s, border-color 0.2s;
+  cursor: default;
+}
+.badge-icon img { width: 28px; height: 28px; object-fit: contain; }
+.badge-icon span { font-size: 18px; line-height: 1; }
+.badge-icon.unlocked { border-color: rgba(180,140,255,0.6); }
+.badge-icon.unlocked:hover { transform: scale(1.15); border-color: rgba(200,170,255,0.8); }
+.badge-icon.locked { opacity: 0.35; }
+.badge-icon.locked img { filter: grayscale(1) brightness(0.5); }
 
 /* ── Help button in top bar ────────────────────────────────────────────────── */
 #btn-help {

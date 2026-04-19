@@ -68,7 +68,7 @@ class BattleSystem {
   // ── Internal: Round-based action queue ────────────────────────────────────
 
   _scheduleRound() {
-    if (!this._running) return;
+    if (!this._running || this._paused) return;
 
     const alive = u => u.hp > 0;
     const players = this._playerUnits.filter(alive);
@@ -92,7 +92,7 @@ class BattleSystem {
   }
 
   _processNextAction() {
-    if (!this._running) return;
+    if (!this._running || this._paused) return;
 
     // Skip to next living unit
     while (this._actionIndex < this._actionQueue.length && this._actionQueue[this._actionIndex].hp <= 0) {
