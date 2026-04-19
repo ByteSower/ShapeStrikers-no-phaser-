@@ -1221,6 +1221,15 @@ html, body {
 .leaderboard-content { min-height: 120px; }
 .leaderboard-loading { text-align: center; color: #888; padding: 24px 0; }
 .leaderboard-empty { text-align: center; color: #999; padding: 24px 0; font-style: italic; }
+.privacy-note {
+  margin-top: 12px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+  text-align: left;
+  padding-top: 10px;
+  border-top: 1px solid rgba(100,140,200,0.12);
+}
 .leaderboard-table {
   width: 100%; border-collapse: collapse; font-size: 0.92rem;
 }

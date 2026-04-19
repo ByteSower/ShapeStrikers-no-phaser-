@@ -79,6 +79,10 @@ Then open `http://localhost:8000` in your browser.
 - **Canvas API** — for unit shape rendering
 - **GitHub Pages** — static hosting via Actions workflow
 
+## Privacy
+
+Shape Strikers stores settings, unlocks, and run-related progress in your browser using local storage. If you submit a leaderboard score, the game stores your chosen display name, score, and run summary using anonymous Supabase authentication. No email or password is required.
+
 ## Documentation
 
 - [GAME_DESIGN.md](GAME_DESIGN.md) — Full game design document (rules, stats, formulas, mechanics)
