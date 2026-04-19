@@ -127,7 +127,16 @@
 - [x] Supabase schema provided (`supabase_schema.sql`)
 - [x] Patch notes system — `PATCH_NOTES` array in config.js, "What's New" overlay on title screen
 
-### Phase 8.1 — Tutorial & Tips Polish ✨ LATEST
+### Phase 8.2 — Mobile v2 ✨ LATEST
+- [x] Portrait: tutorial overlay pointer-events pass-through so users can scroll to Fight button
+- [x] Portrait: scrollIntoView on spotlight targets during tutorial
+- [x] Landscape: grid gets flex:1 (dominant), panel capped at clamp(140px, 28vw, 220px)
+- [x] Landscape: tile sizing uses 75% viewport height and reserves panel width
+- [x] Added overscroll-behavior containment on html/body and game screen
+- [x] Replaced dvh with svh viewport units throughout mobile CSS
+- [x] Removed deprecated -webkit-overflow-scrolling: touch
+
+### Phase 8.1 — Tutorial & Tips Polish
 - [x] Streamlined onboarding tutorial from 7 steps to 3 focused steps
 - [x] 8 contextual tips triggered at the right moment (first unit, synergy, battle, boss, etc.)
 - [x] Battle auto-pauses while a contextual tip is displayed

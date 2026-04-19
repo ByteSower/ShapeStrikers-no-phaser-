@@ -1024,6 +1024,20 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '0.8.2',
+    date: 'April 19, 2026',
+    title: 'Mobile v2 — Portrait & Landscape Fixes',
+    notes: [
+      '📱 Portrait: tutorial/tips no longer block scrolling to the Fight button',
+      '📱 Portrait: highlighted elements auto-scroll into view during tutorial',
+      '🔄 Landscape: grid now dominates the layout (was too small before)',
+      '🔄 Landscape: info panel capped at a sensible width instead of filling all space',
+      '🔄 Landscape: tile sizing uses more vertical space for bigger grid tiles',
+      '🛡️ Added scroll containment to prevent overscroll bounce on iOS',
+      '📐 Switched to stable viewport units (svh) for more reliable mobile sizing',
+    ],
+  },
+  {
     version: '0.8.1',
     date: 'April 18, 2026',
     title: 'Tutorial & Tips Polish',
