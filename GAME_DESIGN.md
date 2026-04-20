@@ -367,12 +367,13 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 
 ### Synergy Application Rules
 
-- Applied at **battle start** to **player units only**
+- Applied at **battle start** to **all player units** (not just element-matching units)
 - Calculated from **base stats** (not current modified stats)
 - **Reset after battle** — stats return to base values
 - Only the highest matching synergy per element+stat is applied
+- Multiple synergies boosting the same stat **multiply together** (e.g. Fire +15% ATK × Blood +15% ATK = ×1.32 total ATK for every unit)
 
-**Example**: 3 Fire units → +30% ATK applies (NOT +15% AND +30%)
+**Example**: 3 Fire units → +30% ATK applies to the **whole team** (NOT +15% AND +30%; NOT fire units only)
 
 ---
 

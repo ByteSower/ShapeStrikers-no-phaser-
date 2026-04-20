@@ -274,8 +274,8 @@ const Game = (() => {
   }
 
   function _checkAchievementsOnPrep() {
-    // Full Army: all slots filled
-    if (state.playerUnits.length >= _maxUnits()) _unlockAchievement('full_army');
+    // Full Army: all 12 player grid slots filled (6 cols × 2 player rows)
+    if (state.playerUnits.length >= 12) _unlockAchievement('full_army');
     // Synergy Master: 3+ active synergies
     const elemCounts = {};
     for (const u of state.playerUnits) {
@@ -463,8 +463,14 @@ const Game = (() => {
     const mercLevel = state.upgradeLevels['mercenary'] || 0;
     const shopSize = 5 + mercLevel;
     state.shopUnits = Array.from({ length: shopSize }, () => {
-      // Tier weighting matching Phaser original: T1=60%, T2=30%, T3=10%
-      const weights = { 1: 60, 2: 30, 3: 10 };
+      // Tier weights scale with wave so T2/T3 feel accessible as soon as they unlock.
+      // maxTier already gates availability; these weights just control the distribution
+      // within what's allowed: T2 favoured from wave 4, T3 grows from wave 7.
+      let w1, w2, w3;
+      if (maxTier === 1)      { w1 = 100; w2 = 0;  w3 = 0; }
+      else if (maxTier === 2) { w1 = 45;  w2 = 55; w3 = 0; }  // waves 4–6
+      else                    { w1 = 25;  w2 = 45; w3 = 30; } // waves 7+
+      const weights = { 1: w1, 2: w2, 3: w3 };
       const roll = Math.random() * 100;
       let tier = 1;
       if (roll > weights[1]) tier = 2;
@@ -1509,7 +1515,7 @@ const Game = (() => {
     document.getElementById('overlay-gameover')?.classList.add('hidden');
     document.getElementById('overlay-win')?.classList.add('hidden');
     UI.showScreen('screen-title');
-    Audio.playMusic('ss_title_music_full.mp3');
+    Audio.playMusic('ss_title_music_full.wav');
     _updateTitleUnlocks();
   }
 
@@ -1870,7 +1876,6 @@ const Game = (() => {
     document.getElementById('btn-battle')?.addEventListener('click', startBattle);
     document.getElementById('btn-refresh')?.addEventListener('click', () => refreshShop(false));
     document.getElementById('btn-glossary')?.addEventListener('click', () => UI.showGlossary());
-    document.getElementById('btn-slots')?.addEventListener('click', _openSlots);
     document.getElementById('btn-quit')?.addEventListener('click', _returnToTitle);
 
     // Speed buttons
@@ -2227,12 +2232,6 @@ const Game = (() => {
     }, 600);
   }
 
-  // ── Fortune Spinner (Slot Machine) — Under Construction ────────────────────
-
-  function _openSlots() {
-    UI.showMessage('🚧 Fortune Spinner is under construction — coming soon!');
-  }
-
   // ── Init ──────────────────────────────────────────────────────────────────
 
   function init() {
@@ -2272,7 +2271,7 @@ const Game = (() => {
         if (splashEl.classList.contains('hidden')) return;
         splashEl.classList.add('hidden');
         document.removeEventListener('keydown', onSplashKeydown);
-        Audio.playMusic('ss_title_music_full.mp3');
+        Audio.playMusic('ss_title_music_full.wav');
         setTimeout(() => splashEl.remove(), 600);
       };
 

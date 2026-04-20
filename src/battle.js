@@ -709,7 +709,7 @@ class BattleSystem {
     const counts = {};
     for (const u of units) counts[u.definition.element] = (counts[u.definition.element] || 0) + 1;
 
-    // Group synergies by element, pick only highest matching tier
+    // Group synergies by element+stat, pick only highest matching tier per key
     const byElement = {};
     for (const syn of ELEMENT_SYNERGIES) {
       if ((counts[syn.element] || 0) >= syn.requiredCount) {
@@ -717,17 +717,34 @@ class BattleSystem {
       }
     }
 
-    for (const syn of Object.values(byElement)) {
-      for (const u of units.filter(u2 => u2.definition.element === syn.element)) {
-        u.stats[syn.bonus.stat] = Math.floor(u._baseStats[syn.bonus.stat] * syn.bonus.multiplier);
-        // HP synergies must also update the live hp/maxHp fields
-        if (syn.bonus.stat === 'hp') {
-          const newMaxHp = Math.floor(u._baseMaxHp * syn.bonus.multiplier);
+    const activeSynergies = Object.values(byElement);
+    if (activeSynergies.length === 0) return;
+
+    // Accumulate combined multiplier per stat across ALL active synergies.
+    // Multiple synergies boosting the same stat (e.g. fire ATK + blood ATK) multiply together.
+    const statMult = {};
+    for (const syn of activeSynergies) {
+      const s = syn.bonus.stat;
+      statMult[s] = (statMult[s] || 1) * syn.bonus.multiplier;
+    }
+
+    // Apply the combined multipliers to EVERY unit on the team.
+    // Elements that triggered a synergy give a bonus to the whole army, rewarding
+    // players for building any synergy regardless of mixed composition.
+    for (const u of units) {
+      for (const [stat, mult] of Object.entries(statMult)) {
+        u.stats[stat] = Math.floor(u._baseStats[stat] * mult);
+        if (stat === 'hp') {
+          const newMaxHp = Math.floor(u._baseMaxHp * mult);
           const hpGain = newMaxHp - u.maxHp;
           u.maxHp = newMaxHp;
           u.hp = Math.min(u.hp + hpGain, u.maxHp);
         }
       }
+    }
+
+    // Log and fire callbacks once per active synergy for UI feedback
+    for (const syn of activeSynergies) {
       this._log(`✨ Synergy: ${syn.description}`, 'ability');
       if (this.onSynergyActivated) this.onSynergyActivated(syn.element, syn.description);
     }
