@@ -321,13 +321,14 @@ const Game = (() => {
 
   /** Get active synergies for a specific unit based on current team composition */
   function _getActiveSynergiesForUnit(unit) {
+    // Synergies now buff ALL player units — return every active synergy regardless of this unit's element.
+    // The element filter is only used to pick WHICH synergies are triggered (need 2+ of that element).
     const counts = {};
     for (const u of state.playerUnits) counts[u.definition.element] = (counts[u.definition.element] || 0) + 1;
-    const elem = unit.definition.element;
     const byKey = {};
     for (const syn of ELEMENT_SYNERGIES) {
-      if (syn.element === elem && (counts[elem] || 0) >= syn.requiredCount) {
-        byKey[syn.bonus.stat] = syn; // highest tier wins
+      if ((counts[syn.element] || 0) >= syn.requiredCount) {
+        byKey[syn.element + ':' + syn.bonus.stat] = syn; // highest tier wins per element+stat
       }
     }
     return Object.values(byKey);

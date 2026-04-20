@@ -179,8 +179,10 @@ const UI = (() => {
     const synergyBoosts = {};
     const alreadyBoosted = !!unit._baseStats; // _baseStats exists during battle = synergies already in stats
     if (activeSynergies && activeSynergies.length > 0 && !alreadyBoosted) {
+      // Multiply multipliers together so multiple synergies boosting the same stat stack correctly
       for (const syn of activeSynergies) {
-        synergyBoosts[syn.bonus.stat] = syn.bonus.multiplier;
+        const s = syn.bonus.stat;
+        synergyBoosts[s] = (synergyBoosts[s] || 1) * syn.bonus.multiplier;
       }
     }
 
