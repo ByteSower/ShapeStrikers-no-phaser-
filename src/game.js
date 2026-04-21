@@ -2296,13 +2296,137 @@ const Game = (() => {
     }, 600);
   }
 
+  // ── Multiplayer (Presence + Chat) ─────────────────────────────────────────
+
+  function _initMultiplayer() {
+    // SupabaseClient polls until Backend is ready, then connects all channels.
+    if (typeof SupabaseClient !== 'undefined') SupabaseClient.init();
+
+    // Presence — online player count on title screen
+    if (typeof Presence !== 'undefined') {
+      const countEl = document.getElementById('online-count');
+      Presence.onCountChange((count) => {
+        if (countEl) countEl.textContent = `🟢 Players Online: ${count}`;
+      });
+      Presence.init();
+    }
+
+    // Chat — register channel and wire UI
+    if (typeof GlobalChat !== 'undefined') {
+      GlobalChat.init();
+      _initChatUI();
+    }
+  }
+
+  function _initChatUI() {
+    const panel    = document.getElementById('chat-panel');
+    const toggle   = document.getElementById('chat-toggle');
+    const body     = document.getElementById('chat-body');
+    const messages = document.getElementById('chat-messages');
+    const form     = document.getElementById('chat-form');
+    const input    = document.getElementById('chat-input');
+    const unread   = document.getElementById('chat-unread');
+    const dot      = document.getElementById('chat-status-dot');
+
+    if (!panel || !toggle || !messages || !form || !input) return;
+
+    let _unreadCount = 0;
+    let _isOpen      = false;
+
+    // ── Toggle open/close ────────────────────────────────────────────────
+    toggle.addEventListener('click', () => {
+      _isOpen = !_isOpen;
+      panel.classList.toggle('collapsed', !_isOpen);
+      toggle.setAttribute('aria-expanded', String(_isOpen));
+      if (_isOpen) {
+        _unreadCount = 0;
+        unread?.classList.add('hidden');
+        // Scroll to bottom and focus input
+        messages.scrollTop = messages.scrollHeight;
+        input.focus();
+      }
+    });
+
+    // ── Render incoming messages ─────────────────────────────────────────
+    // NOTE: playerName and text from GlobalChat are already control-char-stripped.
+    // Using textContent here guarantees no XSS regardless of what arrives.
+    const myId = () => (typeof Backend !== 'undefined' && Backend.getUserId()) || '';
+
+    GlobalChat.onMessage((msg) => {
+      const isMine = msg.playerId === myId();
+
+      const item = document.createElement('div');
+      item.className = 'chat-msg' + (isMine ? ' chat-msg-mine' : '');
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'chat-msg-name';
+      nameEl.textContent = msg.playerName;
+
+      const textEl = document.createElement('span');
+      textEl.className = 'chat-msg-text';
+      textEl.textContent = msg.text;
+
+      item.appendChild(nameEl);
+      item.appendChild(document.createTextNode(' '));
+      item.appendChild(textEl);
+      messages.appendChild(item);
+
+      // Cap DOM to MAX_MESSAGES nodes
+      while (messages.childElementCount > 50) messages.removeChild(messages.firstChild);
+
+      if (_isOpen) {
+        messages.scrollTop = messages.scrollHeight;
+      } else if (!isMine) {
+        _unreadCount++;
+        if (unread) {
+          unread.textContent = _unreadCount > 9 ? '9+' : String(_unreadCount);
+          unread.classList.remove('hidden');
+        }
+      }
+    });
+
+    // ── Send ─────────────────────────────────────────────────────────────
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      const result = GlobalChat.sendMessage(text);
+      if (result.ok) {
+        input.value = '';
+      } else if (result.error === 'Rate limited') {
+        if (typeof UI !== 'undefined') UI.showMessage('💬 Slow down!', 1500);
+      }
+    });
+
+    // ── Enable input once channel is subscribed ──────────────────────────
+    // SupabaseClient will log when SUBSCRIBED; we poll briefly to enable input.
+    const CHECK_INTERVAL_MS = 500;
+    const MAX_CHECKS        = 30;  // give up after 15 s
+    let checks = 0;
+    const _checkReady = setInterval(() => {
+      checks++;
+      const ch = (typeof SupabaseClient !== 'undefined') && SupabaseClient.getChannel('chat:global');
+      if (ch) {
+        input.disabled     = false;
+        input.placeholder  = 'Message…';
+        if (dot) { dot.title = 'Connected'; dot.classList.add('connected'); }
+        clearInterval(_checkReady);
+      } else if (checks >= MAX_CHECKS) {
+        input.placeholder = 'Chat unavailable';
+        if (dot) dot.title = 'Unavailable';
+        clearInterval(_checkReady);
+      }
+    }, CHECK_INTERVAL_MS);
+  }
+
   // ── Init ──────────────────────────────────────────────────────────────────
 
   function init() {
     preloadSprites(); // fire-and-forget — sprites ready before user enters game
     preloadSlashSprites(); // melee slash animation frames
     Audio.init();
-    Backend.init(); // fire-and-forget — leaderboards degrade gracefully
+    Backend.init();       // fire-and-forget — leaderboards degrade gracefully
+    _initMultiplayer();   // fire-and-forget — presence + chat degrade gracefully
     _wireDOMButtons();
     _updateTitleUnlocks();
 

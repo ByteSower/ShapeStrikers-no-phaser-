@@ -51,6 +51,7 @@
       <label class="option-label"><input type="checkbox" id="opt-mute"> 🔇 Mute Audio</label>
     </div>
     <div class="title-unlocks" id="title-unlocks"></div>
+    <p class="online-count" id="online-count" aria-live="polite" aria-atomic="true">🟢 Players Online: —</p>
   </div>
 </div>
 
@@ -347,6 +348,27 @@
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════ GLOBAL CHAT PANEL ══ -->
+<div id="chat-panel" class="chat-panel collapsed" aria-label="Global chat">
+  <button id="chat-toggle" class="chat-toggle" aria-expanded="false" aria-controls="chat-body">
+    💬 <span class="chat-toggle-label">Chat</span>
+    <span id="chat-unread" class="chat-unread hidden" aria-label="Unread messages">0</span>
+  </button>
+  <div id="chat-body" class="chat-body" role="complementary">
+    <div class="chat-header">
+      <span>💬 Global Chat</span>
+      <span id="chat-status-dot" class="chat-status-dot" title="Connecting…"></span>
+    </div>
+    <div id="chat-messages" class="chat-messages"
+         role="log" aria-live="polite" aria-relevant="additions" aria-label="Chat messages"></div>
+    <form id="chat-form" class="chat-input-row" autocomplete="off">
+      <input id="chat-input" class="chat-input" type="text" maxlength="200"
+             placeholder="Connecting…" disabled aria-label="Chat message" />
+      <button type="submit" class="btn btn-sm btn-fire chat-send-btn" id="chat-send" aria-label="Send">➤</button>
+    </form>
+  </div>
+</div>
+
 <!-- SCRIPTS (order matters — config first) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="src/config.js"></script>
@@ -356,6 +378,9 @@
 <script src="src/vfx.js"></script>
 <script src="src/ui.js"></script>
 <script src="src/backend.js"></script>
+<script src="src/supabaseClient.js"></script>
+<script src="src/presence.js"></script>
+<script src="src/globalChat.js"></script>
 <script src="src/game.js"></script>
 
 </body>

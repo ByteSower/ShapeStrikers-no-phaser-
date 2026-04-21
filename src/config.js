@@ -1083,6 +1083,19 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '0.9.3',
+    date: 'April 21, 2026',
+    title: 'Multiplayer Presence & Global Chat',
+    notes: [
+      '👥 Live online player count on the title screen — see who\'s playing right now',
+      '💬 Global real-time chat panel — tap 💬 in the bottom-left corner to join the conversation',
+      '🟢 Connection status dot — green when live, grey while connecting',
+      '🔔 Unread message badge on the chat toggle when the panel is collapsed',
+      '🔄 Auto-reconnect with exponential backoff; tab-focus reconnect included',
+      '🛡️ Input sanitization — control chars stripped, 200-char message limit, 20-char name limit',
+    ],
+  },
+  {
     version: '0.9.2',
     date: 'April 21, 2026',
     title: 'Void Campaign Overhaul & Balance Pass',

@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: April 20, 2026
+> **Last Updated**: April 21, 2026
 
 ---
 
@@ -11,8 +11,8 @@
 
 | Metric | Value |
 |--------|-------|
-| Source lines | ~8,500 (JS + CSS + HTML) |
-| Source files | 8 JS modules, 1 CSS, 1 HTML |
+| Source lines | ~9,200 (JS + CSS + HTML) |
+| Source files | 11 JS modules, 1 CSS, 1 HTML |
 | Dependencies | **Zero** — fully vanilla |
 | Units | 44 (39 playable + 5 bosses) |
 | Elements | 8 (Fire, Ice, Lightning, Earth, Arcane, Void, Blood, Plague) |
@@ -127,7 +127,20 @@
 - [x] Supabase schema provided (`supabase_schema.sql`)
 - [x] Patch notes system — `PATCH_NOTES` array in config.js, "What's New" overlay on title screen
 
-### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance ✨ LATEST
+### Phase 9.1 — Multiplayer Presence & Global Chat ✨ LATEST
+- [x] Supabase Realtime Presence — live online player count shown on title screen
+- [x] Global real-time chat panel — floating 💬 button, bottom-left corner (all screens)
+- [x] `supabaseClient.js` — singleton channel registry with connect/reconnect/visibility lifecycle
+- [x] `presence.js` — refactored to delegate lifecycle to SupabaseClient
+- [x] `globalChat.js` — broadcast chat with rate-limiting (2s), 50-msg buffer, XSS-safe rendering
+- [x] Unread badge counter on chat toggle when panel is collapsed
+- [x] Status dot (green = connected, grey = connecting)
+- [x] Exponential backoff reconnect (base 2s → cap 30s, max 6 retries)
+- [x] Tab visibility reconnect — channels rejoin when tab regains focus
+- [x] Input sanitization: strips control chars, max 200-char messages, max 20-char names
+- [x] Chat panel repositioned bottom-left to avoid overlapping in-game speed controls
+
+### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance
 - [x] Gameplay BGM rotates between two tracks; boss waves play dedicated boss music
 - [x] "Get Ready" call triggers at shop phase start; "Enemy Spotted" on boss wave
 - [x] Wave clear: random victory SFX (3 varieties); game over: jingle + cry after 1.5s

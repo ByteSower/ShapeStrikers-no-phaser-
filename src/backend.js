@@ -76,8 +76,10 @@ const Backend = (() => {
     _user = data.user;
   }
 
-  function isReady() { return _ready; }
-  function getUser() { return _user; }
+  function isReady()   { return _ready; }
+  function getClient() { return _supabase; }
+  function getUser()   { return _user; }
+  function getUserId() { return _user?.id || null; }
 
   function getPlayerName() { return _playerName; }
 
@@ -265,7 +267,9 @@ const Backend = (() => {
   return {
     init,
     isReady,
+    getClient,
     getUser,
+    getUserId,
     getPlayerName,
     setPlayerName,
     submitScore,
