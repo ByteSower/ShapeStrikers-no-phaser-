@@ -1084,7 +1084,7 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 const PATCH_NOTES = [
   {
     version: '0.9.2',
-    date: 'April 27, 2026',
+    date: 'April 21, 2026',
     title: 'Void Campaign Overhaul & Balance Pass',
     notes: [
       '⚔️ New "Normal" leaderboard tab — separate rankings for Normal Campaign runs',
