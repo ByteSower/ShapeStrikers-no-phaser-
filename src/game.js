@@ -23,6 +23,7 @@ const Game = (() => {
   let _challengeSeed = 0;        // deterministic seed for challenge runs
   let _challengeElement = null;  // for 'purity' modifier — the single allowed element
   let _keydownHandler = null;    // stored ref to remove on restart (prevent listener leak)
+  let _lastBattleHadBoss = false; // track boss waves to restore gameplay BGM after boss fight
 
   function _freshState() {
     return {
@@ -242,7 +243,10 @@ const Game = (() => {
     localStorage.setItem('shape_strikers_achievements', JSON.stringify(achievements));
     // Show toast notification
     const def = ACHIEVEMENTS.find(a => a.id === id);
-    if (def) UI.showMessage(`🏅 Achievement Unlocked: ${def.icon} ${def.name}!`, 3000);
+    if (def) {
+      UI.showMessage(`🏅 Achievement Unlocked: ${def.icon} ${def.name}!`, 3000);
+      Audio.play('objective');
+    }
     return true;
   }
 
@@ -873,11 +877,15 @@ const Game = (() => {
       Grid.animateSynergyPulse(state.playerUnits, element);
     };
 
-    Audio.play('waveStart');
+    const hasBoss = enemies.some(e => e.definition.isBoss);
+    _lastBattleHadBoss = hasBoss;
+    if (hasBoss) {
+      Audio.play('enemySpotted');
+      Audio.playBossMusic();
+    }
 
     // Contextual tips
     _showContextualTip('first_battle');
-    const hasBoss = enemies.some(e => e.definition.isBoss);
     if (hasBoss) _showContextualTip('first_boss');
 
     // Save player unit positions to restore after battle
@@ -897,7 +905,7 @@ const Game = (() => {
 
     document.getElementById('btn-battle').disabled = true;
     document.getElementById('btn-refresh').disabled = true;
-    document.getElementById('btn-slots').disabled = true;
+    document.getElementById('btn-slots')?.remove(); // btn-slots removed; guard for safety
   }
 
   // ── Battle Callbacks ──────────────────────────────────────────────────────
@@ -1104,6 +1112,7 @@ const Game = (() => {
 
     if (playerWon) {
       Audio.play('waveClear');
+      if (_lastBattleHadBoss) Audio.playGameplayMusic();
       const goldBase = Math.floor(((GAME_CONFIG.goldPerWave ?? 7) + (_currentWaveDef?.bonusGold ?? 0)) * _challengeGoldModifier());
       const victoryBonusUpg = UPGRADES.find(u => u.id === 'victory_bonus');
       const victoryBonus = (victoryBonusUpg?.effect?.value || 2) * (state.upgradeLevels['victory_bonus'] || 0);
@@ -1235,14 +1244,26 @@ const Game = (() => {
     UI.showMessage(`Wave ${state.wave}${voidLabel} — Prepare your army!`);
     document.getElementById('btn-battle').disabled  = false;
     document.getElementById('btn-refresh').disabled = false;
-    document.getElementById('btn-slots').disabled   = false;
+    // btn-slots (Gamble) removed — no-op guard below keeps old callers safe
+    document.getElementById('btn-slots');
+    Audio.play('getReady');
   }
 
   // ── Game Over / Win ───────────────────────────────────────────────────────
 
   function _handleGameOver() {
     state.phase = 'gameover';
+    Audio.stopMusic();
     Audio.play('gameOver');
+    Audio.playAfter('cry', 1500);
+    if (!_challengeMode) {
+      const bestKey = `shape_strikers_best_score_${_campaignMode}`;
+      const prevBest = parseInt(localStorage.getItem(bestKey) || '0', 10);
+      if (state.score > 0 && state.score > prevBest) {
+        localStorage.setItem(bestKey, String(state.score));
+        Audio.play('newHighScore');
+      }
+    }
     _accumulateGameStats();
     // Save challenge result
     if (_challengeMode) _saveChallengeResult(_challengeMode, state.score, false);
@@ -1259,6 +1280,16 @@ const Game = (() => {
 
   function _handleGameWin() {
     state.phase = 'win';
+    Audio.stopMusic();
+    Audio.play('letsGo');
+    if (!_challengeMode) {
+      const bestKey = `shape_strikers_best_score_${_campaignMode}`;
+      const prevBest = parseInt(localStorage.getItem(bestKey) || '0', 10);
+      if (state.score > 0 && state.score > prevBest) {
+        localStorage.setItem(bestKey, String(state.score));
+        Audio.play('newHighScore');
+      }
+    }
     if (!_challengeMode) {
       localStorage.setItem('shape_strikers_void_unlocked', '1');
       localStorage.setItem('shape_strikers_arcane_unlocked', '1');
@@ -1385,6 +1416,7 @@ const Game = (() => {
     const splashEl = document.getElementById('splash-overlay');
     if (splashEl) splashEl.remove();
     Audio.stopMusic();
+    Audio.playGameplayMusic();
 
     // Set campaign mode (default to normal)
     _campaignMode = (campaignMode === 'void') ? 'void' : 'normal';
@@ -1400,6 +1432,7 @@ const Game = (() => {
     _totalUpgradesBought = 0;
     _unitsLostThisRun = 0;
     _seenTips = {};          // reset contextual tips each run
+    _tutorialStepsDone = false;
     battle = null;
     nextUnitId = 1;
     _currentWaveDef = null;
@@ -1475,7 +1508,7 @@ const Game = (() => {
 
     document.getElementById('btn-battle').disabled = false;
     document.getElementById('btn-refresh').disabled = false;
-    document.getElementById('btn-slots').disabled = false;
+    // btn-slots removed; intentional no-op
     _updateRefreshBtn();
 
     // Pre-generate wave 1 for preview
@@ -1978,6 +2011,7 @@ const Game = (() => {
   ];
 
   let tutorialStep = -1;
+  let _tutorialStepsDone = false;
 
   function _startTutorial() {
     if (_challengeMode) return; // skip tutorial for challenges
@@ -1999,7 +2033,8 @@ const Game = (() => {
         const tutToggle = document.getElementById('opt-tutorial');
         if (tutToggle) tutToggle.checked = false;
         localStorage.setItem('shape_strikers_tutorial', '0');
-        _unlockAchievement('tutorial_complete');
+        _tutorialStepsDone = true;
+        _checkTutorialAchievement();
       }
       tutorialStep = -1;
       return;
@@ -2146,6 +2181,14 @@ const Game = (() => {
     },
   };
 
+  function _checkTutorialAchievement() {
+    if (!_tutorialStepsDone) return;
+    const allKeys = Object.keys(CONTEXTUAL_TIPS);
+    if (allKeys.every(k => _seenTips[k])) {
+      _unlockAchievement('tutorial_complete');
+    }
+  }
+
   function _showContextualTip(tipId) {
     if (_seenTips[tipId]) return;
     if (tutorialStep >= 0) return; // don't overlap with onboarding tutorial
@@ -2169,6 +2212,7 @@ const Game = (() => {
     clearTimeout(_tipTimer);
     _tipTimer = setTimeout(() => {
       _seenTips[tipId] = true;
+      _checkTutorialAchievement();
       _pendingTipId = null;
 
       // Ensure battle is paused when the overlay actually appears
