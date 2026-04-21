@@ -788,6 +788,15 @@ const Game = (() => {
           }
         }
 
+        // Special: Void Campaign W15 boss — buff final phase HP to 1000
+        if (_campaignMode === 'void' && def.id === 'boss_chaos_overlord' && !scaling) {
+          enemy.definition = Object.assign({}, def, {
+            bossPhases: def.bossPhases.map((p, i, arr) =>
+              i === arr.length - 1 ? { ...p, phaseHp: 1000 } : p
+            ),
+          });
+        }
+
         // Avoid stacking: nudge to next available col in same row
         let placed = false;
         for (let dc = 0; dc < GRID_CONFIG.cols; dc++) {
@@ -1422,6 +1431,7 @@ const Game = (() => {
 
     // Set campaign mode (default to normal)
     _campaignMode = (campaignMode === 'void') ? 'void' : 'normal';
+    WaveGenerator.setVoidCampaign(_campaignMode === 'void');
     // Reset challenge state if this is a direct startGame call (not from startChallenge)
     if (!_challengeMode) {
       _challengeModifier = null;
@@ -1677,6 +1687,8 @@ const Game = (() => {
     let result;
     if (tab === 'global') {
       result = await Backend.fetchGlobal(10);
+    } else if (tab === 'normal') {
+      result = await Backend.fetchByMode('normal', 10);
     } else if (tab === 'void') {
       result = await Backend.fetchByMode('void', 10);
     } else if (tab === 'daily') {

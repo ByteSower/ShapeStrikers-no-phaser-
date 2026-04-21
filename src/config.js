@@ -154,7 +154,7 @@ const UNIT_DEFINITIONS = [
     id: 'arcane_pupil', name: 'Arcane Servant Qua', element: 'arcane', cost: 2, tier: 1, role: 'skirmisher',
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 70, maxHp: 70, attack: 14, defense: 5, speed: 8, range: 1 },
-    ability: { name: 'Arcane Bolt', description: 'Quick arcane attack; evolves over time (+ATK/DEF)', cooldown: 2 },
+    ability: { name: 'Arcane Bolt', description: 'Quick arcane attack; evolves over time (+ATK/DEF)', cooldown: 1 },
     evolveConfig: { interval: 3, statBonus: 0.1, maxStacks: 3 },
   },
   // ── TIER 2 ──────────────────────────────────────────────────────────────────
@@ -361,7 +361,7 @@ const UNIT_DEFINITIONS = [
     bossPhases: [
       { hpThreshold: 1.0, phaseHp: 400, name: 'Awakening',   statModifiers: {},                                        description: 'The Void Supreme awakens!' },
       { hpThreshold: 0.66, phaseHp: 450, name: 'Corruption',  statModifiers: { attackMult: 1.3, speedMult: 1.2 },      description: 'Phase 2: CORRUPTION! (+30% ATK, +20% SPD)' },
-      { hpThreshold: 0.33, phaseHp: 500, name: 'Cataclysm',   statModifiers: { attackMult: 1.6, speedMult: 1.5, defenseMult: 0.7 }, description: 'FINAL PHASE: CATACLYSM!' },
+      { hpThreshold: 0.33, phaseHp: 750, name: 'Cataclysm',   statModifiers: { attackMult: 1.6, speedMult: 1.5, defenseMult: 0.7 }, description: 'FINAL PHASE: CATACLYSM!' },
     ],
   },
 
@@ -404,6 +404,8 @@ const GOOD_FACES = {
   blood_sprite: 'l',    blood_knight: 'h',      konji_scout: 'l',     konji_shaman: 'k',
   arcane_pupil: 'k',    earth_enforcer: 'h',    lightning_hunter: 'l',
   fire_ravager: 'f',    arcane_illusionist: 'l',
+  blood_imp: 'l',       crimson_mage: 'f',       blood_lord: 'h',
+  plague_rat: 'k',      blight_weaver: 'f',      plague_sovereign: 'h',
   boss_flame_tyrant: 'h', boss_frost_colossus: 'h', boss_chaos_overlord: 'f',
   boss_void_leviathan: 'h', boss_void_architect: 'f',
   default: 'k',
@@ -420,6 +422,8 @@ const EVIL_FACES = {
   blood_sprite: 'g',    blood_knight: 'b',       konji_scout: 'd',     konji_shaman: 'b',
   arcane_pupil: 'c',    earth_enforcer: 'i',     lightning_hunter: 'g',
   fire_ravager: 'b',    arcane_illusionist: 'd',
+  blood_imp: 'g',       crimson_mage: 'g',       blood_lord: 'b',
+  plague_rat: 'i',      blight_weaver: 'd',      plague_sovereign: 'g',
   boss_flame_tyrant: 'g', boss_frost_colossus: 'b', boss_chaos_overlord: 'g',
   boss_void_leviathan: 'g', boss_void_architect: 'g',
   default: 'g',
@@ -635,43 +639,43 @@ const WAVE_TEMPLATES = [
 
   // ── VOID CAMPAIGN WAVES (16–25) ─────────────────────────────────────────────
   // Wave 16 — Void Campaign begins, enemy stats scale via HARD_MODE_SCALING
-  { wave: 16, bonusGold: 22, difficulty: ['hard', 'variant'], templates: [
+  { wave: 16, bonusGold: 12, difficulty: ['hard', 'variant'], templates: [
     { slots: [{ role: 'tank', count: 3 }, { role: 'caster', count: 3 }, { role: 'skirmisher', count: 2 }, { role: 'healer', count: 1 }, { role: 'sniper', count: 2 }] },
     { slots: [{ role: 'skirmisher', count: 4 }, { role: 'tank', count: 3 }, { role: 'caster', count: 2 }, { role: 'sniper', count: 2 }] },
   ]},
   // Wave 17
-  { wave: 17, bonusGold: 24, difficulty: ['hard', 'variant'], templates: [
+  { wave: 17, bonusGold: 14, difficulty: ['hard', 'variant'], templates: [
     { slots: [{ role: 'tank', count: 3 }, { role: 'caster', count: 3 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 1 }, { role: 'sniper', count: 2 }] },
     { slots: [{ role: 'caster', count: 4 }, { role: 'tank', count: 3 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 1 }] },
   ]},
   // Wave 18
-  { wave: 18, bonusGold: 26, difficulty: ['hard', 'variant'], templates: [
+  { wave: 18, bonusGold: 16, difficulty: ['hard', 'variant'], templates: [
     { slots: [{ role: 'tank', count: 4 }, { role: 'caster', count: 3 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
     { slots: [{ role: 'caster', count: 4 }, { role: 'tank', count: 4 }, { role: 'skirmisher', count: 2 }, { role: 'sniper', count: 2 }, { role: 'healer', count: 1 }] },
   ]},
   // Wave 19
-  { wave: 19, bonusGold: 30, difficulty: ['hard', 'variant'], templates: [
+  { wave: 19, bonusGold: 18, difficulty: ['hard', 'variant'], templates: [
     { slots: [{ role: 'tank', count: 4 }, { role: 'caster', count: 4 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
     { slots: [{ role: 'skirmisher', count: 4 }, { role: 'caster', count: 4 }, { role: 'tank', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 1 }] },
   ]},
   // Wave 20 = boss_void_leviathan (defined in BOSS_WAVES)
   // Wave 21
-  { wave: 21, bonusGold: 32, difficulty: ['variant'], templates: [
+  { wave: 21, bonusGold: 20, difficulty: ['variant'], templates: [
     { slots: [{ role: 'tank', count: 4 }, { role: 'caster', count: 4 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
     { slots: [{ role: 'caster', count: 5 }, { role: 'tank', count: 4 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 1 }] },
   ]},
   // Wave 22
-  { wave: 22, bonusGold: 34, difficulty: ['variant'], templates: [
+  { wave: 22, bonusGold: 22, difficulty: ['variant'], templates: [
     { slots: [{ role: 'tank', count: 5 }, { role: 'caster', count: 4 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
     { slots: [{ role: 'skirmisher', count: 5 }, { role: 'tank', count: 4 }, { role: 'caster', count: 4 }, { role: 'healer', count: 2 }] },
   ]},
   // Wave 23
-  { wave: 23, bonusGold: 36, difficulty: ['variant'], templates: [
+  { wave: 23, bonusGold: 24, difficulty: ['variant'], templates: [
     { slots: [{ role: 'tank', count: 5 }, { role: 'caster', count: 5 }, { role: 'skirmisher', count: 3 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
     { slots: [{ role: 'caster', count: 5 }, { role: 'tank', count: 4 }, { role: 'skirmisher', count: 4 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 2 }] },
   ]},
   // Wave 24
-  { wave: 24, bonusGold: 40, difficulty: ['variant'], templates: [
+  { wave: 24, bonusGold: 28, difficulty: ['variant'], templates: [
     { slots: [{ role: 'tank', count: 5 }, { role: 'caster', count: 5 }, { role: 'skirmisher', count: 4 }, { role: 'healer', count: 2 }, { role: 'sniper', count: 3 }] },
     { slots: [{ role: 'caster', count: 6 }, { role: 'tank', count: 5 }, { role: 'skirmisher', count: 4 }, { role: 'healer', count: 2 }] },
   ]},
@@ -691,8 +695,10 @@ const WaveGenerator = (() => {
   }
 
   let _rng = _mulberry32(Date.now());
+  let _isVoidCampaign = false;
 
   function setSeed(seed) { _rng = _mulberry32(seed); }
+  function setVoidCampaign(flag) { _isVoidCampaign = !!flag; }
 
   // Pick random element from array using seeded RNG
   function _pick(arr) { return arr[Math.floor(_rng() * arr.length)]; }
@@ -700,19 +706,65 @@ const WaveGenerator = (() => {
   // Max tier available at a given wave number
   function _maxTier(wave) { return Math.min(3, Math.ceil(wave / 3)); }
 
+  // Min tier: void campaign waves 11+ enforce T2 minimum (no fodder)
+  function _minTier(wave) { return (_isVoidCampaign && wave > 10) ? 2 : 1; }
+
   // Build a filtered pool: non-boss units matching role + tier cap.
   // Void units only if already encountered void enemies (wave 3+).
   // Arcane units always available to enemies.
   function _getPool(role, wave) {
     const maxT = _maxTier(wave);
+    const minT = _minTier(wave);
     return UNIT_DEFINITIONS.filter(d => {
       if (d.isBoss) return false;
       if (d.role !== role) return false;
       if (d.tier > maxT) return false;
+      if (d.tier < minT) return false;
       // Void units only appear wave 3+ for enemies
       if (d.isVoid && wave < 3) return false;
       return true;
     });
+  }
+
+  // Pool of void+arcane T2-T3 units for void campaign waves 16+
+  function _getVoidArcanePool() {
+    return UNIT_DEFINITIONS.filter(d =>
+      !d.isBoss && d.tier >= 2 && d.tier <= 3 &&
+      (d.element === 'void' || d.element === 'arcane')
+    );
+  }
+
+  // Generate a void-campaign-specific wave for waves 16+ (void/arcane biased)
+  function _generateVoidWave(waveNumber) {
+    const tmplDef = WAVE_TEMPLATES.find(t => t.wave === waveNumber);
+    const bonusGold = tmplDef?.bonusGold ?? Math.round(4 + waveNumber * 1.0);
+    const unitIds = [];
+    const voidArcanePool = _getVoidArcanePool();
+    const generalPool = UNIT_DEFINITIONS.filter(d => !d.isBoss && d.tier >= 2 && d.tier <= 3);
+
+    if (waveNumber >= 23) {
+      // W23-24: all void/arcane + one previous boss as escort
+      const escortBoss = waveNumber === 23 ? 'boss_flame_tyrant' : 'boss_frost_colossus';
+      unitIds.push(escortBoss);
+      // W24 also gets boss_chaos_overlord as extra escort
+      if (waveNumber === 24) unitIds.push('boss_chaos_overlord');
+      const fillCount = waveNumber === 23 ? 9 : 8;
+      for (let i = 0; i < fillCount; i++) {
+        unitIds.push(voidArcanePool.length > 0
+          ? _pickWithVariety(voidArcanePool, unitIds).id
+          : 'void_knight');
+      }
+    } else {
+      // W16-22: void/arcane biased (W16-20: ~70%; W21-22: ~90%)
+      const voidRatio = waveNumber >= 21 ? 0.90 : 0.70;
+      const unitCount = Math.min(13, 8 + Math.floor((waveNumber - 16) * 0.6));
+      for (let i = 0; i < unitCount; i++) {
+        const pool = (_rng() < voidRatio && voidArcanePool.length > 0) ? voidArcanePool : generalPool;
+        unitIds.push(pool.length > 0 ? _pickWithVariety(pool, unitIds).id : 'void_knight');
+      }
+    }
+
+    return { waveNumber, bonusGold, enemies: _collapse(unitIds) };
   }
 
   // Guarantee rule: every N waves, force include a healer or anti-heal caster
@@ -733,14 +785,21 @@ const WaveGenerator = (() => {
           // Fixed unit (boss)
           for (let i = 0; i < entry.count; i++) result.push(entry.unitId);
         } else if (entry.role) {
-          // Role-based escort — resolve from pool
-          const pool = _getPool(entry.role, waveNumber);
+          // Role-based escort — resolve from pool (void campaign: use void/arcane biased pool)
+          const pool = (_isVoidCampaign && waveNumber >= 16)
+            ? _getVoidArcanePool()
+            : _getPool(entry.role, waveNumber);
           for (let i = 0; i < entry.count; i++) {
             result.push(pool.length > 0 ? _pick(pool).id : 'fire_imp');
           }
         }
       }
       return { waveNumber, bonusGold: bw.bonusGold, enemies: _collapse(result) };
+    }
+
+    // Void campaign waves 16+: use void/arcane biased generation
+    if (_isVoidCampaign && waveNumber >= 16) {
+      return _generateVoidWave(waveNumber);
     }
 
     // Non-boss waves: find template definition
@@ -831,7 +890,7 @@ const WaveGenerator = (() => {
     return Object.entries(map).map(([unitId, count]) => ({ unitId, count }));
   }
 
-  return { generate, setSeed };
+  return { generate, setSeed, setVoidCampaign };
 })();
 
 // Keep a WAVES-compatible getter so the rest of the game can look up bonusGold etc.
@@ -1023,6 +1082,21 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '0.9.2',
+    date: 'April 27, 2026',
+    title: 'Void Campaign Overhaul & Balance Pass',
+    notes: [
+      '⚔️ New "Normal" leaderboard tab — separate rankings for Normal Campaign runs',
+      '🕳️ Void Campaign waves 16+ now feature void & arcane enemies (70–90% bias by faction)',
+      '💀 Waves 23-24: all-void assault + previous boss escorts (Sun Dragon W23, Frost Giant + Void Supreme W24)',
+      '🚫 No tier-1 enemies after wave 10 in Void Campaign — minimum tier 2 enforced',
+      '🛡️ Void Supreme final phase HP buffed: 500 → 750 (normal) / 1000 (void campaign)',
+      '💰 Void Campaign wave bonus gold reduced: excessive economy after wave 15 brought down ~45%',
+      '⚡ Arcane Servant Qua ability cooldown reduced: 2 → 1 (she is more responsive now)',
+      '👻 Blood & Plague faction units now have unique face expressions (previously showing default)',
+    ],
+  },
   {
     version: '0.9.1',
     date: 'April 20, 2026',
