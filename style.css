@@ -604,6 +604,7 @@ html, body {
 }
 .upgrade-pill.elite { background: #1a3a1a; border: 1px solid #44dd44; color: #44dd44; }
 .upgrade-pill.dedge { background: #3a1a1a; border: 1px solid #ff5544; color: #ff5544; }
+.upgrade-pill.rampage { background: #2a1800; border: 1px solid #ff6622; color: #ff9944; }
 
 /* Synergy pills on unit detail card */
 .synergy-pill-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -1240,11 +1241,25 @@ html, body {
 }
 .leaderboard-table td { padding: 5px 8px; border-bottom: 1px solid rgba(100,140,200,0.1); }
 .leaderboard-table tr:hover td { background: rgba(100,140,200,0.05); }
-.lb-rank { width: 36px; text-align: center; font-weight: 800; }
+.lb-rank { width: 36px; text-align: center; font-weight: 800; font-size: 1.1rem; }
 .lb-rank-1 { color: #ffc107; }
 .lb-rank-2 { color: #adb5bd; }
 .lb-rank-3 { color: #cd7f32; }
 .lb-name { font-weight: 700; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-name-gold {
+  font-weight: 900;
+  background: linear-gradient(90deg, #ffd700, #ff8c00, #ffd700);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: lb-gold-shimmer 2.5s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 200, 0, 0.7));
+}
+@keyframes lb-gold-shimmer {
+  0%   { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
 .lb-score { font-weight: 800; color: #ff6622; }
 .lb-wave { color: #888; font-size: 0.85rem; }
 .lb-won { font-size: 0.85rem; }

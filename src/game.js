@@ -1679,13 +1679,15 @@ const Game = (() => {
 
     let result;
     if (tab === 'global') {
-      result = await Backend.fetchGlobal();
+      result = await Backend.fetchGlobal(10);
+    } else if (tab === 'void') {
+      result = await Backend.fetchByMode('void', 10);
     } else if (tab === 'daily') {
-      result = await Backend.fetchChallenge('daily', _getDailyKey());
+      result = await Backend.fetchChallenge('daily', _getDailyKey(), 10);
     } else if (tab === 'weekly') {
-      result = await Backend.fetchChallenge('weekly', _getWeeklyKey());
+      result = await Backend.fetchChallenge('weekly', _getWeeklyKey(), 10);
     } else if (tab === 'personal') {
-      result = await Backend.fetchPersonal();
+      result = await Backend.fetchPersonal(10);
     }
 
     if (!result?.ok || !result.rows) {
@@ -1700,17 +1702,21 @@ const Game = (() => {
   }
 
   function _buildLeaderboardTable(rows, isPersonal) {
+    const TROPHIES = { 1: '🥇', 2: '🥈', 3: '🥉' };
     const header = isPersonal
       ? '<tr><th>#</th><th>Score</th><th>Wave</th><th>Mode</th><th>Won</th></tr>'
       : '<tr><th>#</th><th>Name</th><th>Score</th><th>Wave</th><th>Won</th></tr>';
     const body = rows.map((r, i) => {
       const rank = i + 1;
+      const trophy = TROPHIES[rank] || '';
+      const rankDisplay = trophy ? `${trophy}` : `#${rank}`;
       const cls = rank <= 3 ? ` lb-rank-${rank}` : '';
       if (isPersonal) {
         const mode = r.challenge_type || r.campaign_mode || 'normal';
-        return `<tr><td class="lb-rank${cls}">${rank}</td><td class="lb-score">${r.score}</td><td class="lb-wave">W${r.wave_reached}</td><td>${mode}</td><td class="lb-won">${r.won ? '✅' : '❌'}</td></tr>`;
+        return `<tr><td class="lb-rank${cls}">${rankDisplay}</td><td class="lb-score">${r.score}</td><td class="lb-wave">W${r.wave_reached}</td><td>${mode}</td><td class="lb-won">${r.won ? '✅' : '❌'}</td></tr>`;
       }
-      return `<tr><td class="lb-rank${cls}">${rank}</td><td class="lb-name">${_escapeHTML(r.player_name)}</td><td class="lb-score">${r.score}</td><td class="lb-wave">W${r.wave_reached}</td><td class="lb-won">${r.won ? '✅' : '❌'}</td></tr>`;
+      const nameClass = rank === 1 ? 'lb-name lb-name-gold' : 'lb-name';
+      return `<tr><td class="lb-rank${cls}">${rankDisplay}</td><td class="${nameClass}">${_escapeHTML(r.player_name)}</td><td class="lb-score">${r.score}</td><td class="lb-wave">W${r.wave_reached}</td><td class="lb-won">${r.won ? '✅' : '❌'}</td></tr>`;
     }).join('');
     return `<table class="leaderboard-table"><thead>${header}</thead><tbody>${body}</tbody></table>`;
   }

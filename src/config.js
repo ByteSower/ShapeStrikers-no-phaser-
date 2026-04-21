@@ -354,14 +354,14 @@ const UNIT_DEFINITIONS = [
     ],
   },
   {
-    id: 'boss_chaos_overlord', name: '🕳️ THE VOID SUPREME', element: 'void', cost: 0, tier: 4, isBoss: true,
+    id: 'boss_chaos_overlord', name: '🕳️ THE VOID SUPREME', element: 'void', cost: 0, tier: 5, isBoss: true,
     visual: { color: 'purple', shape: 'square' },
-    stats: { hp: 450, maxHp: 450, attack: 45, defense: 20, speed: 7, range: 4 },
+    stats: { hp: 600, maxHp: 600, attack: 45, defense: 20, speed: 7, range: 4 },
     ability: { name: 'Void Cataclysm', description: 'Unleashes void energy + enrage at low HP', cooldown: 4 },
     bossPhases: [
-      { hpThreshold: 1.0, phaseHp: 300, name: 'Awakening',   statModifiers: {},                                        description: 'The Void Supreme awakens!' },
-      { hpThreshold: 0.66, phaseHp: 350, name: 'Corruption',  statModifiers: { attackMult: 1.3, speedMult: 1.2 },      description: 'Phase 2: CORRUPTION! (+30% ATK, +20% SPD)' },
-      { hpThreshold: 0.33, phaseHp: 400, name: 'Cataclysm',   statModifiers: { attackMult: 1.6, speedMult: 1.5, defenseMult: 0.7 }, description: 'FINAL PHASE: CATACLYSM!' },
+      { hpThreshold: 1.0, phaseHp: 400, name: 'Awakening',   statModifiers: {},                                        description: 'The Void Supreme awakens!' },
+      { hpThreshold: 0.66, phaseHp: 450, name: 'Corruption',  statModifiers: { attackMult: 1.3, speedMult: 1.2 },      description: 'Phase 2: CORRUPTION! (+30% ATK, +20% SPD)' },
+      { hpThreshold: 0.33, phaseHp: 500, name: 'Cataclysm',   statModifiers: { attackMult: 1.6, speedMult: 1.5, defenseMult: 0.7 }, description: 'FINAL PHASE: CATACLYSM!' },
     ],
   },
 
@@ -377,14 +377,14 @@ const UNIT_DEFINITIONS = [
     ],
   },
   {
-    id: 'boss_void_architect', name: '🕳️ THE VOID ARCHITECT', element: 'void', cost: 0, tier: 4, isBoss: true, isVoid: true,
+    id: 'boss_void_architect', name: '🕳️ THE VOID ARCHITECT', element: 'void', cost: 0, tier: 5, isBoss: true, isVoid: true,
     visual: { color: 'purple', shape: 'rhombus' },
-    stats: { hp: 600, maxHp: 600, attack: 60, defense: 18, speed: 8, range: 4 },
+    stats: { hp: 900, maxHp: 900, attack: 60, defense: 18, speed: 8, range: 4 },
     ability: { name: 'Reality Tear', description: 'Massive void damage to all + blind + poison', cooldown: 5 },
     bossPhases: [
-      { hpThreshold: 1.0,  phaseHp: 400, name: 'Blueprint',      statModifiers: {},                                                            description: 'The Void Architect studies your formation!' },
-      { hpThreshold: 0.66, phaseHp: 450, name: 'Reconstruction',  statModifiers: { attackMult: 1.3, defenseMult: 1.3 },                        description: 'Phase 2: RECONSTRUCTION! (+30% ATK & DEF)' },
-      { hpThreshold: 0.33, phaseHp: 500, name: 'Annihilation',    statModifiers: { attackMult: 1.8, speedMult: 1.5, defenseMult: 0.5 },        description: 'FINAL PHASE: ANNIHILATION!' },
+      { hpThreshold: 1.0,  phaseHp: 600, name: 'Blueprint',      statModifiers: {},                                                            description: 'The Void Architect studies your formation!' },
+      { hpThreshold: 0.66, phaseHp: 675, name: 'Reconstruction',  statModifiers: { attackMult: 1.3, defenseMult: 1.3 },                        description: 'Phase 2: RECONSTRUCTION! (+30% ATK & DEF)' },
+      { hpThreshold: 0.33, phaseHp: 750, name: 'Annihilation',    statModifiers: { attackMult: 1.8, speedMult: 1.5, defenseMult: 0.5 },        description: 'FINAL PHASE: ANNIHILATION!' },
     ],
   },
 ];
@@ -1023,6 +1023,40 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '0.9.1',
+    date: 'April 20, 2026',
+    title: 'Leaderboard, Boss Buffs & Unit Card Polish',
+    notes: [
+      '🕳️ New Void Campaign leaderboard tab — separate rankings for Void runs',
+      '🏆 Leaderboard top 3 now show 🥇🥈🥉 trophies; #1 has animated gold glow',
+      '📋 Leaderboard capped at 10 entries per tab for cleaner display',
+      '🔥 Inferno Ravager Rye: Rampage kill-stack shown live on unit card (ATK boosted + pill counter)',
+      '🔗 Void & Arcane synergies now appear in the synergy sidebar when their faction is unlocked',
+      '👑 Void Supreme & Void Architect upgraded to ★★★★★ (Tier 5)',
+      '💪 Void Supreme HP buffed: 450 → 600 (phase HPs scaled up)',
+      '💪 Void Architect HP buffed: 600 → 900 (phase HPs scaled up) — final boss was too easy',
+      '🎓 Tutorial Complete achievement now requires all 8 contextual tips seen as well',
+    ],
+  },
+  {
+    version: '0.9.0',
+    date: 'April 20, 2026',
+    title: 'Audio Overhaul & Synergy Fixes',
+    notes: [
+      '🎵 Gameplay BGM now rotates between two tracks — music stays fresh across waves',
+      '👾 Boss waves play dedicated boss music for an intense atmosphere',
+      '🎺 "Get Ready" call plays when the shop opens between waves',
+      '📢 "Enemy Spotted" voice line plays when a boss wave begins',
+      '🎉 Wave clear plays a random victory sound (3 varieties)',
+      '💀 Game over plays a game over jingle followed by a cry SFX',
+      '🏆 Winning plays a triumphant "Let\'s Go!" voice line',
+      '🔗 Achievement unlocks now play an objective-complete sound',
+      '🏅 Personal best scores now tracked per campaign and trigger a high-score fanfare',
+      '🔥 Synergy buffs now correctly apply to ALL units (not just matching element)',
+      '📋 Synergy preview on unit card now shows projected stats for all active synergies',
+    ],
+  },
   {
     version: '0.8.2',
     date: 'April 19, 2026',

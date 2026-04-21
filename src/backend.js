@@ -154,7 +154,7 @@ const Backend = (() => {
    * @param {number} limit — max rows (default 50)
    * @returns {Promise<{ok: boolean, rows?: Array, error?: string}>}
    */
-  async function fetchGlobal(limit = 50) {
+  async function fetchGlobal(limit = 10) {
     if (!_ready) return { ok: false, error: 'Not connected' };
 
     try {
@@ -166,6 +166,35 @@ const Backend = (() => {
           .order('score', { ascending: false })
           .limit(limit),
         'Global leaderboard fetch'
+      );
+
+      if (error) return { ok: false, error: error.message };
+      return { ok: true, rows: data };
+    } catch (error) {
+      return { ok: false, error: error?.message || 'Leaderboard fetch failed' };
+    }
+  }
+
+  /**
+   * Fetch leaderboard filtered by campaign mode.
+   * @param {'normal'|'void'} mode
+   * @param {number} limit
+   * @returns {Promise<{ok: boolean, rows?: Array, error?: string}>}
+   */
+  async function fetchByMode(mode, limit = 10) {
+    if (!_ready) return { ok: false, error: 'Not connected' };
+    if (!['normal', 'void'].includes(mode)) return { ok: false, error: 'Invalid mode' };
+
+    try {
+      const { data, error } = await _withTimeout(
+        _supabase
+          .from('leaderboard')
+          .select('player_name, score, wave_reached, won, created_at')
+          .eq('campaign_mode', mode)
+          .is('challenge_type', null)
+          .order('score', { ascending: false })
+          .limit(limit),
+        'Mode leaderboard fetch'
       );
 
       if (error) return { ok: false, error: error.message };
@@ -241,6 +270,7 @@ const Backend = (() => {
     setPlayerName,
     submitScore,
     fetchGlobal,
+    fetchByMode,
     fetchChallenge,
     fetchPersonal,
   };

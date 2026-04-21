@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: April 19, 2026
+> **Last Updated**: April 20, 2026
 
 ---
 
@@ -126,6 +126,24 @@
 - [x] Graceful degradation — game fully playable if backend unavailable
 - [x] Supabase schema provided (`supabase_schema.sql`)
 - [x] Patch notes system — `PATCH_NOTES` array in config.js, "What's New" overlay on title screen
+
+### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance ✨ LATEST
+- [x] Gameplay BGM rotates between two tracks; boss waves play dedicated boss music
+- [x] "Get Ready" call triggers at shop phase start; "Enemy Spotted" on boss wave
+- [x] Wave clear: random victory SFX (3 varieties); game over: jingle + cry after 1.5s
+- [x] Win: "Let's Go!" fanfare; achievement unlock: objective-complete chime
+- [x] Personal best tracking per campaign (`best_score_normal` / `best_score_void`) + high-score SFX
+- [x] Synergy buffs now apply to ALL player units (not just the matching element)
+- [x] Synergy preview on unit card projects boosted stats for all active synergies
+- [x] Void & Arcane synergies appear in synergy sidebar when faction is unlocked
+- [x] Leaderboard: new Void Campaign tab with separate rankings
+- [x] Leaderboard: trophy icons (🥇🥈🥉) for top 3; #1 name animated gold gradient glow
+- [x] Leaderboard: capped at 10 entries per tab
+- [x] Inferno Ravager Rye: Rampage kill-stack shown live on unit card (ATK + pill counter)
+- [x] Void Supreme & Void Architect upgraded to Tier 5 (★★★★★)
+- [x] Void Supreme HP buffed 450→600, phase HPs scaled up
+- [x] Void Architect HP buffed 600→900, phase HPs scaled up
+- [x] Tutorial Complete achievement now requires tutorial + all 8 contextual tips seen
 
 ### Phase 8.2 — Mobile v2 ✨ LATEST
 - [x] Portrait: tutorial overlay pointer-events pass-through so users can scroll to Fight button

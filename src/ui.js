@@ -56,11 +56,15 @@ const UI = (() => {
     const counts = {};
     for (const u of playerUnits) counts[u.definition.element] = (counts[u.definition.element] || 0) + 1;
 
+    const voidUnlocked   = localStorage.getItem('shape_strikers_void_unlocked')   === '1';
+    const arcaneUnlocked = localStorage.getItem('shape_strikers_arcane_unlocked') === '1';
+
     const container = document.getElementById('synergy-list');
     container.innerHTML = '';
 
     for (const elem of Object.values(Element)) {
-      if (elem === 'void') continue;
+      if (elem === 'void'   && !voidUnlocked)   continue;
+      if (elem === 'arcane' && !arcaneUnlocked)  continue;
       const count = counts[elem] || 0;
       const syns = ELEMENT_SYNERGIES.filter(s => s.element === elem && s.requiredCount <= (count > 0 ? count + 1 : 99));
       if (syns.length === 0 && count === 0) continue;
@@ -190,7 +194,14 @@ const UI = (() => {
     const baseDef = unit.stats?.defense ?? def.stats.defense;
     const baseSpd = unit.stats?.speed   ?? def.stats.speed;
 
-    const projAtk = synergyBoosts.attack  ? Math.floor(baseAtk * synergyBoosts.attack)  : baseAtk;
+    // Kill-stack bonus (Rampage passive — Inferno Ravager Rye)
+    const ksb = def.killStackBonus;
+    const kills = unit._kills || 0;
+    const killBonusMult = (ksb && kills > 0)
+      ? (1 + Math.min(ksb.maxBonus, kills * ksb.atkPerKill))
+      : 1;
+
+    const projAtk = Math.floor((synergyBoosts.attack ? baseAtk * synergyBoosts.attack : baseAtk) * killBonusMult);
     const projDef = synergyBoosts.defense ? Math.floor(baseDef * synergyBoosts.defense) : baseDef;
     const projSpd = synergyBoosts.speed   ? Math.floor(baseSpd * synergyBoosts.speed)   : baseSpd;
     const projMaxHp = synergyBoosts.hp    ? Math.floor(liveMaxHp * synergyBoosts.hp)    : liveMaxHp;
@@ -246,6 +257,12 @@ const UI = (() => {
       const de = upgradeLevels['double_edge'] || 0;
       if (el > 0) pills.push(`<span class="upgrade-pill elite">⬆ Elite L${el}</span>`);
       if (de > 0) pills.push(`<span class="upgrade-pill dedge">⚔ Double Edge</span>`);
+      // Kill-stack Rampage indicator
+      if (ksb && kills >= 0) {
+        const pct = Math.round(Math.min(ksb.maxBonus, kills * ksb.atkPerKill) * 100);
+        const maxPct = Math.round(ksb.maxBonus * 100);
+        pills.push(`<span class="upgrade-pill rampage">🔥 Rampage: +${pct}% ATK (${kills} kills / max +${maxPct}%)</span>`);
+      }
       if (pills.length) upgradeHtml = `<div class="upgrade-pill-list">${pills.join('')}</div>`;
     }
 
