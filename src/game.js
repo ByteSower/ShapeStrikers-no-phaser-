@@ -2012,7 +2012,8 @@ const Game = (() => {
 
   const TUTORIAL_STEPS = [
     { text: '👋 <b>Welcome to Shape Strikers!</b> Your <b>bottom 2 rows</b> are where you place units. Enemies will spawn in the top rows.', highlight: '#grid-area', position: 'right' },
-    { text: '🛒 Click a <b>shop card</b> to buy a unit, then click an <b>empty tile</b> in your zone to place it. <b>Right-click</b> a placed unit to sell it back.', highlight: '#shop-units', position: 'top' },
+    { text: '�️ The grid has <b>3 zones</b>:<br>👾 <b>Top 2 rows (red)</b> — enemy territory<br>⚡ <b>Middle row (gold)</b> — the Battle Line where fights happen<br>⚔️ <b>Bottom 2 rows (blue)</b> — your territory<br><br>Units advance to the Battle Line but <b>cannot cross into enemy territory!</b>', highlight: '#grid-labels-left', position: 'right' },
+    { text: '�🛒 Click a <b>shop card</b> to buy a unit, then click an <b>empty tile</b> in your zone to place it. <b>Right-click</b> a placed unit to sell it back.', highlight: '#shop-units', position: 'top' },
     { text: '⚔️ When ready, press <b>Fight!</b> — your units will auto-battle. Buy more units and upgrades between waves. Good luck!', highlight: '#btn-battle', position: 'top' },
   ];
 

@@ -686,7 +686,12 @@ class BattleSystem {
     const isOccupied = (r, c) => allUnits.some(u => u.row === r && u.col === c);
     // Pull toward attacker's side: enemies → row 4, players → row 0
     const dir = target.isEnemy ? 1 : -1;
-    const newRow = Math.max(0, Math.min(GRID_CONFIG.rows - 1, target.row + dir * rows));
+    const battleLine = GRID_CONFIG.battleLineRow;
+    const rawRow = target.row + dir * rows;
+    // Clamp at battle line — units cannot be pulled across into enemy territory
+    const newRow = target.isEnemy
+      ? Math.max(0, Math.min(rawRow, battleLine))                          // enemy can't cross row 2
+      : Math.min(GRID_CONFIG.rows - 1, Math.max(rawRow, battleLine));     // player can't cross row 2
     if (newRow !== target.row && !isOccupied(newRow, target.col)) {
       target.row = newRow;
       if (this.onUnitMove) this.onUnitMove(target, fromRow, target.col, target.row, target.col);
