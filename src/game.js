@@ -1247,6 +1247,8 @@ const Game = (() => {
     // btn-slots (Gamble) removed — no-op guard below keeps old callers safe
     document.getElementById('btn-slots');
     Audio.play('getReady');
+    // Show speed controls tip after the first battle to help new players discover it
+    if (state.wave === 2) _showContextualTip('speed_controls');
   }
 
   // ── Game Over / Win ───────────────────────────────────────────────────────
@@ -1431,8 +1433,9 @@ const Game = (() => {
     _initGameStats();
     _totalUpgradesBought = 0;
     _unitsLostThisRun = 0;
-    _seenTips = {};          // reset contextual tips each run
-    _tutorialStepsDone = false;
+    _seenTips = {};          // reset contextual tips each run (display only)
+    _tutorialStepsDone = localStorage.getItem('shape_strikers_tutorial_done') === '1';
+    if (_tutorialStepsDone) _checkTutorialAchievement(); // retroactive unlock for returning players
     battle = null;
     nextUnitId = 1;
     _currentWaveDef = null;
@@ -1514,12 +1517,6 @@ const Game = (() => {
     // Pre-generate wave 1 for preview
     _currentWaveDef = WaveGenerator.generate(state.wave);
     _updateWavePreview();
-
-    // Handle speed controls visibility from title option
-    const speedCtrl = document.getElementById('speed-controls');
-    if (speedCtrl) {
-      speedCtrl.style.display = document.getElementById('opt-speed')?.checked ? 'flex' : 'none';
-    }
 
     // Start tutorial if checked on title screen
     _startTutorial();
@@ -2041,6 +2038,7 @@ const Game = (() => {
         if (tutToggle) tutToggle.checked = false;
         localStorage.setItem('shape_strikers_tutorial', '0');
         _tutorialStepsDone = true;
+        localStorage.setItem('shape_strikers_tutorial_done', '1');
         _checkTutorialAchievement();
       }
       tutorialStep = -1;
@@ -2186,14 +2184,16 @@ const Game = (() => {
       highlight: '#tab-unit',
       position: 'left',
     },
+    speed_controls: {
+      text: '⚡ <b>Speed Controls!</b> Use the <b>½× / 1× / 2× / 4×</b> buttons to change battle speed — or press keys <b>1–4</b>. Crank it up once you\'re comfortable!',
+      highlight: '#speed-controls',
+      position: 'top',
+    },
   };
 
   function _checkTutorialAchievement() {
     if (!_tutorialStepsDone) return;
-    const allKeys = Object.keys(CONTEXTUAL_TIPS);
-    if (allKeys.every(k => _seenTips[k])) {
-      _unlockAchievement('tutorial_complete');
-    }
+    _unlockAchievement('tutorial_complete');
   }
 
   function _showContextualTip(tipId) {
