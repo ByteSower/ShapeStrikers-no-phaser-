@@ -5,6 +5,22 @@
  * Pure logic — no DOM access. Communicates via callbacks.
  */
 
+// ── PRNG helpers (for deterministic MP battles) ─────────────────────────────
+function _mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function _djb2Hash(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = (h * 33) ^ str.charCodeAt(i);
+  return h >>> 0;
+}
+
 // ── Status stack caps ────────────────────────────────────────────────────────
 const STATUS_MAX_STACKS = {
   burn: 3, poison: 5, freeze: 3, slow: 8, blind: 2,
@@ -30,6 +46,32 @@ class BattleSystem {
     this._running = false;
     this._actionDelay = 500; // ms between individual unit actions
     this._turnDelay   = 300; // ms pause between full rounds
+    this._rng = Math.random; // default: unchanged single-player behavior
+    this._scheduleFn = (fn, delay) => setTimeout(fn, delay);
+    this._clearScheduleFn = (handle) => clearTimeout(handle);
+    this._seed = null;
+    this._replayRecording = false;
+    this._replayEvents = [];
+    this._replaySeq = 0;
+    this._replayTurn = 0;
+  }
+
+  /** Install a seeded PRNG for deterministic MP battles. No-op in SP. */
+  setSeed(seed) {
+    this._seed = seed;
+    this._rng = _mulberry32(seed);
+  }
+
+  /** Compute a hash of all units' final state for MP sync verification. */
+  getLastBoardHash() {
+    const allUnits = [...(this._playerUnits || []), ...(this._enemyUnits || [])];
+    // Coerce id to string: in SP id is an integer, in MP it is a stable string key.
+    const str = allUnits
+      .slice()
+      .sort((a, b) => String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0)
+      .map(u => `${u.id}:${Math.round(u.hp)}:${u.hp > 0 ? 1 : 0}:${u.row}:${u.col}`)
+      .join('|');
+    return _djb2Hash(str);
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -37,21 +79,27 @@ class BattleSystem {
   start(playerUnits, enemyUnits) {
     this._playerUnits = playerUnits.slice();
     this._enemyUnits  = enemyUnits.slice();
+    this._resetReplayLog();
     this._running = true;
     this._log('⚔️ Battle begins!', 'system');
     this._applyElementSynergies(this._playerUnits);
+    this._recordEvent('battle_start', {
+      seed: this._seed,
+      playerUnits: this._snapshotUnits(this._playerUnits),
+      enemyUnits: this._snapshotUnits(this._enemyUnits),
+    });
     this._scheduleRound();
   }
 
   stop() {
     this._running = false;
-    clearTimeout(this._turnTimer);
+    this._clearScheduleFn(this._turnTimer);
   }
 
   pause() {
     if (!this._running) return;
     this._paused = true;
-    clearTimeout(this._turnTimer);
+    this._clearScheduleFn(this._turnTimer);
   }
 
   resume() {
@@ -63,6 +111,163 @@ class BattleSystem {
   setSpeed(multiplier) {
     this._actionDelay = Math.max(80, 500 / multiplier);
     this._turnDelay   = Math.max(50, 300 / multiplier);
+  }
+
+  setScheduler(scheduleFn, clearScheduleFn) {
+    if (typeof scheduleFn === 'function') this._scheduleFn = scheduleFn;
+    if (typeof clearScheduleFn === 'function') this._clearScheduleFn = clearScheduleFn;
+  }
+
+  enableReplayRecording(enabled = true) {
+    this._replayRecording = enabled;
+    if (!enabled) this._resetReplayLog();
+  }
+
+  clearReplayLog() {
+    this._resetReplayLog();
+  }
+
+  getReplayLog() {
+    return {
+      version: 1,
+      seed: this._seed,
+      events: this._replayEvents.map(evt => ({ ...evt })),
+    };
+  }
+
+  _resetReplayLog() {
+    this._replayEvents = [];
+    this._replaySeq = 0;
+    this._replayTurn = 0;
+  }
+
+  _snapshotStatusEffects(unit) {
+    return (unit.statusEffects || []).map(eff => ({
+      type: eff.type,
+      duration: eff.duration,
+      stacks: eff.stacks,
+      value: eff.value || 0,
+    }));
+  }
+
+  _snapshotUnit(unit) {
+    return {
+      id: String(unit.id),
+      defId: unit.definition?.id || null,
+      name: unit.name,
+      isEnemy: !!unit.isEnemy,
+      hp: unit.hp,
+      maxHp: unit.maxHp,
+      row: unit.row,
+      col: unit.col,
+      stats: { ...(unit.stats || {}) },
+      abilityCooldown: unit.abilityCooldown || 0,
+      statusEffects: this._snapshotStatusEffects(unit),
+    };
+  }
+
+  _snapshotUnits(units) {
+    return (units || []).map(unit => this._snapshotUnit(unit));
+  }
+
+  _snapshotBattleState() {
+    return {
+      playerUnits: this._snapshotUnits(this._playerUnits),
+      enemyUnits: this._snapshotUnits(this._enemyUnits),
+    };
+  }
+
+  _recordEvent(type, payload = {}) {
+    if (!this._replayRecording) return;
+    this._replayEvents.push({
+      seq: ++this._replaySeq,
+      turn: this._replayTurn,
+      type,
+      ...payload,
+    });
+  }
+
+  _emitUnitAttack(attacker, target) {
+    this._recordEvent('unit_attack', {
+      attackerId: String(attacker.id),
+      targetId: String(target.id),
+      attacker: this._snapshotUnit(attacker),
+      target: this._snapshotUnit(target),
+    });
+    if (this.onUnitAttack) this.onUnitAttack(attacker, target);
+  }
+
+  _emitUnitHit(target, dmg, elem, sourceId) {
+    this._recordEvent('unit_hit', {
+      targetId: String(target.id),
+      sourceId: sourceId !== null && sourceId !== undefined ? String(sourceId) : null,
+      damage: dmg,
+      element: elem,
+      target: this._snapshotUnit(target),
+    });
+    if (this.onUnitHit) this.onUnitHit(target, dmg, elem, sourceId);
+  }
+
+  _emitAbilityUsed(unit, abilityName) {
+    this._recordEvent('ability_used', {
+      unitId: String(unit.id),
+      abilityName,
+      unit: this._snapshotUnit(unit),
+    });
+    if (this.onAbilityUsed) this.onAbilityUsed(unit, abilityName);
+  }
+
+  _emitStatusChange(unit) {
+    this._recordEvent('status_change', {
+      unitId: String(unit.id),
+      unit: this._snapshotUnit(unit),
+    });
+    if (this.onStatusChange) this.onStatusChange(unit);
+  }
+
+  _emitUnitMove(unit, fromRow, fromCol, toRow, toCol) {
+    this._recordEvent('unit_move', {
+      unitId: String(unit.id),
+      fromRow,
+      fromCol,
+      toRow,
+      toCol,
+      unit: this._snapshotUnit(unit),
+    });
+    if (this.onUnitMove) this.onUnitMove(unit, fromRow, fromCol, toRow, toCol);
+  }
+
+  _emitUnitDeath(unit, killer = null) {
+    this._recordEvent('unit_death', {
+      unitId: String(unit.id),
+      killerId: killer ? String(killer.id) : null,
+      unit: this._snapshotUnit(unit),
+    });
+    if (this.onUnitDeath) this.onUnitDeath(unit, killer);
+  }
+
+  _emitPhaseChange(boss, phaseName, description) {
+    this._recordEvent('phase_change', {
+      bossId: String(boss.id),
+      phaseName,
+      description,
+      boss: this._snapshotUnit(boss),
+    });
+    if (this.onPhaseChange) this.onPhaseChange(boss, phaseName, description);
+  }
+
+  _emitSynergyActivated(element, description) {
+    this._recordEvent('synergy_activated', { element, description });
+    if (this.onSynergyActivated) this.onSynergyActivated(element, description);
+  }
+
+  _emitBattleEnd(playerWon) {
+    this._recordEvent('battle_end', {
+      playerWon,
+      playerUnits: this._snapshotUnits(this._playerUnits),
+      enemyUnits: this._snapshotUnits(this._enemyUnits),
+    });
+    if (this.onBattleEnd) this.onBattleEnd(playerWon);
   }
 
   // ── Internal: Round-based action queue ────────────────────────────────────
@@ -79,13 +284,18 @@ class BattleSystem {
       return;
     }
 
-    // Build action queue: all living units sorted by effective speed desc
+    // Build action queue: all living units sorted by effective speed desc.
+    // Tie-break on unit id (string compare) for a stable cross-engine order.
     this._actionQueue = [...players, ...enemies].sort((a, b) => {
       const aSlow = a.statusEffects.find(s => s.type === 'slow');
       const bSlow = b.statusEffects.find(s => s.type === 'slow');
       const aSpd = aSlow ? a.stats.speed * Math.max(0.2, 1 - aSlow.stacks * 0.1) : a.stats.speed;
       const bSpd = bSlow ? b.stats.speed * Math.max(0.2, 1 - bSlow.stacks * 0.1) : b.stats.speed;
-      return bSpd - aSpd;
+      const spdDiff = bSpd - aSpd;
+      if (spdDiff !== 0) return spdDiff;
+      // Stable tie-break: compare stringified ids so equal-speed units always
+      // act in the same order on both host and guest.
+      return String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0;
     });
     this._actionIndex = 0;
     this._processNextAction();
@@ -107,13 +317,19 @@ class BattleSystem {
       if (pAlive.length === 0 || eAlive.length === 0) {
         this._endBattle(eAlive.length === 0);
       } else {
-        this._turnTimer = setTimeout(() => this._scheduleRound(), this._turnDelay);
+        this._turnTimer = this._scheduleFn(() => this._scheduleRound(), this._turnDelay);
       }
       return;
     }
 
     const unit = this._actionQueue[this._actionIndex];
     this._actionIndex++;
+    this._replayTurn++;
+    this._recordEvent('turn_start', {
+      unitId: String(unit.id),
+      unit: this._snapshotUnit(unit),
+      ...this._snapshotBattleState(),
+    });
 
     const alive = u => u.hp > 0;
     const players = this._playerUnits.filter(alive);
@@ -123,7 +339,7 @@ class BattleSystem {
     this._tickStatus(unit);
     if (unit.hp <= 0) {
       this._killUnit(unit);
-      this._turnTimer = setTimeout(() => this._processNextAction(), this._actionDelay);
+      this._turnTimer = this._scheduleFn(() => this._processNextAction(), this._actionDelay);
       return;
     }
 
@@ -140,7 +356,7 @@ class BattleSystem {
         unit.stats.attack = Math.floor(unit._evolveBase.attack * mult);
         unit.stats.defense = Math.floor(unit._evolveBase.defense * mult);
         this._log(`⬆️ ${this._n(unit)} evolves! (+${Math.floor(currentStacks * ec.statBonus * 100)}% ATK/DEF)`, 'ability', this._side(unit));
-        if (this.onStatusChange) this.onStatusChange(unit);
+        this._emitStatusChange(unit);
       }
     }
 
@@ -151,8 +367,8 @@ class BattleSystem {
       if (frozen.stacks <= 0) unit.statusEffects = unit.statusEffects.filter(s => s !== frozen);
       unit.abilityCooldown = Math.max(0, unit.abilityCooldown - 1);
       this._log(`❄️ ${this._n(unit)} is frozen — turn skipped!${frozen.stacks > 0 ? ` (${frozen.stacks} left)` : ''}`, 'system');
-      if (this.onStatusChange) this.onStatusChange(unit);
-      this._turnTimer = setTimeout(() => this._processNextAction(), this._actionDelay * 0.5);
+      this._emitStatusChange(unit);
+      this._turnTimer = this._scheduleFn(() => this._processNextAction(), this._actionDelay * 0.5);
       return;
     }
 
@@ -183,9 +399,9 @@ class BattleSystem {
       const pAlive2 = this._playerUnits.filter(alive);
       const eAlive2 = this._enemyUnits.filter(alive);
       if (pAlive2.length === 0 || eAlive2.length === 0) {
-        this._turnTimer = setTimeout(() => this._endBattle(eAlive2.length === 0), this._actionDelay);
+        this._turnTimer = this._scheduleFn(() => this._endBattle(eAlive2.length === 0), this._actionDelay);
       } else {
-        this._turnTimer = setTimeout(() => this._processNextAction(), this._actionDelay);
+        this._turnTimer = this._scheduleFn(() => this._processNextAction(), this._actionDelay);
       }
     };
     if (this.onActionDone) {
@@ -201,18 +417,18 @@ class BattleSystem {
     const target = this._pickTarget(attacker, targets);
     if (!target) return;
 
-    if (this.onUnitAttack) this.onUnitAttack(attacker, target);
+    this._emitUnitAttack(attacker, target);
 
     // Blind: 30% miss chance
     const blind = attacker.statusEffects.find(s => s.type === 'blind');
-    if (blind && Math.random() < 0.3) {
+    if (blind && this._rng() < 0.3) {
       this._log(`😵 ${this._n(attacker)} misses ${this._n(target)}! (blinded)`, 'system');
       return;
     }
 
     const dmg = this._calcDamage(attacker, target);
     this._applyDamage(target, dmg);
-    if (this.onUnitHit) this.onUnitHit(target, dmg, attacker.definition.element, attacker.id);
+    this._emitUnitHit(target, dmg, attacker.definition.element, attacker.id);
     this._log(`${this._n(attacker)} attacks ${this._n(target)} for ${dmg} damage`, 'attack', this._side(attacker));
 
     // Lifesteal (vampire trait)
@@ -221,7 +437,7 @@ class BattleSystem {
       const heal = Math.floor(raw * this._healMod(attacker));
       attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
       this._log(`🩸 ${this._n(attacker)} heals ${heal} HP`, 'heal', this._side(attacker));
-      if (this.onUnitHit) this.onUnitHit(attacker, -heal, null, attacker.id);
+      this._emitUnitHit(attacker, -heal, null, attacker.id);
     }
 
     if (target.hp <= 0) this._killUnit(target, attacker);
@@ -231,7 +447,7 @@ class BattleSystem {
     const ab = unit.definition.ability;
     const uid = unit.definition.id;
     this._log(`✨ ${this._n(unit)} uses ${ab.name}!`, 'ability', this._side(unit));
-    if (this.onAbilityUsed) this.onAbilityUsed(unit, ab.name);
+    this._emitAbilityUsed(unit, ab.name);
 
     const unitRange = unit.stats.range || 1;
     const aliveEnemies = enemies.filter(u => u.hp > 0 && Math.abs(unit.row - u.row) <= unitRange && !u.statusEffects.find(s => s.type === 'untargetable'));
@@ -309,7 +525,7 @@ class BattleSystem {
         this._log(`❄️ All enemies slowed by Frozen Wall!`, 'ability');
         break;
       case 'arcane_assassin': // Shadow Strike: 50% chance 2.5× crit or 1.5×
-        { const crit = Math.random() < 0.5;
+        { const crit = this._rng() < 0.5;
           this._abilityDamage(unit, aliveEnemies.slice(0, 1), crit ? 2.5 : 1.5);
           if (crit) {
             this._log(`💥 Critical hit!`, 'ability');
@@ -384,7 +600,7 @@ class BattleSystem {
         for (const t of aliveEnemies) {
           const dmg = Math.max(1, Math.floor(unit.stats.attack * 1.2));
           this._applyDamage(t, dmg);
-          if (this.onUnitHit) this.onUnitHit(t, dmg, 'void', unit.id);
+          this._emitUnitHit(t, dmg, 'void', unit.id);
           this._log(`💥 ${this._n(t)} takes ${dmg} Void damage`, 'attack', this._side(unit));
           if (t.hp <= 0) this._killUnit(t, unit);
         }
@@ -436,7 +652,7 @@ class BattleSystem {
       if (target.hp <= 0) continue;
       const dmg = this._calcDamage(unit, target, mult);
       this._applyDamage(target, dmg);
-      if (this.onUnitHit) this.onUnitHit(target, dmg, unit.definition.element, unit.id);
+      this._emitUnitHit(target, dmg, unit.definition.element, unit.id);
       this._log(`💥 ${this._n(target)} takes ${dmg} ability damage`, 'attack', this._side(unit));
       if (lifesteal || unit.definition.trait === 'vampire') {
         const pct = unit.definition.trait === 'vampire' ? 0.4 : lifestealPct;
@@ -444,7 +660,7 @@ class BattleSystem {
         const heal = Math.floor(raw * this._healMod(unit));
         unit.hp = Math.min(unit.maxHp, unit.hp + heal);
         this._log(`🩸 ${this._n(unit)} heals ${heal} HP`, 'heal', this._side(unit));
-        if (this.onUnitHit) this.onUnitHit(unit, -heal, null, unit.id);
+        this._emitUnitHit(unit, -heal, null, unit.id);
       }
       if (target.hp <= 0) this._killUnit(target, unit);
     }
@@ -453,7 +669,11 @@ class BattleSystem {
   _healAllies(unit, allies, amount, healAll) {
     const targets = healAll
       ? allies.filter(u => u.hp > 0)
-      : [allies.filter(u => u.hp > 0).sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0]].filter(Boolean);
+      : [allies.filter(u => u.hp > 0).sort((a, b) => {
+          const diff = (a.hp / a.maxHp) - (b.hp / b.maxHp);
+          if (diff !== 0) return diff;
+          return String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0;
+        })[0]].filter(Boolean);
     for (const t of targets) {
       const mod = this._healMod(t);
       const effective = Math.floor(amount * mod);
@@ -461,7 +681,7 @@ class BattleSystem {
       t.hp += actual;
       if (mod < 1) this._log(`🩸 Wound reduces healing on ${this._n(t)}!`, 'system');
       this._log(`💚 ${this._n(t)} healed ${actual} HP`, 'heal', this._side(unit));
-      if (this.onUnitHit) this.onUnitHit(t, -actual, null, unit.id);
+      this._emitUnitHit(t, -actual, null, unit.id);
     }
   }
 
@@ -519,7 +739,12 @@ class BattleSystem {
     // Prefer units in same column (lane), else lowest HP
     const sameCol = alive.filter(t => t.col === attacker.col);
     const pool = sameCol.length > 0 ? sameCol : alive;
-    return pool.sort((a, b) => a.hp - b.hp)[0];
+    // Stable sort: primary = lowest HP, tie-break = string id (deterministic cross-engine)
+    return pool.sort((a, b) => {
+      const diff = a.hp - b.hp;
+      if (diff !== 0) return diff;
+      return String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0;
+    })[0];
   }
 
   _moveTowardEnemy(unit, targets) {
@@ -535,7 +760,11 @@ class BattleSystem {
     let closestDist = Math.abs(unit.row - closest.row) + Math.abs(unit.col - closest.col);
     for (const t of alive) {
       const d = Math.abs(unit.row - t.row) + Math.abs(unit.col - t.col);
-      if (d < closestDist) { closest = t; closestDist = d; }
+      // Stable tie-break on equal distance: prefer lower string id (deterministic)
+      if (d < closestDist || (d === closestDist && String(t.id) < String(closest.id))) {
+        closest = t;
+        closestDist = d;
+      }
     }
 
     const allUnits = [...this._playerUnits, ...this._enemyUnits].filter(u => u.hp > 0 && u !== unit);
@@ -615,8 +844,8 @@ class BattleSystem {
       // Priority 4: all blocked — stay put and wait
     }
 
-    if (moved && this.onUnitMove) {
-      this.onUnitMove(unit, fromRow, fromCol, unit.row, unit.col);
+    if (moved) {
+      this._emitUnitMove(unit, fromRow, fromCol, unit.row, unit.col);
     }
   }
 
@@ -635,7 +864,7 @@ class BattleSystem {
     } else {
       unit.statusEffects.push({ type, duration, stacks: 1, value: value || 0 });
     }
-    if (this.onStatusChange) this.onStatusChange(unit);
+    this._emitStatusChange(unit);
   }
 
   _tickStatus(unit) {
@@ -645,13 +874,13 @@ class BattleSystem {
         const dmg = baseDmg * eff.stacks;
         unit.hp = Math.max(0, unit.hp - dmg);
         this._log(`${eff.type === 'burn' ? '🔥' : '☠️'} ${this._n(unit)} takes ${dmg} ${eff.type === 'burn' ? 'Burn' : 'Poison'} damage (×${eff.stacks})`, 'attack');
-        if (this.onUnitHit) this.onUnitHit(unit, dmg, eff.type === 'burn' ? 'fire' : 'earth', null);
+        this._emitUnitHit(unit, dmg, eff.type === 'burn' ? 'fire' : 'earth', null);
       }
       // Freeze duration is managed in the freeze-skip block, not here
       if (eff.type !== 'freeze') eff.duration--;
     }
     unit.statusEffects = unit.statusEffects.filter(e => e.duration > 0);
-    if (this.onStatusChange) this.onStatusChange(unit);
+    this._emitStatusChange(unit);
   }
 
   _killUnit(unit, killer = null) {
@@ -659,7 +888,7 @@ class BattleSystem {
     if (killer) killer._kills = (killer._kills || 0) + 1;
     this._log(`💀 ${this._n(unit)} defeated!`, 'death', this._side(unit));
     if (this.onScreenShake) this.onScreenShake(unit.definition.isBoss ? 12 : 5);
-    if (this.onUnitDeath) this.onUnitDeath(unit, killer);
+    this._emitUnitDeath(unit, killer);
   }
 
   // ── Positional mechanics ─────────────────────────────────────────────────
@@ -673,7 +902,7 @@ class BattleSystem {
     const newRow = Math.max(0, Math.min(GRID_CONFIG.rows - 1, target.row + dir * rows));
     if (newRow !== target.row && !isOccupied(newRow, target.col)) {
       target.row = newRow;
-      if (this.onUnitMove) this.onUnitMove(target, fromRow, target.col, target.row, target.col);
+      this._emitUnitMove(target, fromRow, target.col, target.row, target.col);
       this._log(`💨 ${this._n(target)} knocked back!`, 'ability');
       return true;
     }
@@ -694,7 +923,7 @@ class BattleSystem {
       : Math.min(GRID_CONFIG.rows - 1, Math.max(rawRow, battleLine));     // player can't cross row 2
     if (newRow !== target.row && !isOccupied(newRow, target.col)) {
       target.row = newRow;
-      if (this.onUnitMove) this.onUnitMove(target, fromRow, target.col, target.row, target.col);
+      this._emitUnitMove(target, fromRow, target.col, target.row, target.col);
       this._log(`🪝 ${this._n(target)} pulled forward!`, 'ability');
       return true;
     }
@@ -751,7 +980,7 @@ class BattleSystem {
     // Log and fire callbacks once per active synergy for UI feedback
     for (const syn of activeSynergies) {
       this._log(`✨ Synergy: ${syn.description}`, 'ability');
-      if (this.onSynergyActivated) this.onSynergyActivated(syn.element, syn.description);
+      this._emitSynergyActivated(syn.element, syn.description);
     }
   }
 
@@ -796,7 +1025,7 @@ class BattleSystem {
       }
 
       this._log(`⚡ BOSS PHASE: ${phase.name} — ${phase.description}`, 'phase');
-      if (this.onPhaseChange) this.onPhaseChange(boss, phase.name, phase.description);
+      this._emitPhaseChange(boss, phase.name, phase.description);
     }
   }
 
@@ -806,8 +1035,9 @@ class BattleSystem {
     this._running = false;
     // Reset synergy-modified stats back to base
     this._resetSynergies(this._playerUnits);
+    this._resetSynergies(this._enemyUnits);
     this._log(playerWon ? '🏆 Victory!' : '💀 Defeated!', 'system');
-    if (this.onBattleEnd) this.onBattleEnd(playerWon);
+    this._emitBattleEnd(playerWon);
   }
 
   _log(msg, type = 'system', side = null) {

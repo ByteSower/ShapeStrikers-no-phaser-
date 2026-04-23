@@ -395,6 +395,16 @@ const Grid = (() => {
     });
   }
 
+  /**
+   * Hard-reset the animation counter.
+   * Call at the start of each new battle to clear any stale increments
+   * left over from the previous round's mid-animation stop.
+   */
+  function resetAnimations() {
+    _pendingAnimations = 0;
+    _animResolve = null;
+  }
+
   function animateAttack(row, col) { _flashClass(row, col, 'anim-attack', true); }
   function animateHit(row, col)    { _flashClass(row, col, 'anim-hit', true); }
 
@@ -656,6 +666,7 @@ const Grid = (() => {
     animateSynergyPulse,
     animateHealBurst,
     waitForAnimations,
+    resetAnimations,
     set onClick(fn)      { _onClick = fn; },
     set onRightClick(fn) { _onRightClick = fn; },
   };

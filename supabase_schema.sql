@@ -55,3 +55,73 @@ CREATE POLICY "Users insert own scores"
 
 -- No UPDATE or DELETE — scores are immutable
 
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- MULTIPLAYER TABLES (Phase MP-1)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+-- ── Match Queue ───────────────────────────────────────────────────────────────
+-- Tracks players actively searching for a match.
+-- Rows are short-lived: status transitions to 'matched' or 'cancelled' quickly.
+
+CREATE TABLE IF NOT EXISTS mp_queue (
+  player_id   UUID NOT NULL DEFAULT auth.uid() PRIMARY KEY,
+  joined_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  status      TEXT NOT NULL DEFAULT 'searching'  -- 'searching' | 'matched' | 'cancelled'
+);
+
+ALTER TABLE mp_queue ENABLE ROW LEVEL SECURITY;
+
+-- Players can only read/write their own queue row
+CREATE POLICY "mp_queue_own"
+  ON mp_queue FOR ALL
+  USING (player_id = auth.uid());
+
+-- ── Rooms ────────────────────────────────────────────────────────────────────
+-- Each row represents one active or completed 1v1 match session.
+
+CREATE TABLE IF NOT EXISTS mp_rooms (
+  room_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  player1_id  UUID NOT NULL,
+  player2_id  UUID NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  status      TEXT NOT NULL DEFAULT 'waiting'  -- 'waiting' | 'active' | 'completed'
+);
+
+ALTER TABLE mp_rooms ENABLE ROW LEVEL SECURITY;
+
+-- Only the two participants can read/write their room
+CREATE POLICY "mp_rooms_participants"
+  ON mp_rooms FOR ALL
+  USING (player1_id = auth.uid() OR player2_id = auth.uid());
+
+-- ── Room State ───────────────────────────────────────────────────────────────
+-- Persists the round-by-round state snapshot so reconnecting players can resync.
+
+CREATE TABLE IF NOT EXISTS mp_room_state (
+  room_id        UUID PRIMARY KEY REFERENCES mp_rooms(room_id) ON DELETE CASCADE,
+  round_number   INTEGER NOT NULL DEFAULT 0,
+  shop_seed      BIGINT,
+  battle_seed    BIGINT,
+  player1_state  JSONB,
+  player2_state  JSONB,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE mp_room_state ENABLE ROW LEVEL SECURITY;
+
+-- Only participants of the linked room can access its state
+CREATE POLICY "mp_room_state_participants"
+  ON mp_room_state FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM mp_rooms r
+      WHERE r.room_id = mp_room_state.room_id
+        AND (r.player1_id = auth.uid() OR r.player2_id = auth.uid())
+    )
+  );
+
+-- Index for fast room_id lookups on state table
+CREATE INDEX IF NOT EXISTS idx_mp_room_state_room
+  ON mp_room_state (room_id);
+

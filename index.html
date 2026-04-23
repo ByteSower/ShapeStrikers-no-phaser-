@@ -43,6 +43,7 @@
       <button class="btn btn-lg btn-challenge" id="btn-challenges">📅 Challenges</button>
       <button class="btn btn-lg btn-secondary" id="btn-leaderboard">🏆 Leaderboard</button>
       <button class="btn btn-lg btn-secondary" id="btn-patch-notes">📋 What's New</button>
+      <button class="btn btn-lg btn-multiplayer" id="btn-find-match">⚔️ Find Match</button>
     </div>
     <div class="title-options">
       <label class="option-label"><input type="checkbox" id="opt-tutorial" checked> Show Tutorial</label>
@@ -55,6 +56,92 @@
   </div>
 </div>
 
+<!-- MATCHMAKING OVERLAY (MP-1 test / MP-2 will style further) -->
+<div id="mp-lobby-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Multiplayer lobby">
+  <div class="overlay-box mp-lobby-box">
+    <h2 class="overlay-title">⚔️ Multiplayer</h2>
+    <p id="mp-player-name-display" class="mp-player-name"></p>
+    <div id="mp-status" class="mp-status">Ready to search</div>
+    <div id="mp-connection-badge" class="mp-connection-badge">🔴 Not connected</div>
+    <div class="mp-lobby-buttons">
+      <button class="btn btn-lg btn-fire" id="btn-mp-find-match">🔍 Find Match</button>
+      <button class="btn btn-lg btn-secondary" id="btn-mp-cancel" style="display:none">✖ Cancel</button>
+    </div>
+    <button class="btn btn-secondary btn-sm overlay-close" id="btn-mp-lobby-close">✕ Close</button>
+  </div>
+</div>
+
+<!-- MP VERSUS SCREEN -->
+<div id="mp-versus-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Versus screen">
+  <div class="mp-versus-inner">
+    <div class="mp-versus-side mp-versus-you">
+      <div class="mp-versus-icon">🔷</div>
+      <div class="mp-versus-name" id="mp-vs-my-name">You</div>
+    </div>
+    <div class="mp-versus-center">
+      <div class="mp-versus-vs">VS</div>
+      <div class="mp-bo5-tracker" id="mp-bo5-tracker">
+        <span class="mp-bo5-dot" data-slot="0"></span>
+        <span class="mp-bo5-dot" data-slot="1"></span>
+        <span class="mp-bo5-dot" data-slot="2"></span>
+        <span class="mp-bo5-dot" data-slot="3"></span>
+        <span class="mp-bo5-dot" data-slot="4"></span>
+      </div>
+    </div>
+    <div class="mp-versus-side mp-versus-opp">
+      <div class="mp-versus-icon">🔶</div>
+      <div class="mp-versus-name" id="mp-vs-opp-name">Opponent</div>
+    </div>
+  </div>
+</div>
+
+<!-- MP MATCH END OVERLAY (MP-5) -->
+<div id="mp-match-end-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Match result">
+  <div class="mp-match-end-box">
+    <div class="mp-match-end-title" id="mp-match-end-title">Victory!</div>
+    <div class="mp-match-end-score" id="mp-match-end-score">3 – 2</div>
+    <div class="mp-bo5-tracker mp-match-end-dots" id="mp-match-end-dots">
+      <span class="mp-bo5-dot" data-slot="0"></span>
+      <span class="mp-bo5-dot" data-slot="1"></span>
+      <span class="mp-bo5-dot" data-slot="2"></span>
+      <span class="mp-bo5-dot" data-slot="3"></span>
+      <span class="mp-bo5-dot" data-slot="4"></span>
+    </div>
+    <div class="mp-match-end-actions">
+      <button class="btn btn-primary" id="btn-mp-rematch">🔁 Rematch</button>
+      <button class="btn btn-secondary" id="btn-mp-return-lobby">🏠 Return to Lobby</button>
+    </div>
+    <div class="mp-match-end-rematch-status" id="mp-match-end-rematch-status"></div>
+  </div>
+</div>
+
+<!-- MP DISCONNECT NOTICE (MP-5) -->
+<div id="mp-disconnect-notice" class="mp-disconnect-notice hidden" role="alert" aria-live="assertive">
+  <span id="mp-disconnect-msg">⚠️ Opponent disconnected — waiting…</span>
+  <span id="mp-disconnect-timer"></span>
+</div>
+
+<div id="mp-reconnect-banner" class="mp-reconnect-banner hidden" role="status" aria-live="polite">
+  <span id="mp-reconnect-msg">🔌 Room link lost — reconnect to resume the live battle.</span>
+  <button class="btn btn-secondary btn-sm" id="btn-mp-reconnect">🔄 Reconnect</button>
+  <span id="mp-reconnect-status"></span>
+</div>
+
+<!-- MP ROUND RESULT BANNER -->
+<div id="mp-round-result" class="mp-round-result hidden" role="status" aria-live="polite">
+  <div class="mp-round-result-inner">
+    <div class="mp-round-result-title" id="mp-result-title">Round Over</div>
+    <div class="mp-round-result-sub" id="mp-result-sub"></div>
+    <div class="mp-bo5-tracker mp-bo5-tracker-result" id="mp-bo5-result">
+      <span class="mp-bo5-dot" data-slot="0"></span>
+      <span class="mp-bo5-dot" data-slot="1"></span>
+      <span class="mp-bo5-dot" data-slot="2"></span>
+      <span class="mp-bo5-dot" data-slot="3"></span>
+      <span class="mp-bo5-dot" data-slot="4"></span>
+    </div>
+  </div>
+</div>
+
 <!-- GAME SCREEN -->
 <div id="screen-game" class="screen">
 
@@ -63,6 +150,13 @@
     <span id="hud-wave" class="hud-wave-wrap">Wave 1 / 15
       <div id="wave-preview" class="wave-preview hidden"></div>
     </span>
+    <span id="mp-hud-round" class="mp-hud-round mp-hidden">Round <span id="mp-round-num">1</span> of 5</span>
+    <div id="mp-hud-score" class="mp-hud-score mp-hidden">
+      <span class="mp-score-you" id="mp-score-you">0</span>
+      <span class="mp-score-sep">–</span>
+      <span class="mp-score-opp" id="mp-score-opp">0</span>
+    </div>
+    <div id="mp-conn-indicator" class="mp-conn-indicator mp-hidden" title="Connection status">🟢</div>
     <span id="hud-gold">💰 <span id="gold-val">10</span></span>
     <span id="hud-score">🏆 <span id="score-val">0</span></span>
     <span id="hud-units">⚔️ <span id="units-val">0</span> / <span id="max-units-val">7</span></span>
@@ -140,6 +234,11 @@
         <button class="btn btn-secondary btn-sm" id="btn-refresh">🔄 Refresh (<span id="refresh-cost">2</span>g)</button>
         <button class="btn btn-secondary btn-sm" id="btn-glossary">📖 Glossary</button>
         <button class="btn btn-primary" id="btn-battle">⚔️ Fight!</button>
+        <div id="mp-ready-bar" class="mp-ready-bar mp-hidden">
+          <button class="btn btn-primary" id="btn-mp-ready">✅ Ready</button>
+          <div class="mp-ready-timer" id="mp-ready-timer">35</div>
+          <span class="mp-ready-opp-status" id="mp-ready-opp-status">Waiting for opponent…</span>
+        </div>
         <div id="speed-controls">
           <span>Speed:</span>
           <button class="btn btn-secondary btn-speed" data-speed="0.5">½×</button>
@@ -371,8 +470,16 @@
 
 <!-- SCRIPTS (order matters — config first) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- MP DEBUG OVERLAY (MP-5, localhost only, toggle Ctrl+Shift+D) -->
+<div id="mp-debug-overlay" role="log" aria-label="Multiplayer debug log"></div>
+
 <script src="src/config.js"></script>
 <script src="src/audio.js"></script>
+<!-- Determinism utilities — loaded before battle.js so BattleSystem can use them -->
+<script src="src/utils/prng.js"></script>
+<script src="src/battle/hashUtils.js"></script>
+<script src="src/multiplayer/keys.js"></script>
+<script src="src/multiplayer/canonicalize.js"></script>
 <script src="src/battle.js"></script>
 <script src="src/grid.js"></script>
 <script src="src/vfx.js"></script>
@@ -381,6 +488,10 @@
 <script src="src/supabaseClient.js"></script>
 <script src="src/presence.js"></script>
 <script src="src/globalChat.js"></script>
+<script src="src/matchmaking.js"></script>
+<script src="src/room.js"></script>
+<script src="src/multiplayerGame.js"></script>
+<script src="src/battleReplay.js"></script>
 <script src="src/game.js"></script>
 
 </body>

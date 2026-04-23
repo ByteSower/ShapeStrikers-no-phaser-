@@ -11,8 +11,8 @@
 
 | Metric | Value |
 |--------|-------|
-| Source lines | ~9,200 (JS + CSS + HTML) |
-| Source files | 11 JS modules, 1 CSS, 1 HTML |
+| Source lines | ~11,500 (JS + CSS + HTML) |
+| Source files | 14 JS modules, 1 CSS, 1 HTML |
 | Dependencies | **Zero** — fully vanilla |
 | Units | 44 (39 playable + 5 bosses) |
 | Elements | 8 (Fire, Ice, Lightning, Earth, Arcane, Void, Blood, Plague) |
@@ -21,6 +21,7 @@
 | Achievements | 11 |
 | Waves | 15 (Normal) / 25 (Void Campaign) |
 | Bosses | 5 (W5, W10, W15, W20, W25) |
+| Multiplayer | ✅ Live 1v1, best-of-5, seeded shops |
 
 ---
 
@@ -127,7 +128,7 @@
 - [x] Supabase schema provided (`supabase_schema.sql`)
 - [x] Patch notes system — `PATCH_NOTES` array in config.js, "What's New" overlay on title screen
 
-### Phase 9.1 — Multiplayer Presence & Global Chat ✨ LATEST
+### Phase 9.1 — Multiplayer Presence & Global Chat
 - [x] Supabase Realtime Presence — live online player count shown on title screen
 - [x] Global real-time chat panel — floating 💬 button, bottom-left corner (all screens)
 - [x] `supabaseClient.js` — singleton channel registry with connect/reconnect/visibility lifecycle
@@ -139,6 +140,41 @@
 - [x] Tab visibility reconnect — channels rejoin when tab regains focus
 - [x] Input sanitization: strips control chars, max 200-char messages, max 20-char names
 - [x] Chat panel repositioned bottom-left to avoid overlapping in-game speed controls
+
+### Phase 9.2 — 1v1 Multiplayer ✨ LATEST
+- [x] `matchmaking.js` — queue join/leave, `join`/`join_ack` broadcast pairing, DB room creation with fallback
+- [x] `room.js` — `room:{roomId}` channel, state sync via broadcast, presence-based disconnect detection (10s grace)
+- [x] `multiplayerGame.js` — best-of-5 round loop, seeded shop RNG (mulberry32), gold economy, hash verification
+- [x] Matchmaking overlay — Find Match / Cancel buttons, connection badge, player name display
+- [x] Versus screen — animated 2.5-second VS splash with player names and Bo5 tracker
+- [x] In-game MP HUD — round indicator, live score (You vs Opp), connection dot
+- [x] Ready system — ✅ Ready button, 35-second countdown, auto-ready on expiry, opponent status
+- [x] Seeded deterministic shops — host generates seed, broadcasts to guest; both see identical units
+- [x] Reroll sync — `mp_reroll` room state keeps RNG in lock-step across both clients
+- [x] Tier escalation — shops progress T1→T3 over rounds (R1: T1 only → R5: T2/T3 heavy)
+- [x] Gold economy — 10G base per round + win bonus (5G) + per-surviving-unit bonus (2G), 30G carry cap
+- [x] Deterministic battle RNG — `BattleSystem.setSeed()` installs mulberry32; single-player unaffected
+- [x] Battle hash verification — djb2 hash of final board state broadcast and compared; desync logged to localStorage
+- [x] Match end screen — Victory/Defeat/Draw with final score, Bo5 dots, Rematch + Return buttons
+- [x] Rematch flow — room state `mp_rematch_request` handshake; both must agree
+- [x] Disconnect handling — 10s grace notice with countdown; prep-phase forfeit on timeout; auto-cancel on reconnect
+- [x] Opponent-ready audio cue — `objective` SFX fires when opponent locks in
+- [x] Debug overlay (localhost only) — `Ctrl+Shift+D` toggles real-time Room event log panel
+- [x] `supabase_schema.sql` — `mp_queue`, `mp_rooms`, `mp_room_state` tables with RLS policies
+
+### Phase 9.3 — Multiplayer Authoritative Replay (In Progress)
+- [x] Stop relying on two independent client battle sims for multiplayer presentation
+- [x] Define a canonical battle package: seed, stable unit IDs, starting board snapshots, round metadata
+- [x] Add battle event recording in `battle.js` so one sim can produce a deterministic action timeline
+- [x] Capture host-side replay logs in multiplayer battles for the next playback step
+- [x] Add a reusable `battleReplay.js` player that replays recorded events turn-by-turn
+- [x] Add local playback-safe rendering via `Game.playLastMpReplay()` for validating authoritative logs in-browser
+- [x] Add multiplayer playback mode that renders from recorded events instead of guest-side live combat
+- [x] Drive round transitions from protocol events (`prep_end`, `battle_script_ready`, `playback_start`, `result_show`)
+- [x] Add replay checkpoints / resume support for reconnects mid-battle
+- [x] Add guest-side replay view transforms so both players see their own army on the near side
+- [x] Recover cached replay/result payloads when a guest room channel re-subscribes after a transient disconnect
+- [ ] Long-term option: move battle authority from host to backend if host disconnects become a recurring issue
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance
 - [x] Gameplay BGM rotates between two tracks; boss waves play dedicated boss music
@@ -158,7 +194,7 @@
 - [x] Void Architect HP buffed 600→900, phase HPs scaled up
 - [x] Tutorial Complete achievement now requires tutorial + all 8 contextual tips seen
 
-### Phase 8.2 — Mobile v2 ✨ LATEST
+### Phase 8.2 — Mobile v2
 - [x] Portrait: tutorial overlay pointer-events pass-through so users can scroll to Fight button
 - [x] Portrait: scrollIntoView on spotlight targets during tutorial
 - [x] Landscape: grid gets flex:1 (dominant), panel capped at clamp(140px, 28vw, 220px)
@@ -215,6 +251,7 @@
 | `shape_strikers_player_name` | Leaderboard display name (max 20 chars) | On first score submit |
 | `shape_strikers_tips_seen` | JSON object of seen contextual tip IDs (versioned) | On tip display |
 | `shape_strikers_tips_enabled` | In-Game Tips toggle preference | Toggle in title |
+| `shape_strikers_mp_desync_log` | JSON array of MP battle hash mismatches (last 10) | On MP battle desync |
 
 ---
 

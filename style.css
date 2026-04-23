@@ -2202,3 +2202,507 @@ html, body {
   transition: left 0.35s ease-in, top 0.35s ease-in, opacity 0.35s ease-in;
   opacity: 1;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MULTIPLAYER UI (MP-1 / MP-2)
+══════════════════════════════════════════════════════════════════════════ */
+
+/* Find Match title-screen button */
+.btn-multiplayer {
+  background: linear-gradient(135deg, #22aadd, #1177bb);
+  color: #fff;
+  border: 1px solid #0e66aa;
+  box-shadow: 0 3px 14px rgba(20,140,220,0.40);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.btn-multiplayer:hover {
+  background: linear-gradient(135deg, #33bbee, #2288cc);
+  box-shadow: 0 4px 18px rgba(20,140,220,0.55);
+}
+
+/* Matchmaking lobby overlay box */
+.mp-lobby-box {
+  border-color: rgba(20,140,220,0.4);
+  box-shadow: 0 16px 48px rgba(20,140,220,0.15);
+  max-width: 420px;
+}
+
+.mp-player-name {
+  font-size: 15px;
+  color: #88cce8;
+  margin: 0;
+}
+
+.mp-status {
+  font-size: 18px;
+  font-weight: 600;
+  color: #dde6f0;
+  min-height: 28px;
+  letter-spacing: 0.02em;
+}
+
+.mp-status.searching {
+  color: #ffcc44;
+  animation: mp-pulse 1.2s ease-in-out infinite;
+}
+
+.mp-status.matched {
+  color: #44ee88;
+}
+
+.mp-status.error {
+  color: #ff6644;
+}
+
+@keyframes mp-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+.mp-connection-badge {
+  font-size: 13px;
+  color: #88a0b8;
+}
+
+.mp-connection-badge.connected {
+  color: #55ee88;
+}
+
+.mp-lobby-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ── MP hidden helper (single-player elements hidden in MP mode) ─────────── */
+.mp-hidden { display: none !important; }
+
+/* ── Versus Screen ──────────────────────────────────────────────────────── */
+#mp-versus-overlay {
+  z-index: 700;
+  background: rgba(0,0,0,0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#mp-versus-overlay.hidden { display: none !important; }
+
+.mp-versus-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  width: 100%;
+  max-width: 700px;
+  padding: 32px 20px;
+  animation: mp-versus-in 0.45s cubic-bezier(.22,1,.36,1) both;
+}
+
+@keyframes mp-versus-in {
+  from { opacity: 0; transform: scale(0.88); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.mp-versus-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+}
+
+.mp-versus-icon {
+  font-size: 56px;
+  filter: drop-shadow(0 0 14px rgba(100,180,255,0.5));
+}
+
+.mp-versus-name {
+  font-size: 22px;
+  font-weight: 700;
+  color: #e0f0ff;
+  text-align: center;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+  max-width: 180px;
+  word-break: break-word;
+}
+
+.mp-versus-opp .mp-versus-name { color: #ffddaa; }
+.mp-versus-opp .mp-versus-icon { filter: drop-shadow(0 0 14px rgba(255,160,60,0.5)); }
+
+.mp-versus-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.mp-versus-vs {
+  font-size: 52px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 4px;
+  text-shadow: 0 0 24px rgba(255,255,255,0.35);
+  animation: mp-vs-pulse 1s ease-in-out infinite;
+}
+
+@keyframes mp-vs-pulse {
+  0%, 100% { transform: scale(1); text-shadow: 0 0 24px rgba(255,255,255,0.35); }
+  50%       { transform: scale(1.07); text-shadow: 0 0 40px rgba(255,255,255,0.6); }
+}
+
+/* ── Best-of-5 tracker dots ─────────────────────────────────────────────── */
+.mp-bo5-tracker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+.mp-bo5-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #556688;
+  background: transparent;
+  transition: background 0.25s, border-color 0.25s, box-shadow 0.25s;
+}
+
+.mp-bo5-dot.win {
+  background: #44ee88;
+  border-color: #44ee88;
+  box-shadow: 0 0 8px #44ee88aa;
+}
+
+.mp-bo5-dot.loss {
+  background: #ff4444;
+  border-color: #ff4444;
+  box-shadow: 0 0 8px #ff4444aa;
+}
+
+.mp-bo5-dot.draw {
+  background: #cccc44;
+  border-color: #cccc44;
+}
+
+/* ── Round Result Banner ─────────────────────────────────────────────────── */
+.mp-round-result {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 650;
+  background: rgba(10,15,25,0.94);
+  border: 2px solid #3a5080;
+  border-radius: 16px;
+  padding: 28px 44px;
+  text-align: center;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+  animation: mp-result-in 0.3s cubic-bezier(.22,1,.36,1) both;
+}
+
+.mp-round-result.hidden { display: none !important; }
+
+@keyframes mp-result-in {
+  from { opacity: 0; transform: translate(-50%, -54%) scale(0.92); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+.mp-round-result-title {
+  font-size: 32px;
+  font-weight: 900;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.mp-round-result-title.win  { color: #44ee88; }
+.mp-round-result-title.loss { color: #ff5555; }
+.mp-round-result-title.draw { color: #dddd55; }
+
+.mp-round-result-sub {
+  font-size: 15px;
+  color: #99b8d8;
+  margin-bottom: 16px;
+  min-height: 20px;
+}
+
+.mp-bo5-tracker-result .mp-bo5-dot {
+  width: 20px;
+  height: 20px;
+}
+
+/* ── In-game MP HUD elements ─────────────────────────────────────────────── */
+.mp-hud-round {
+  font-size: 14px;
+  font-weight: 700;
+  color: #88cce8;
+  background: rgba(30,60,90,0.6);
+  padding: 3px 10px;
+  border-radius: 8px;
+  border: 1px solid #3a5a80;
+}
+
+.mp-hud-score {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.mp-score-you  { color: #44ee88; }
+.mp-score-opp  { color: #ff7755; }
+.mp-score-sep  { color: #556688; }
+
+.mp-conn-indicator {
+  font-size: 16px;
+  cursor: default;
+  opacity: 0.85;
+}
+
+/* ── Ready Bar (bottom controls, MP mode) ────────────────────────────────── */
+.mp-ready-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.mp-ready-timer {
+  font-size: 22px;
+  font-weight: 900;
+  color: #ffdd55;
+  min-width: 28px;
+  text-align: center;
+  text-shadow: 0 0 10px #ffdd5566;
+}
+
+.mp-ready-timer.urgent { color: #ff5555; animation: mp-pulse 0.6s ease-in-out infinite; }
+
+.mp-ready-opp-status {
+  font-size: 13px;
+  color: #88a8c8;
+  font-style: italic;
+}
+
+.mp-ready-opp-status.ready { color: #44ee88; font-style: normal; }
+
+/* ── MP Match End Overlay (MP-5) ────────────────────────────────────────── */
+#mp-match-end-overlay {
+  z-index: 800;
+  background: rgba(0,0,0,0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#mp-match-end-overlay.hidden { display: none !important; }
+
+.mp-match-end-box {
+  background: #1a1f2e;
+  border: 2px solid #3a4a6a;
+  border-radius: 16px;
+  padding: 40px 50px;
+  text-align: center;
+  min-width: 320px;
+  animation: mp-versus-in 0.4s ease-out;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+}
+
+.mp-match-end-title {
+  font-size: 3rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+  margin-bottom: 12px;
+}
+.mp-match-end-title.win  { color: #ffd700; text-shadow: 0 0 20px #ffd70099; }
+.mp-match-end-title.loss { color: #ff5555; text-shadow: 0 0 20px #ff555599; }
+.mp-match-end-title.draw { color: #aabbcc; }
+
+.mp-match-end-score {
+  font-size: 2rem;
+  color: #ccddf0;
+  margin-bottom: 16px;
+  letter-spacing: 4px;
+}
+
+.mp-match-end-dots {
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+
+.mp-match-end-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.mp-match-end-rematch-status {
+  font-size: 13px;
+  color: #88a8c8;
+  font-style: italic;
+  min-height: 20px;
+}
+
+/* ── MP Disconnect Notice (MP-5) ─────────────────────────────────────────── */
+.mp-disconnect-notice {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #3a1a1a;
+  border: 1px solid #cc4444;
+  border-radius: 8px;
+  padding: 10px 20px;
+  color: #ffaaaa;
+  font-size: 14px;
+  z-index: 750;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.mp-disconnect-notice.hidden { display: none !important; }
+#mp-disconnect-timer { font-weight: bold; color: #ff7777; }
+
+.mp-reconnect-banner {
+  position: fixed;
+  top: 108px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(18, 32, 56, 0.96);
+  border: 1px solid rgba(102, 170, 255, 0.72);
+  border-radius: 10px;
+  padding: 10px 16px;
+  color: #d7ebff;
+  font-size: 13px;
+  z-index: 751;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+}
+.mp-reconnect-banner.hidden { display: none !important; }
+#mp-reconnect-status {
+  color: #8fc5ff;
+  font-weight: 700;
+  min-width: 140px;
+}
+
+/* ── MP Debug Overlay (MP-5, localhost only) ──────────────────────────────── */
+#mp-debug-overlay {
+  position: fixed;
+  bottom: 10px;
+  right: 10px;
+  width: 360px;
+  max-height: 300px;
+  background: rgba(0,0,0,0.85);
+  border: 1px solid #445566;
+  border-radius: 8px;
+  color: #99ccee;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 8px;
+  overflow-y: auto;
+  z-index: 9000;
+  display: none;
+}
+#mp-debug-overlay.active { display: block; }
+.mp-debug-line { border-bottom: 1px solid #223344; padding: 2px 0; }
+.mp-debug-line.warn { color: #ffcc55; }
+.mp-debug-line.error { color: #ff6666; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MULTIPLAYER MOBILE OVERRIDES
+══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Portrait phones (≤640px) ───────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Versus screen */
+  .mp-versus-inner { gap: 16px; padding: 20px 10px; }
+  .mp-versus-icon  { font-size: 36px; }
+  .mp-versus-name  { font-size: 15px; max-width: 100px; }
+  .mp-versus-vs    { font-size: 36px; }
+  .mp-bo5-dot      { width: 12px; height: 12px; }
+
+  /* Match end overlay */
+  .mp-match-end-box {
+    padding: 24px 18px;
+    min-width: 0;
+    width: 92vw;
+  }
+  .mp-match-end-title   { font-size: 1.8rem; }
+  .mp-match-end-score   { font-size: 1.4rem; }
+  .mp-match-end-actions { flex-direction: column; gap: 8px; align-items: center; }
+
+  /* Round result banner */
+  .mp-round-result       { padding: 18px 28px; width: 90vw; box-sizing: border-box; }
+  .mp-round-result-title { font-size: 22px; }
+
+  /* Ready bar */
+  .mp-ready-bar   { gap: 8px; justify-content: center; }
+  .mp-ready-timer { font-size: 18px; }
+
+  /* HUD score — smaller on mobile */
+  .mp-hud-score { font-size: 15px; }
+
+  /* Lobby box */
+  .mp-lobby-box { padding: 20px 14px; }
+
+  /* Debug overlay — hide on mobile (localhost only anyway) */
+  #mp-debug-overlay { display: none !important; }
+}
+
+/* ── Landscape phones (height ≤500px) ───────────────────────────────────── */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* Versus screen */
+  .mp-versus-inner { gap: 10px; padding: 8px 6px; }
+  .mp-versus-icon  { font-size: 26px; }
+  .mp-versus-name  { font-size: 12px; max-width: 90px; }
+  .mp-versus-vs    { font-size: 26px; }
+  .mp-bo5-dot      { width: 10px; height: 10px; }
+
+  /* Round result banner */
+  .mp-round-result       { padding: 12px 20px; }
+  .mp-round-result-title { font-size: 18px; }
+  .mp-round-result-sub   { font-size: 13px; margin-bottom: 10px; }
+
+  /* Match end overlay */
+  .mp-match-end-box {
+    padding: 16px 14px;
+    min-width: 0;
+    max-height: 90svh;
+    overflow-y: auto;
+  }
+  .mp-match-end-title   { font-size: 1.4rem; }
+  .mp-match-end-score   { font-size: 1.1rem; }
+  .mp-match-end-actions { gap: 6px; }
+
+  /* Disconnect notice — tighter on landscape */
+  .mp-disconnect-notice { top: 28px; font-size: 12px; padding: 6px 12px; }
+  .mp-reconnect-banner {
+    top: 72px;
+    width: calc(100vw - 24px);
+    max-width: 420px;
+    font-size: 12px;
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  #mp-reconnect-status {
+    min-width: 0;
+    text-align: center;
+  }
+
+  /* Ready timer */
+  .mp-ready-timer { font-size: 16px; }
+
+  /* HUD score */
+  .mp-hud-score { font-size: 13px; }
+
+  /* Debug overlay — hide on small screens */
+  #mp-debug-overlay { display: none !important; }
+}
+

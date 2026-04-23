@@ -1083,6 +1083,35 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.1',
+    date: 'April 23, 2026',
+    title: '⚔️ Multiplayer Battle Sync Update',
+    notes: [
+      '🎬 Shared battle playback — both players now watch the same round unfold',
+      '🪞 Multiplayer view mirroring — your army stays on the near side during live matches',
+      '🔌 Mid-battle reconnect recovery — rejoin the room and catch back up to the current round',
+      '🧭 Smoother round flow — battle, result, and next-round transitions stay aligned',
+      '🛠️ Localhost debug tools improved for reconnect testing while multiplayer polish continues',
+    ],
+  },
+  {
+    version: '1.0.0',
+    date: 'April 21, 2026',
+    title: '⚔️ 1v1 Multiplayer Launch',
+    notes: [
+      '⚔️ Real-time 1v1 multiplayer — find an opponent and battle across 5 rounds',
+      '🎲 Seeded shops — both players see the same units each round',
+      '🔁 Shop rerolls stay synchronized between both players',
+      '✅ Ready system — 35-second countdown; auto-ready when timer expires',
+      '🏆 Best-of-5 match format with live score HUD and Bo5 tracker dots',
+      '💰 Gold carry-over economy — win rounds and surviving units earn gold bonuses',
+      '📡 Multiplayer sync checks now log local mismatch reports for debugging',
+      '🎉 Match end screen — Victory/Defeat/Draw with final score and rematch option',
+      '⚠️ Disconnect handling — 10-second grace period; prep-phase forfeit on timeout',
+      '🛠️ Localhost debug overlay (Ctrl+Shift+D) for multiplayer testing',
+    ],
+  },
+  {
     version: '0.9.3',
     date: 'April 21, 2026',
     title: 'Multiplayer Presence & Global Chat',

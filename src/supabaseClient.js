@@ -33,6 +33,12 @@
  *   SupabaseClient.getChannel(name)
  *     Returns the current channel object (refreshed after reconnects).
  *
+ *   SupabaseClient.getChannelStatus(name)
+ *     Returns the tracked Realtime status string for a channel.
+ *
+ *   SupabaseClient.reconnectChannel(name)
+ *     Forces an immediate reconnect attempt for an already-registered channel.
+ *
  *   SupabaseClient.broadcast(channelName, event, payload)
  *     Async. Sends a broadcast message. Returns { ok, error? }.
  *
@@ -209,6 +215,23 @@ const SupabaseClient = (() => {
     return _channels.get(name)?.channel || null;
   }
 
+  /** Returns the tracked Realtime status for a channel. */
+  function getChannelStatus(name) {
+    if (_channels.has(name)) return _channels.get(name)?.status || 'pending';
+    if (_pending.has(name)) return 'pending';
+    return 'closed';
+  }
+
+  /** Force an immediate reconnect for an existing channel registration. */
+  function reconnectChannel(name) {
+    const entry = _channels.get(name);
+    if (!entry) return false;
+    clearTimeout(entry.retryTimer);
+    entry.retryCount = 0;
+    _connect(name);
+    return true;
+  }
+
   /**
    * Send a Realtime Broadcast message.
    * @param {string} channelName
@@ -228,6 +251,6 @@ const SupabaseClient = (() => {
     }
   }
 
-  return { init, getClient, joinChannel, leaveChannel, leaveAll, getChannel, broadcast };
+  return { init, getClient, joinChannel, leaveChannel, leaveAll, getChannel, getChannelStatus, reconnectChannel, broadcast };
 
 })();
