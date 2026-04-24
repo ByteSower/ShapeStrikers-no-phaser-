@@ -1091,7 +1091,7 @@ const PATCH_NOTES = [
       '🪞 Multiplayer view mirroring — your army stays on the near side during live matches',
       '🔌 Mid-battle reconnect recovery — rejoin the room and catch back up to the current round',
       '🧭 Smoother round flow — battle, result, and next-round transitions stay aligned',
-      '🛠️ Localhost debug tools improved for reconnect testing while multiplayer polish continues',
+      
     ],
   },
   {
