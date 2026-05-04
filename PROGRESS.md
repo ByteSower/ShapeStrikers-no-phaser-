@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: April 21, 2026
+> **Last Updated**: May 4, 2026
 
 ---
 
@@ -161,6 +161,8 @@
 - [x] Rematch flow — room state `mp_rematch_request` handshake; both must agree
 - [x] Disconnect handling — guest disconnects still use the grace notice + reconnect countdown; guest reload resume now waits longer than the room disconnect grace before self-aborting; host disconnects now terminate the match after the room disconnect hook fires; page refresh still releases realtime channels proactively before guest reconnect resume
 - [x] Opponent-ready audio cue — `objective` SFX fires when opponent locks in
+- [x] Opponent-ready cue dedupe — repeated ready snapshots after reconnect/resync no longer replay the ready SFX
+- [x] Multiplayer lifecycle regression coverage — automated tests now cover guest saved-session resume, guest-observed host disconnect, and local host channel-loss termination
 - [x] Debug overlay (localhost only) — `Ctrl+Shift+D` toggles real-time Room event log panel
 - [x] `supabase_schema.sql` — `mp_queue`, `mp_rooms`, `mp_room_state` tables with RLS policies
 
@@ -183,6 +185,9 @@
 - [x] "Get Ready" call triggers at shop phase start; "Enemy Spotted" on boss wave
 - [x] Wave clear: random victory SFX (3 varieties); game over: jingle + cry after 1.5s
 - [x] Win: "Let's Go!" fanfare; achievement unlock: objective-complete chime
+- [x] Audio unlock/retry layer — blocked music and key phase cues retry after the next user gesture instead of failing silently on mobile browsers
+- [x] Multiplayer music handoff — title BGM now stops when a multiplayer set begins and gameplay music starts for live and resumed matches
+- [x] Mobile mute reliability — muting now silences active cloned SFX as well as current BGM during multiplayer and single-player sessions
 - [x] Personal best tracking per campaign (`best_score_normal` / `best_score_void`) + high-score SFX
 - [x] Synergy buffs now apply to ALL player units (not just the matching element)
 - [x] Synergy preview on unit card projects boosted stats for all active synergies
@@ -271,6 +276,9 @@
 | Tutorial "15 waves" in void campaign | Getter-based dynamic text | 7A |
 | Contextual tips not appearing after tutorial re-enable | Version-gated tip reset + deferred seen-marking | 8.1 |
 | Background image too zoomed in | Changed `cover` to `contain` on game screen | 8.1 |
+| Multiplayer guest resume self-aborted before room grace elapsed | Resume bootstrap timeout now derives from room disconnect grace with an explicit buffer | 9.2 |
+| Multiplayer host-loss behavior only covered by helper tests | Added game-level lifecycle regression tests for guest resume and both terminal host-disconnect flows | 9.2 |
+| Multiplayer title music persisted into live matches and mute missed active sounds on mobile | MP entry now swaps to gameplay music, audio retries on gesture, and mute stops active cloned SFX | 9 |
 
 ---
 

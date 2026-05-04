@@ -129,3 +129,26 @@ test('Guest ignores cleared battle_start state until the host sends a real round
 
   MultiplayerGame.destroy();
 });
+
+test('Duplicate ready snapshots do not replay the opponent-ready callback', () => {
+  const room = createMockRoom();
+  global.Room = room;
+  MultiplayerGame.destroy();
+
+  let opponentReadyCount = 0;
+  MultiplayerGame.start('room-reset-4', true, 'guest-4', {
+    onRoundReady: () => {},
+    onOppReady: () => { opponentReadyCount++; },
+  });
+
+  room.emit('ready_p2', { ready: true, roundNumber: 1, units: [] });
+  room.emit('ready_p2', { ready: true, roundNumber: 1, units: [] });
+  room.emit('ready_p2', { ready: true, roundNumber: 1, units: [] });
+  assert.equal(opponentReadyCount, 1, 'Repeated ready=true snapshots should not replay the cue');
+
+  room.emit('ready_p2', { ready: false, roundNumber: 1, units: [] });
+  room.emit('ready_p2', { ready: true, roundNumber: 1, units: [] });
+  assert.equal(opponentReadyCount, 2, 'A fresh false->true transition should still notify once');
+
+  MultiplayerGame.destroy();
+});

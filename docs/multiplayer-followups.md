@@ -113,6 +113,17 @@ If the target includes Steam / console readiness, assume we need at least full c
 
 ## Priority 1: Audio Audit And Mobile Mute Regression
 
+### Current Status
+
+Core regressions addressed in the current release candidate:
+
+- multiplayer now stops title BGM and starts gameplay music when entering a live or resumed set
+- `src/audio.js` now retries blocked music and key multiplayer cues on the next user gesture instead of failing silently
+- muting now silences active cloned SFX as well as the current music track
+- opponent-ready audio is edge-triggered so reconnect/resync snapshots do not replay the cue
+
+If audio regressions return, keep this section as the re-open checklist for browser- or device-specific follow-up.
+
 ### Summary
 
 Audio behavior is inconsistent in multiplayer and especially unreliable on mobile browsers.
@@ -149,11 +160,11 @@ Audio behavior is inconsistent in multiplayer and especially unreliable on mobil
 
 ### Acceptance Checks For Later
 
-- Title music stops when gameplay music should begin.
-- `getReady` plays at the start of every multiplayer prep phase.
-- opponent-ready cue plays exactly once when appropriate.
-- mute works from the title screen and in-match HUD on mobile.
-- no duplicated or delayed voice lines after round transitions or reconnects.
+- [x] Title music stops when gameplay music should begin.
+- [x] `getReady` plays at the start of multiplayer prep after the audio retry layer is armed.
+- [x] opponent-ready cue plays exactly once when appropriate.
+- [x] mute works from the title screen and in-match HUD on mobile.
+- [x] no duplicated or delayed voice lines after round transitions or reconnects during current live validation.
 
 ## Priority 1: Multiplayer Round Reset Rules
 

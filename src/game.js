@@ -68,7 +68,7 @@ const Game = (() => {
   let _mpResumeBootstrapTimer = null;
 
   const MP_PREP_SNAPSHOT_STORAGE_KEY = 'shape_strikers_mp_prep_snapshot';
-  const MP_RESUME_BOOTSTRAP_TIMEOUT_MS = 12000;
+  const MP_RESUME_BOOTSTRAP_BUFFER_MS = 2_000;
 
   const MP_PHASE_EVENTS = Object.freeze({
     PREP_END: 'prep_end',
@@ -283,6 +283,23 @@ const Game = (() => {
       _mpRefreshBo5Dots('mp-bo5-tracker');
     }
     return true;
+  }
+
+  function _mpGetRoomDisconnectGraceMs() {
+    const roomGraceMs = Number((typeof Room !== 'undefined' && Room) ? Room.DISCONNECT_GRACE_MS : 0);
+    return Number.isFinite(roomGraceMs) && roomGraceMs > 0 ? roomGraceMs : 10_000;
+  }
+
+  function _mpGetResumeBootstrapTimeoutMs() {
+    return _mpGetRoomDisconnectGraceMs() + MP_RESUME_BOOTSTRAP_BUFFER_MS;
+  }
+
+  function getMultiplayerPolicy() {
+    return {
+      roomDisconnectGraceMs: _mpGetRoomDisconnectGraceMs(),
+      guestResumeBootstrapTimeoutMs: _mpGetResumeBootstrapTimeoutMs(),
+      guestResumeBootstrapBufferMs: MP_RESUME_BOOTSTRAP_BUFFER_MS,
+    };
   }
 
   function _mpResolveResumeRoundNumber() {
@@ -3655,7 +3672,7 @@ const Game = (() => {
     _mpApplySavedResumeContext(savedSession.resumeContext);
     // Keep the bootstrap window longer than the room disconnect grace so slow
     // reconnects do not self-abort before the host can observe the guest return.
-    _mpArmResumeBootstrapTimer('saved-session resume', MP_RESUME_BOOTSTRAP_TIMEOUT_MS);
+    _mpArmResumeBootstrapTimer('saved-session resume', _mpGetResumeBootstrapTimeoutMs());
     UI.showMessage('🔄 Rejoining live match…', 1500);
     return true;
   }
@@ -3825,6 +3842,10 @@ const Game = (() => {
   // ── Enter multiplayer battle-prep mode ────────────────────────────────
   function _mpEnterBattleMode() {
     _mpMode = true;
+
+    // Multiplayer bypasses startGame(), so switch away from the title track here.
+    Audio.stopMusic();
+    Audio.playGameplayMusic();
 
     // Switch to game screen
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -5572,6 +5593,7 @@ const Game = (() => {
     setSpeed,
     playLastMpReplay: _playLastMpReplay,
     getRefreshCost,
+    getMultiplayerPolicy,
     showAchievements: _showAchievements,
     showChallenges: _showChallenges,
     showLeaderboard: _showLeaderboard,

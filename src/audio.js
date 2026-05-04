@@ -5,6 +5,8 @@
 
 const Audio = (() => {
   const BASE = 'public/Audio/';
+  const RETRIABLE_SFX = new Set(['getReady', 'objective', 'letsGo', 'gameOver', 'newHighScore', 'cry']);
+  const AUDIO_UNLOCK_EVENTS = ['pointerdown', 'touchstart', 'click', 'keydown'];
 
   // ── Sound pools (for random selection) ────────────────────────────────────
   const SFX = {
@@ -37,13 +39,120 @@ const Audio = (() => {
   let _sfxVol   = 0.35;
   let _musicVol = 0.25;
   let _muted    = false;
+  let _desiredMusic = null;
+  let _musicRetryPending = false;
+  let _musicRequestId = 0;
+  let _unlockListenersBound = false;
 
   // Cache of pre-created Audio objects for faster playback
   const _cache = {};
+  const _activeSfx = new Set();
+  const _pendingSfxKeys = new Set();
 
   function _clampVolume(value, fallback) {
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : fallback;
+  }
+
+  function _isPromiseLike(value) {
+    return !!value && typeof value.then === 'function' && typeof value.catch === 'function';
+  }
+
+  function _createAudio(src = '') {
+    const audio = new window.Audio(src);
+    if ('preload' in audio) audio.preload = 'auto';
+    if ('playsInline' in audio) audio.playsInline = true;
+    audio.setAttribute?.('playsinline', '');
+    return audio;
+  }
+
+  function _stopCurrentMusicElement() {
+    if (!_musicEl) return;
+    _musicEl.pause?.();
+    _musicEl.currentTime = 0;
+    _musicEl.removeAttribute?.('src');
+    try { _musicEl.load?.(); } catch (_) {}
+    _musicEl = null;
+  }
+
+  function _pickGameplayTrack() {
+    return _gameplayTracks[Math.floor(Math.random() * _gameplayTracks.length)];
+  }
+
+  function _makeMusicElement(descriptor) {
+    const src = descriptor.kind === 'gameplay'
+      ? BASE + _pickGameplayTrack()
+      : BASE + descriptor.file;
+    const musicEl = _createAudio(src);
+    musicEl.loop = descriptor.kind !== 'gameplay';
+    musicEl.volume = _muted ? 0 : _musicVol;
+    if (descriptor.kind === 'gameplay') {
+      musicEl.addEventListener('ended', () => {
+        if (_desiredMusic?.kind === 'gameplay') _playDesiredMusic();
+      }, { once: true });
+    }
+    return musicEl;
+  }
+
+  function _playDesiredMusic() {
+    if (!_desiredMusic) return;
+
+    const requestId = ++_musicRequestId;
+    _musicRetryPending = false;
+    _stopCurrentMusicElement();
+
+    const musicEl = _makeMusicElement(_desiredMusic);
+    _musicEl = musicEl;
+
+    const playResult = musicEl.play?.();
+    if (!_isPromiseLike(playResult)) return;
+
+    playResult.then(() => {
+      if (requestId !== _musicRequestId || _musicEl !== musicEl) return;
+      _musicRetryPending = false;
+    }).catch(() => {
+      if (requestId !== _musicRequestId || _musicEl !== musicEl) return;
+      _musicRetryPending = true;
+    });
+  }
+
+  function _cleanupSfxInstance(snd) {
+    _activeSfx.delete(snd);
+  }
+
+  function _stopActiveSfx() {
+    for (const snd of Array.from(_activeSfx)) {
+      try {
+        snd.pause?.();
+        snd.currentTime = 0;
+      } catch (_) {}
+    }
+    _activeSfx.clear();
+  }
+
+  function _flushPendingAudio() {
+    if (_muted) return;
+
+    if (_musicRetryPending && _desiredMusic) {
+      _playDesiredMusic();
+    }
+
+    if (_pendingSfxKeys.size === 0) return;
+    const keys = Array.from(_pendingSfxKeys);
+    _pendingSfxKeys.clear();
+    keys.forEach((key) => play(key));
+  }
+
+  function _bindUnlockListeners() {
+    if (_unlockListenersBound) return;
+    _unlockListenersBound = true;
+    const target = (typeof document !== 'undefined' && document?.addEventListener)
+      ? document
+      : (typeof window !== 'undefined' ? window : null);
+    if (!target?.addEventListener) return;
+    AUDIO_UNLOCK_EVENTS.forEach((eventName) => {
+      target.addEventListener(eventName, _flushPendingAudio, { passive: true });
+    });
   }
 
   // ── Initialise ────────────────────────────────────────────────────────────
@@ -53,26 +162,20 @@ const Audio = (() => {
     _muted = localStorage.getItem('shape_strikers_muted') === '1';
     _sfxVol = _clampVolume(localStorage.getItem('shape_strikers_sfx_vol'), 0.35);
     _musicVol = _clampVolume(localStorage.getItem('shape_strikers_music_vol'), 0.25);
+    _bindUnlockListeners();
   }
 
   // ── Background music ─────────────────────────────────────────────────────
 
   function playMusic(file) {
-    stopMusic();
-    _musicEl = new window.Audio(BASE + file);
-    _musicEl.loop = true;
-    _musicEl.volume = _muted ? 0 : _musicVol;
-    _musicEl.play().catch(() => {});
+    _desiredMusic = { kind: 'file', file };
+    _playDesiredMusic();
   }
 
   function stopMusic() {
-    if (_musicEl) {
-      _musicEl.pause();
-      _musicEl.currentTime = 0;
-      _musicEl.removeAttribute('src');
-      try { _musicEl.load(); } catch (_) {}
-      _musicEl = null;
-    }
+    _desiredMusic = null;
+    _musicRetryPending = false;
+    _stopCurrentMusicElement();
   }
 
   function setMusicVolume(v) {
@@ -91,10 +194,36 @@ const Audio = (() => {
     const path = BASE + file;
 
     // Clone from cache for overlapping sounds
-    if (!_cache[path]) _cache[path] = new window.Audio(path);
-    const snd = _cache[path].cloneNode();
+    if (!_cache[path]) _cache[path] = _createAudio(path);
+    const snd = typeof _cache[path].cloneNode === 'function'
+      ? _cache[path].cloneNode()
+      : _createAudio(path);
+    if (!snd.src) snd.src = path;
+    if ('preload' in snd) snd.preload = 'auto';
+    if ('playsInline' in snd) snd.playsInline = true;
+    snd.setAttribute?.('playsinline', '');
     snd.volume = _sfxVol;
-    snd.play().catch(() => {});
+    _activeSfx.add(snd);
+
+    const cleanup = () => _cleanupSfxInstance(snd);
+    snd.addEventListener?.('ended', cleanup, { once: true });
+    snd.addEventListener?.('error', cleanup, { once: true });
+    snd.addEventListener?.('abort', cleanup, { once: true });
+
+    const playResult = snd.play?.();
+    if (!_isPromiseLike(playResult)) {
+      _pendingSfxKeys.delete(key);
+      return;
+    }
+
+    playResult.then(() => {
+      _pendingSfxKeys.delete(key);
+    }).catch(() => {
+      cleanup();
+      if (!_muted && RETRIABLE_SFX.has(key)) {
+        _pendingSfxKeys.add(key);
+      }
+    });
   }
 
   function setSfxVolume(v) {
@@ -108,6 +237,12 @@ const Audio = (() => {
     _muted = !_muted;
     localStorage.setItem('shape_strikers_muted', _muted ? '1' : '0');
     if (_musicEl) _musicEl.volume = _muted ? 0 : _musicVol;
+    if (_muted) {
+      _pendingSfxKeys.clear();
+      _stopActiveSfx();
+    } else {
+      _flushPendingAudio();
+    }
     return _muted;
   }
 
@@ -117,23 +252,14 @@ const Audio = (() => {
 
   // Plays gameplay BGM, rotating randomly through tracks when each ends.
   function playGameplayMusic() {
-    stopMusic();
-    const track = _gameplayTracks[Math.floor(Math.random() * _gameplayTracks.length)];
-    _musicEl = new window.Audio(BASE + track);
-    _musicEl.loop = false;
-    _musicEl.volume = _muted ? 0 : _musicVol;
-    // On end, recurse to pick a fresh random track (provides variety without fixed ordering)
-    _musicEl.addEventListener('ended', playGameplayMusic, { once: true });
-    _musicEl.play().catch(() => {});
+    _desiredMusic = { kind: 'gameplay' };
+    _playDesiredMusic();
   }
 
   // Plays boss fight BGM (looping until explicitly stopped)
   function playBossMusic() {
-    stopMusic();
-    _musicEl = new window.Audio(BASE + 'SS_Music_Boss.wav');
-    _musicEl.loop = true;
-    _musicEl.volume = _muted ? 0 : _musicVol;
-    _musicEl.play().catch(() => {});
+    _desiredMusic = { kind: 'boss', file: 'SS_Music_Boss.wav' };
+    _playDesiredMusic();
   }
 
   // Plays a SFX key after a delay (ms) — used for sequenced sounds (e.g. game_over then cry)

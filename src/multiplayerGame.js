@@ -254,9 +254,10 @@ const MultiplayerGame = (() => {
         // Value is { ready: true, units: [...] } — accept plain true as legacy fallback
         const isReady = value === true || value?.ready === true;
         if (key === oppSlot) {
+          const becameReady = !_oppReady && isReady;
           _oppReady = isReady;
           _oppUnits = isReady ? (value?.units || []) : [];
-          if (isReady) _callbacks.onOppReady?.();
+          if (becameReady) _callbacks.onOppReady?.();
         }
         if (key === mySlot) {
           _myReady = isReady;

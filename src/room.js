@@ -949,6 +949,9 @@ const Room = (() => {
 
   return {
     CONNECTION_LIFECYCLE,
+    HEARTBEAT_INTERVAL_MS,
+    HEARTBEAT_STALE_MS,
+    DISCONNECT_GRACE_MS,
     join,
     leave,
     syncState,
