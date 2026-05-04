@@ -1083,6 +1083,29 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.3',
+    date: 'May 3, 2026',
+    title: '👑 Multiplayer Host Disconnect Policy',
+    notes: [
+      '👑 Confirmed host disconnects now end the current multiplayer set for both players',
+      '🏠 Host disconnects use the same immediate-exit results flow so both clients return to title instead of waiting out a reconnect countdown',
+      '🔄 Guest reconnect stays supported while the host remains online and authoritative',
+      '⏱️ Guest reload resume now waits longer than the room disconnect grace before abandoning a reconnect attempt',
+    ],
+  },
+  {
+    version: '1.0.2',
+    date: 'May 3, 2026',
+    title: '🚪 Multiplayer Quit Flow',
+    notes: [
+      '🚪 Quit Match button — explicit forfeits now end the multiplayer set immediately',
+      '🧾 Quit-specific results — both players see quit-aware win/loss messaging before returning to title',
+      '🔄 Refresh stays recoverable — reloads and transient disconnects still use the reconnect/resume flow',
+      '📡 Faster room teardown — browser refresh now releases multiplayer channels before reconnecting',
+      '👑 Host reload policy — stale host sessions are cleared on relaunch until host resume support ships',
+    ],
+  },
+  {
     version: '1.0.1',
     date: 'April 23, 2026',
     title: '⚔️ Multiplayer Battle Sync Update',
@@ -1105,10 +1128,8 @@ const PATCH_NOTES = [
       '✅ Ready system — 35-second countdown; auto-ready when timer expires',
       '🏆 Best-of-5 match format with live score HUD and Bo5 tracker dots',
       '💰 Gold carry-over economy — win rounds and surviving units earn gold bonuses',
-      '📡 Multiplayer sync checks now log local mismatch reports for debugging',
       '🎉 Match end screen — Victory/Defeat/Draw with final score and rematch option',
       '⚠️ Disconnect handling — 10-second grace period; prep-phase forfeit on timeout',
-      '🛠️ Localhost debug overlay (Ctrl+Shift+D) for multiplayer testing',
     ],
   },
   {
@@ -1118,10 +1139,8 @@ const PATCH_NOTES = [
     notes: [
       '👥 Live online player count on the title screen — see who\'s playing right now',
       '💬 Global real-time chat panel — tap 💬 in the bottom-left corner to join the conversation',
-      '🟢 Connection status dot — green when live, grey while connecting',
-      '🔔 Unread message badge on the chat toggle when the panel is collapsed',
-      '🔄 Auto-reconnect with exponential backoff; tab-focus reconnect included',
-      '🛡️ Input sanitization — control chars stripped, 200-char message limit, 20-char name limit',
+      '🤓 Alot of QOL Changes and Bug Fixes',
+      
     ],
   },
   {
@@ -1242,6 +1261,8 @@ const PATCH_NOTES = [
       '👾 2 new bosses: Void Leviathan (W20) and Void Architect (W25)',
       '⚡ Hard mode scaling for waves 16–25',
       '🟣 Void element units available in Void Campaign',
+       '🤓 Alot of QOL Changes and Bug Fixes',
+      
     ],
   },
 ];

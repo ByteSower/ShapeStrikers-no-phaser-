@@ -54,6 +54,7 @@ const MultiplayerGame = (() => {
 
   // Opponent's serialised unit army received with their ready signal
   let _oppUnits = [];
+  let _resolvedRoundScoreOverride = null;
 
   // One-shot guard: prevents double-fire of onBothReady per round
   let _battleThisRound = false;
@@ -80,6 +81,7 @@ const MultiplayerGame = (() => {
     _callbacks  = callbacks || {};
     _myReady    = false;
     _oppReady   = false;
+    _resolvedRoundScoreOverride = null;
 
     // Attach a persistent Room state-change listener for this match
     _stateHandler = _onRoomState.bind(null);
@@ -111,7 +113,9 @@ const MultiplayerGame = (() => {
     const seed = (Date.now() ^ Math.floor(Math.random() * 0xFFFFFFFF)) >>> 0;
     _shopReadyThisRound = false; // reset so the next round's onRoundReady can fire
     _initRng(seed);
+    _resetRoundSyncState();
     if (typeof Room !== 'undefined') Room.syncState('shop_seed', seed);
+    _syncPrepState();
     // Host fires onRoundReady immediately after broadcasting seed
     _shopReadyThisRound = true;
     _callbacks.onRoundReady?.(_round, _gold);
@@ -128,6 +132,68 @@ const MultiplayerGame = (() => {
   // Both clients call this with the same arguments → identical shops.
   function _deriveSeed(base, rerollN) {
     return (base ^ (rerollN * 0x9e3779b9)) >>> 0;
+  }
+
+  function _buildPrepStatePayload() {
+    if (!_baseSeed) return null;
+    return {
+      roundNumber: _round,
+      shopSeed: _baseSeed,
+      rerollIndex: _rerollIdx,
+      at: Date.now(),
+    };
+  }
+
+  function _syncPrepState() {
+    if (typeof Room === 'undefined') return null;
+    const payload = _buildPrepStatePayload();
+    if (!payload) return null;
+    Room.syncState('prep_state', payload);
+    return payload;
+  }
+
+  function _resetRoundSyncState() {
+    if (typeof Room === 'undefined' || !_isHost) return;
+    const readyReset = { ready: false, roundNumber: _round, at: Date.now() };
+    Room.syncState('ready_p1', readyReset);
+    Room.syncState('ready_p2', readyReset);
+
+    for (const key of ['mp_reroll', 'battle_start', 'battle_replay', 'playback_checkpoint', 'phase_event', 'round_result', 'round_result_ack', 'ready_to_continue', 'request_authoritative_state', 'authoritative_state']) {
+      Room.syncState(key, null);
+    }
+  }
+
+  function _applyPrepState(value) {
+    const changes = {
+      roundChanged: false,
+      seedChanged: false,
+      rerollChanged: false,
+    };
+    if (!value || typeof value !== 'object') return changes;
+
+    const nextRound = Number(value.roundNumber);
+    if (Number.isFinite(nextRound) && nextRound > 0 && nextRound !== _round) {
+      _round = nextRound;
+      changes.roundChanged = true;
+    }
+
+    const hasSeed = Number.isFinite(Number(value.shopSeed));
+    const nextSeed = hasSeed ? (Number(value.shopSeed) >>> 0) : _baseSeed;
+    if (hasSeed && nextSeed !== _baseSeed) {
+      _initRng(nextSeed);
+      changes.seedChanged = true;
+    }
+
+    const nextRerollIndex = Number(value.rerollIndex);
+    if (Number.isFinite(nextRerollIndex) && nextRerollIndex >= 0 && _baseSeed) {
+      if (nextRerollIndex !== _rerollIdx) {
+        _rerollIdx = nextRerollIndex;
+        _shopRng = _mulberry32(_deriveSeed(_baseSeed, _rerollIdx));
+        changes.rerollChanged = true;
+      }
+    }
+
+    return changes;
   }
 
   // ── Internal: one-shot battle trigger (prevents double-fire via both ready paths) ──────
@@ -160,6 +226,17 @@ const MultiplayerGame = (() => {
         }
         break;
 
+      case 'prep_state':
+        if (_isHost) break;
+        {
+          const changes = _applyPrepState(value);
+          if (changes.roundChanged || changes.seedChanged) {
+            _shopReadyThisRound = true;
+            _callbacks.onRoundReady?.(_round, _gold);
+          }
+        }
+        break;
+
       case 'mp_reroll':
         // Opponent rerolled — advance our RNG so shops stay in sync,
         // then surface the new shop to the local player too.
@@ -172,15 +249,17 @@ const MultiplayerGame = (() => {
       case 'ready_p2': {
         const mySlot  = _isHost ? 'ready_p1' : 'ready_p2';
         const oppSlot = _isHost ? 'ready_p2' : 'ready_p1';
+        const readyRound = Number(value?.roundNumber);
+        if (Number.isFinite(readyRound) && readyRound > 0 && readyRound !== _round) break;
         // Value is { ready: true, units: [...] } — accept plain true as legacy fallback
         const isReady = value === true || value?.ready === true;
-        if (key === oppSlot && isReady) {
-          _oppReady = true;
-          _oppUnits = value?.units || [];
-          _callbacks.onOppReady?.();
+        if (key === oppSlot) {
+          _oppReady = isReady;
+          _oppUnits = isReady ? (value?.units || []) : [];
+          if (isReady) _callbacks.onOppReady?.();
         }
-        if (key === mySlot && isReady) {
-          _myReady = true;
+        if (key === mySlot) {
+          _myReady = isReady;
         }
         if (_myReady && _oppReady) _triggerBothReady();
         break;
@@ -188,7 +267,12 @@ const MultiplayerGame = (() => {
 
       case 'battle_start':
         // Non-host receives host's signal — one-shot guard prevents double-fire
-        if (!_isHost) _triggerBothReady();
+        if (!_isHost) {
+          const battleRound = Number(value?.round);
+          if (!Number.isFinite(battleRound) || battleRound <= 0) break;
+          if (battleRound !== _round) break;
+          _triggerBothReady();
+        }
         break;
     }
   }
@@ -235,6 +319,7 @@ const MultiplayerGame = (() => {
     _shopRng = _mulberry32(_deriveSeed(_baseSeed, _rerollIdx));
     // Broadcast so opponent advances their RNG in sync
     if (typeof Room !== 'undefined') Room.syncState('mp_reroll', _rerollIdx);
+    _syncPrepState();
     return generateShopUnits(pool, count);
   }
 
@@ -269,6 +354,7 @@ const MultiplayerGame = (() => {
 
     const payload = {
       ready: true,
+      roundNumber: _round,
       units: (units || []).map(u => {
         const stats = { ...u.stats };
         for (const [stat, mult] of Object.entries(synergyMult)) {
@@ -297,9 +383,28 @@ const MultiplayerGame = (() => {
     _battleThisRound = false;
     _shopReadyThisRound = false;
 
-    // Update scores
-    if (iWon) _myScore++;
-    else       _oppScore++;
+    // Resume recovery can provide authoritative post-result scores for this round.
+    if (_resolvedRoundScoreOverride && Number(_resolvedRoundScoreOverride.round) === _round) {
+      const resolvedMyScore = Number(_resolvedRoundScoreOverride.myScore);
+      const resolvedOppScore = Number(_resolvedRoundScoreOverride.oppScore);
+      const hasResolvedScores = Number.isFinite(resolvedMyScore) && resolvedMyScore >= 0 &&
+        Number.isFinite(resolvedOppScore) && resolvedOppScore >= 0;
+
+      if (hasResolvedScores) {
+        _myScore = resolvedMyScore;
+        _oppScore = resolvedOppScore;
+      } else if (iWon) {
+        _myScore++;
+      } else {
+        _oppScore++;
+      }
+
+      _resolvedRoundScoreOverride = null;
+    } else if (iWon) {
+      _myScore++;
+    } else {
+      _oppScore++;
+    }
 
     // Gold carry-over + bonus
     const bonus     = getRoundGoldBonus(iWon, survivingUnits);
@@ -343,6 +448,20 @@ const MultiplayerGame = (() => {
     return (iWon ? WIN_BONUS : 0) + Math.max(0, survivingCount || 0) * UNIT_BONUS;
   }
 
+  function forceMatchEnd(winner, meta = null) {
+    if (!_active) return false;
+    if (winner !== 'me' && winner !== 'opponent' && winner !== 'draw') return false;
+
+    if (winner === 'me') {
+      _myScore = Math.max(_myScore, WINS_NEEDED);
+    } else if (winner === 'opponent') {
+      _oppScore = Math.max(_oppScore, WINS_NEEDED);
+    }
+
+    _callbacks.onMatchEnd?.(winner, meta);
+    return true;
+  }
+
   function matchWinner() {
     if (_myScore  >= WINS_NEEDED) return 'me';
     if (_oppScore >= WINS_NEEDED) return 'opponent';
@@ -355,6 +474,14 @@ const MultiplayerGame = (() => {
     return null; // still ongoing
   }
 
+  function shouldForceMatchEndOnOpponentDisconnect() {
+    return _active && !_isHost;
+  }
+
+  function shouldForceMatchEndOnLocalDisconnect() {
+    return _active && _isHost;
+  }
+
   function isActive()      { return _active; }
   function isHost()        { return _isHost; }
   function getRound()      { return _round; }
@@ -363,6 +490,37 @@ const MultiplayerGame = (() => {
   function getTotalRounds(){ return TOTAL_ROUNDS; }
   function getBattleSeed() { return (_baseSeed ^ 0xDEADC0DE) >>> 0; }
   function getOppUnits()   { return _oppUnits; }
+
+  function hydrateMatchState(matchState = {}) {
+    if (!_active) return false;
+
+    const round = Number(matchState.round || matchState.roundNumber || 0);
+    if (Number.isFinite(round) && round > 0) _round = round;
+
+    const myScore = Number(matchState.myScore);
+    if (Number.isFinite(myScore) && myScore >= 0) _myScore = myScore;
+
+    const oppScore = Number(matchState.oppScore);
+    if (Number.isFinite(oppScore) && oppScore >= 0) _oppScore = oppScore;
+
+    const gold = Number(matchState.gold);
+    if (Number.isFinite(gold) && gold >= 0) _gold = gold;
+
+    const resolvedRound = Number(matchState.resolvedRoundNumber || matchState.round || matchState.roundNumber || 0);
+    const resolvedMyScore = Number(matchState.resolvedMyScore);
+    const resolvedOppScore = Number(matchState.resolvedOppScore);
+    if (resolvedRound > 0 && Number.isFinite(resolvedMyScore) && resolvedMyScore >= 0 && Number.isFinite(resolvedOppScore) && resolvedOppScore >= 0) {
+      _resolvedRoundScoreOverride = {
+        round: resolvedRound,
+        myScore: resolvedMyScore,
+        oppScore: resolvedOppScore,
+      };
+    } else {
+      _resolvedRoundScoreOverride = null;
+    }
+
+    return true;
+  }
 
   // ── Public: destroy (call on match end or leave) ──────────────────────────
   function destroy() {
@@ -376,6 +534,7 @@ const MultiplayerGame = (() => {
     _stateHandler    = null;
     _myBattleHash    = null;
     _oppUnits        = [];
+    _resolvedRoundScoreOverride = null;
     _battleThisRound  = false;
     _shopReadyThisRound = false;
   }
@@ -390,12 +549,16 @@ const MultiplayerGame = (() => {
     endRound,
     getTierWeightsForRound,
     getRoundGoldBonus,
+    forceMatchEnd,
     matchWinner,
+    shouldForceMatchEndOnOpponentDisconnect,
+    shouldForceMatchEndOnLocalDisconnect,
     isActive,
     isHost,
     getRound,
     getGold,
     getScores,
+    hydrateMatchState,
     getTotalRounds,
     getBattleSeed,
     submitBattleHash,

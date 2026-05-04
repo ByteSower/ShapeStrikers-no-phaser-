@@ -234,6 +234,7 @@
         <button class="btn btn-secondary btn-sm" id="btn-refresh">🔄 Refresh (<span id="refresh-cost">2</span>g)</button>
         <button class="btn btn-secondary btn-sm" id="btn-glossary">📖 Glossary</button>
         <button class="btn btn-primary" id="btn-battle">⚔️ Fight!</button>
+        <button class="btn btn-secondary btn-sm mp-hidden" id="btn-mp-quit">🚪 Quit Match</button>
         <div id="mp-ready-bar" class="mp-ready-bar mp-hidden">
           <button class="btn btn-primary" id="btn-mp-ready">✅ Ready</button>
           <div class="mp-ready-timer" id="mp-ready-timer">35</div>
@@ -477,6 +478,7 @@
 <script src="src/audio.js"></script>
 <!-- Determinism utilities — loaded before battle.js so BattleSystem can use them -->
 <script src="src/utils/prng.js"></script>
+<script src="src/multiplayerTelemetry.js"></script>
 <script src="src/battle/hashUtils.js"></script>
 <script src="src/multiplayer/keys.js"></script>
 <script src="src/multiplayer/canonicalize.js"></script>
@@ -491,6 +493,8 @@
 <script src="src/matchmaking.js"></script>
 <script src="src/room.js"></script>
 <script src="src/multiplayerGame.js"></script>
+<script src="src/multiplayerPrepState.js"></script>
+<script src="src/multiplayerAuthorityState.js"></script>
 <script src="src/battleReplay.js"></script>
 <script src="src/game.js"></script>
 

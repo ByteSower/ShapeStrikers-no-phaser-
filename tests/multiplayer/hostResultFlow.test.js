@@ -6,6 +6,7 @@
  *   2. When the host broadcasts `round_result`, the guest applies it.
  *   3. If the host result doesn't arrive within HOST_RESULT_TIMEOUT_MS,
  *      the guest falls back to its local battle result.
+ *   4. If playback is still live, the guest defers that fallback until a hard ceiling.
  *   4. If the guest's local result arrives BEFORE the host broadcasts,
  *      the guest waits (visual-only path).
  *   5. roundNumber guard: stale results from previous rounds are ignored.
@@ -23,6 +24,7 @@ const assert = require('assert/strict');
 function createMockRoom(initialState = {}) {
   let _listeners = [];
   const _state = { ...initialState };
+  const _syncs = [];
   return {
     _emit(key, value) {
       _state[key] = value;
@@ -30,8 +32,13 @@ function createMockRoom(initialState = {}) {
     },
     onStateChange(fn)  { _listeners.push(fn); },
     offStateChange(fn) { _listeners = _listeners.filter(l => l !== fn); },
-    syncState(key, value) { _state[key] = value; return Promise.resolve({ ok: true }); },
+    syncState(key, value) {
+      _state[key] = value;
+      _syncs.push({ key, value });
+      return Promise.resolve({ ok: true });
+    },
     getState()         { return _state; },
+    getSyncs()         { return _syncs.slice(); },
     _listenerCount()   { return _listeners.length; },
   };
 }
@@ -63,25 +70,102 @@ async function testAsync(name, fn) {
 // ── Simulate the guest's onBattleEnd + round_result listener logic ────────────
 // Mirrors game.js _mpStartMPBattle guest block exactly, so tests stay in sync.
 
-function createGuestRoundHandler({ room, onRoundEnd, timeoutMs = 9000, expectedRound = 1 }) {
+function createGuestRoundHandler({
+  room,
+  onRoundEnd,
+  timeoutMs = 9000,
+  expectedRound = 1,
+  deferTimeoutMs = timeoutMs,
+  maxWaitMs = 60000,
+}) {
   let _roundResultHandled = false;
   let _hostResultTimer    = null;
+  let _lastHandledResultPayload = null;
+  let _lastAckSeq = -1;
+  let _lastReadySeq = -1;
+  let _hostResultWaitStartedAt = 0;
 
-  const _applyResult = (guestWon, source) => {
+  const _buildResultSyncPayload = (resultPayload) => {
+    if (!resultPayload) return null;
+    const seq = Number(resultPayload.seq || 0);
+    if (!(seq > 0)) return null;
+    return {
+      roundNumber: resultPayload.roundNumber === undefined ? expectedRound : resultPayload.roundNumber,
+      seq,
+      at: Date.now(),
+    }; 
+  };
+
+  const _sendGuestResultSync = (key, resultPayload, force = false) => {
+    const payload = _buildResultSyncPayload(resultPayload);
+    if (!payload) return false;
+
+    if (key === 'round_result_ack') {
+      if (!force && _lastAckSeq === payload.seq) return false;
+      _lastAckSeq = payload.seq;
+    } else if (key === 'ready_to_continue') {
+      if (!force && _lastReadySeq === payload.seq) return false;
+      _lastReadySeq = payload.seq;
+    }
+
+    room.syncState(key, payload);
+    return true;
+  };
+
+  const _applyResult = (guestWon, source, resultPayload = null) => {
     if (_roundResultHandled) return;
+    if (resultPayload) _lastHandledResultPayload = resultPayload;
     _roundResultHandled = true;
+    _hostResultWaitStartedAt = 0;
     if (_hostResultTimer) { clearTimeout(_hostResultTimer); _hostResultTimer = null; }
     room.offStateChange(_roundResultFn);
+    if (resultPayload) _sendGuestResultSync('round_result_ack', resultPayload);
     onRoundEnd({ guestWon, source });
+    if (resultPayload) _sendGuestResultSync('ready_to_continue', resultPayload);
+  };
+
+  const _shouldDeferHostResultFallback = () => {
+    const phaseEvent = room.getState().phase_event;
+    const roundResult = room.getState().round_result;
+    return !roundResult && phaseEvent?.type === 'playback_start' &&
+      (phaseEvent.roundNumber === undefined || phaseEvent.roundNumber === expectedRound);
+  };
+
+  const _armHostResultTimer = (reason = 'timeout', delayMs = timeoutMs, localWon = false) => {
+    if (_roundResultHandled) return;
+    if (_hostResultTimer) {
+      clearTimeout(_hostResultTimer);
+      _hostResultTimer = null;
+    }
+    if (!_hostResultWaitStartedAt) _hostResultWaitStartedAt = Date.now();
+    _hostResultTimer = setTimeout(() => {
+      if (_roundResultHandled) return;
+
+      const waitedMs = Date.now() - _hostResultWaitStartedAt;
+      if ((reason === 'timeout' || reason === 'timeout-reconnect') && waitedMs < maxWaitMs && _shouldDeferHostResultFallback()) {
+        _armHostResultTimer(reason, deferTimeoutMs, localWon);
+        return;
+      }
+
+      _applyResult(localWon, reason);
+    }, delayMs);
   };
 
   // Mirrors _roundResultFn from game.js (attached BEFORE battle.start)
   const _roundResultFn = (key, value) => {
     if (key !== 'round_result') return;
-    if (_roundResultHandled) return;
+    if (_roundResultHandled) {
+      if (_lastHandledResultPayload &&
+          (value.roundNumber === undefined || value.roundNumber === expectedRound) &&
+          Number(value.seq || 0) === Number(_lastHandledResultPayload.seq || 0)) {
+        _sendGuestResultSync('round_result_ack', value, true);
+        _sendGuestResultSync('ready_to_continue', value, true);
+      }
+      return;
+    }
     // Sequence guard — mirrors game.js
     if (value.roundNumber !== undefined && value.roundNumber !== expectedRound) return;
-    _applyResult(!value.hostWon, 'host');
+    _applyResult(!value.hostWon, 'host', value);
   };
   room.onStateChange(_roundResultFn);
 
@@ -93,14 +177,55 @@ function createGuestRoundHandler({ room, onRoundEnd, timeoutMs = 9000, expectedR
     const cached = room.getState()['round_result'];
     if (cached && cached.hostWon !== undefined &&
         (cached.roundNumber === undefined || cached.roundNumber === expectedRound)) {
-      _applyResult(!cached.hostWon, 'cached');
+      _applyResult(!cached.hostWon, 'cached', cached);
       return;
     }
 
-    _hostResultTimer = setTimeout(() => _applyResult(localWon, 'timeout'), timeoutMs);
+    _armHostResultTimer('timeout', timeoutMs, localWon);
   };
 
   return { onBattleEnd, isHandled: () => _roundResultHandled };
+}
+
+function createHostContinueGate({ room, roundNumber = 1, seq = 1, onAdvance }) {
+  let awaitingAck = true;
+  let awaitingReady = true;
+  let localResolved = false;
+  let advances = 0;
+  let released = false;
+
+  const maybeAdvance = () => {
+    if (released) return false;
+    if (!localResolved || awaitingAck || awaitingReady) return false;
+    released = true;
+    advances++;
+    onAdvance?.();
+    return true;
+  };
+
+  room.onStateChange((key, value) => {
+    if (!value) return;
+    if (Number(value.roundNumber) !== roundNumber || Number(value.seq) !== seq) return;
+    if (key === 'round_result_ack') {
+      awaitingAck = false;
+      maybeAdvance();
+      return;
+    }
+    if (key === 'ready_to_continue') {
+      awaitingReady = false;
+      maybeAdvance();
+    }
+  });
+
+  return {
+    markLocalResolved() {
+      localResolved = true;
+      maybeAdvance();
+    },
+    getAdvances() {
+      return advances;
+    },
+  };
 }
 
 // ── Host broadcast helper (mirrors game.js _mpHandleRoundEnd retry loop) ──────
@@ -146,6 +271,61 @@ test('Host result applied before local battle ends', () => {
   assert.equal(results.length, 1);
   assert.equal(results[0].guestWon, false);
   assert.equal(results[0].source, 'host');
+});
+
+test('Guest sends round_result_ack and ready_to_continue for authoritative results', () => {
+  const room = createMockRoom();
+  const results = [];
+  createGuestRoundHandler({ room, onRoundEnd: (r) => results.push(r), timeoutMs: 5000 });
+
+  room._emit('round_result', { hostWon: true, roundNumber: 1, seq: 7, boardHash: null });
+
+  const syncs = room.getSyncs();
+  assert.equal(results.length, 1);
+  assert.equal(syncs.length, 2, 'Guest should emit ack and ready-to-continue');
+  assert.equal(syncs[0].key, 'round_result_ack');
+  assert.equal(syncs[0].value.seq, 7);
+  assert.equal(syncs[1].key, 'ready_to_continue');
+  assert.equal(syncs[1].value.seq, 7);
+});
+
+test('Host waits for guest ack and ready_to_continue before advancing', () => {
+  const room = createMockRoom();
+  const gate = createHostContinueGate({ room, roundNumber: 1, seq: 7 });
+
+  gate.markLocalResolved();
+  assert.equal(gate.getAdvances(), 0);
+
+  room._emit('round_result_ack', { roundNumber: 1, seq: 7 });
+  assert.equal(gate.getAdvances(), 0, 'Ack alone should not advance');
+
+  room._emit('ready_to_continue', { roundNumber: 1, seq: 7 });
+  assert.equal(gate.getAdvances(), 1, 'Advance should release after both guest signals');
+});
+
+test('Host can release after guest signals arrive before local round settle', () => {
+  const room = createMockRoom();
+  const gate = createHostContinueGate({ room, roundNumber: 1, seq: 7 });
+
+  room._emit('round_result_ack', { roundNumber: 1, seq: 7 });
+  room._emit('ready_to_continue', { roundNumber: 1, seq: 7 });
+  assert.equal(gate.getAdvances(), 0, 'Guest signals should not release before local settle');
+
+  gate.markLocalResolved();
+  assert.equal(gate.getAdvances(), 1, 'Release should happen once local settle completes');
+});
+
+test('Duplicate guest continue signals do not double-advance host', () => {
+  const room = createMockRoom();
+  const gate = createHostContinueGate({ room, roundNumber: 1, seq: 7 });
+
+  gate.markLocalResolved();
+  room._emit('round_result_ack', { roundNumber: 1, seq: 7 });
+  room._emit('ready_to_continue', { roundNumber: 1, seq: 7 });
+  room._emit('round_result_ack', { roundNumber: 1, seq: 7 });
+  room._emit('ready_to_continue', { roundNumber: 1, seq: 7 });
+
+  assert.equal(gate.getAdvances(), 1, 'Host should release only once');
 });
 
 // 2. Inversion
@@ -231,6 +411,48 @@ testAsync('Host result after timeout fallback is ignored', async () => {
 
   assert.equal(results.length, 1);
   assert.equal(results[0].source, 'timeout', 'Timeout result not overridden');
+});
+
+testAsync('Timeout defers while playback_start is still live and host result can still arrive', async () => {
+  const room = createMockRoom({ phase_event: { type: 'playback_start', roundNumber: 1 } });
+  const results = [];
+  const handler = createGuestRoundHandler({
+    room,
+    onRoundEnd: (r) => results.push(r),
+    timeoutMs: 20,
+    deferTimeoutMs: 20,
+    maxWaitMs: 120,
+  });
+
+  handler.onBattleEnd(true);
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(results.length, 0, 'Guest should keep waiting while playback_start is still live');
+
+  room._emit('round_result', { hostWon: true, roundNumber: 1, seq: 9, boardHash: null });
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].guestWon, false);
+  assert.equal(results[0].source, 'host');
+});
+
+testAsync('Timeout still falls back after the hard wait ceiling', async () => {
+  const room = createMockRoom({ phase_event: { type: 'playback_start', roundNumber: 1 } });
+  const results = [];
+  const handler = createGuestRoundHandler({
+    room,
+    onRoundEnd: (r) => results.push(r),
+    timeoutMs: 20,
+    deferTimeoutMs: 20,
+    maxWaitMs: 55,
+  });
+
+  handler.onBattleEnd(true);
+  await new Promise(resolve => setTimeout(resolve, 110));
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].guestWon, true);
+  assert.equal(results[0].source, 'timeout');
 });
 
 // 9. roundNumber guard: stale result from a previous round is ignored

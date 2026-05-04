@@ -78,6 +78,10 @@ At minimum, record these centrally instead of only in local browser storage:
 - unexpected room closes / channel errors
 - client version and platform data for multiplayer faults
 
+Current implementation note:
+`shape_strikers_mp_telemetry_log` now stores a structured client-side ring buffer for room lifecycle,
+resync, saved-session rejection, and desync events. Central upload / aggregation is still pending.
+
 ### Suggested Data To Persist Server-Side
 
 - active room metadata
@@ -97,6 +101,15 @@ Before treating multiplayer as release-ready beyond the current testing phase, d
 - full host-loss survival
 
 If the target includes Steam / console readiness, assume we need at least full crash/reload recovery and centralized telemetry, and very likely host-loss survival too.
+
+### Current Hardening Track
+
+- [x] add an explicit room lifecycle state model (`CONNECTING`, `ACTIVE`, `STALE`, `DISCONNECTED`, `RECONNECTING`, `RESYNCING`) and drive the HUD from it
+- [x] add heartbeat / last-heard tracking so stale detection does not rely on presence events alone
+- [x] define reconnect identity and rejoin tokens for full reload recovery without trusting only transient tab state
+- [x] split partial replay resume from full authoritative resync with explicit policy per failure mode
+- [ ] capture reconnect, resync, disconnect, and desync telemetry centrally instead of only in browser logs
+- [ ] decide whether release hardening continues on host authority + migration, or pivots to a dedicated authoritative match service
 
 ## Priority 1: Audio Audit And Mobile Mute Regression
 

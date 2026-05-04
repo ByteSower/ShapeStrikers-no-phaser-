@@ -156,8 +156,10 @@
 - [x] Deterministic battle RNG — `BattleSystem.setSeed()` installs mulberry32; single-player unaffected
 - [x] Battle hash verification — djb2 hash of final board state broadcast and compared; desync logged to localStorage
 - [x] Match end screen — Victory/Defeat/Draw with final score, Bo5 dots, Rematch + Return buttons
+- [x] Quit and host-disconnect policy — explicit quits end the Bo5 immediately; guest refresh/reload stays reconnectable, but any confirmed host disconnect now ends the set for both players and returns them to title
+- [x] Host cold-resume policy — stale host saved sessions are cleared on reload until a dedicated host resume flow exists
 - [x] Rematch flow — room state `mp_rematch_request` handshake; both must agree
-- [x] Disconnect handling — 10s grace notice with countdown; prep-phase forfeit on timeout; auto-cancel on reconnect
+- [x] Disconnect handling — guest disconnects still use the grace notice + reconnect countdown; guest reload resume now waits longer than the room disconnect grace before self-aborting; host disconnects now terminate the match after the room disconnect hook fires; page refresh still releases realtime channels proactively before guest reconnect resume
 - [x] Opponent-ready audio cue — `objective` SFX fires when opponent locks in
 - [x] Debug overlay (localhost only) — `Ctrl+Shift+D` toggles real-time Room event log panel
 - [x] `supabase_schema.sql` — `mp_queue`, `mp_rooms`, `mp_room_state` tables with RLS policies

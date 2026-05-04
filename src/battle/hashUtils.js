@@ -76,6 +76,12 @@ const HashUtils = (() => {
    * @param {string} remoteHash
    */
   function warnMismatch(localHash, remoteHash) {
+    if (typeof MultiplayerTelemetry !== 'undefined' && typeof MultiplayerTelemetry.record === 'function') {
+      MultiplayerTelemetry.record('desync.hash_mismatch', {
+        localHash: localHash == null ? null : String(localHash),
+        remoteHash: remoteHash == null ? null : String(remoteHash),
+      }, { level: 'warn' });
+    }
     console.warn(
       `[HashUtils] Battle hash mismatch — local: ${localHash}, remote: ${remoteHash}.` +
       ' This indicates simulation divergence. Host result is authoritative.'

@@ -133,5 +133,86 @@ async function test(name, fn) {
     ]);
   });
 
+  await test('Replay stop reports stopped and a later resume can continue from the checkpoint tail', async () => {
+    const firstRunCalls = [];
+    const replayLog = {
+      version: 1,
+      seed: 777,
+      events: [
+        {
+          seq: 1,
+          turn: 0,
+          type: 'battle_start',
+          playerUnits: [{ id: 'p1', row: 4, col: 0, hp: 20, maxHp: 20 }],
+          enemyUnits: [{ id: 'e1', row: 0, col: 0, hp: 20, maxHp: 20 }],
+        },
+        {
+          seq: 2,
+          turn: 1,
+          type: 'turn_start',
+          unitId: 'p1',
+          playerUnits: [{ id: 'p1', row: 4, col: 0, hp: 20, maxHp: 20 }],
+          enemyUnits: [{ id: 'e1', row: 0, col: 0, hp: 20, maxHp: 20 }],
+        },
+        { seq: 3, turn: 1, type: 'unit_attack', attackerId: 'p1', targetId: 'e1' },
+        {
+          seq: 4,
+          turn: 2,
+          type: 'turn_start',
+          unitId: 'e1',
+          playerUnits: [{ id: 'p1', row: 4, col: 0, hp: 20, maxHp: 20 }],
+          enemyUnits: [{ id: 'e1', row: 1, col: 0, hp: 8, maxHp: 20 }],
+        },
+        { seq: 5, turn: 2, type: 'unit_move', unitId: 'e1', fromRow: 1, fromCol: 0, toRow: 2, toCol: 0 },
+        { seq: 6, turn: 2, type: 'battle_end', playerWon: true },
+      ],
+    };
+
+    const firstPlayer = BattleReplay.createPlayer({
+      sleep: async () => { firstRunCalls.push('sleep'); },
+    });
+
+    const stoppedResult = await firstPlayer.play(replayLog, {
+      onBattleStart: () => firstRunCalls.push('battle_start'),
+      onTurnStart: (evt) => {
+        firstRunCalls.push(`turn_start:${evt.unitId}`);
+        if (evt.seq === 4) firstPlayer.stop();
+      },
+      onUnitAttack: () => firstRunCalls.push('unit_attack'),
+      onUnitMove: () => firstRunCalls.push('unit_move'),
+      onBattleEnd: () => firstRunCalls.push('battle_end'),
+      waitForAnimations: async () => firstRunCalls.push('wait'),
+    }, { turnDelay: 25 });
+
+    assert.equal(stoppedResult.stopped, true, 'Stopped replay should report stopped=true');
+    assert.deepEqual(firstRunCalls, [
+      'battle_start',
+      'turn_start:p1',
+      'unit_attack',
+      'wait',
+      'sleep',
+      'turn_start:e1',
+    ]);
+
+    const resumedCalls = [];
+    const resumedPlayer = BattleReplay.createPlayer({
+      sleep: async () => { resumedCalls.push('sleep'); },
+    });
+
+    const resumedResult = await resumedPlayer.play(replayLog, {
+      onBattleStart: (evt) => resumedCalls.push(`battle_start:${evt.resumed ? evt.checkpointSeq : 0}`),
+      onUnitMove: () => resumedCalls.push('unit_move'),
+      onBattleEnd: () => resumedCalls.push('battle_end'),
+      waitForAnimations: async () => resumedCalls.push('wait'),
+    }, { startSeq: 4, turnDelay: 25 });
+
+    assert.equal(resumedResult.stopped, false, 'Resumed replay should complete normally');
+    assert.deepEqual(resumedCalls, [
+      'battle_start:4',
+      'unit_move',
+      'battle_end',
+    ]);
+  });
+
   console.log('\nDone.\n');
 })();
