@@ -1089,9 +1089,7 @@ const PATCH_NOTES = [
     notes: [
       '🔊 Match music handoff — multiplayer now stops the title track and starts gameplay music when a set begins',
       '📱 Mobile/browser retry — blocked music and key match cues retry on the next user gesture instead of failing silently',
-      '🔇 Stronger mute behavior — muting now silences active cloned SFX as well as the current music track',
       '✅ Ready cue dedupe — opponent-ready audio no longer replays on duplicate ready snapshots after reconnect or resync',
-      '🧪 Regression coverage — automated tests now cover guest resume, host disconnect exits, and audio unlock/mute behavior',
     ],
   },
   {
