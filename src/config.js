@@ -1149,11 +1149,7 @@ const PATCH_NOTES = [
     notes: [
       '👥 Live online player count on the title screen — see who\'s playing right now',
       '💬 Global real-time chat panel — tap 💬 in the bottom-left corner to join the conversation',
-      '🤓 Alot of QOL Changes and Bug Fixes',
-      
-    ],
-  },
-  {
+      '🤓 A lot of QOL Changes and Bug Fixes',
     version: '0.9.2',
     date: 'April 21, 2026',
     title: 'Void Campaign Overhaul & Balance Pass',
@@ -1271,7 +1267,7 @@ const PATCH_NOTES = [
       '👾 2 new bosses: Void Leviathan (W20) and Void Architect (W25)',
       '⚡ Hard mode scaling for waves 16–25',
       '🟣 Void element units available in Void Campaign',
-       '🤓 Alot of QOL Changes and Bug Fixes',
+       '🤓 A lot of QOL Changes and Bug Fixes',
       
     ],
   },

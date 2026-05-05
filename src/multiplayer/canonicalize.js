@@ -80,9 +80,7 @@ const Canonicalize = (() => {
    * @returns {{ army1: object[], army2: object[], iAmArmy1: boolean }}
    */
   function canonicalizeArmies(myPlayerId, oppPlayerId, myUnits, oppUnitData, mkUnit, UNIT_MAP) {
-    const iAmArmy1 = army1Owner(myPlayerId, oppPlayerId) === 'A'
-      ? myPlayerId <= oppPlayerId
-      : myPlayerId > oppPlayerId;
+    const iAmArmy1 = army1Owner(myPlayerId, oppPlayerId) === 'A';
 
     // Rebuild opponent units as proper unit objects in canonical positions
     const oppUnits = (oppUnitData || []).map(data => {
