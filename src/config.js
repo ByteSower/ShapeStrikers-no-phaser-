@@ -899,8 +899,10 @@ const WAVES = { length: GAME_CONFIG.waveCount || 15 };
 
 // ─── Shape drawing helpers (Canvas 2D) ────────────────────────────────────────
 const SHAPE_COLORS = {
-  red:    '#ff4422', blue:   '#3388ff', green:  '#44bb33', yellow: '#ffee22',
-  purple: '#aa44ff', orange: '#ff8822', cyan:   '#22ddff', pink:   '#ff66aa',
+  red:    '#ff4422', blue:   '#3388ff',
+  green:  '#44bb33', yellow: '#ffee22',
+  purple: '#aa44ff', orange: '#ff8822',
+  cyan:   '#22ddff', pink:   '#ff66aa',
   white:  '#ddeeff', dark:   '#334455',
 };
 
@@ -1083,6 +1085,15 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.5',
+    date: 'May 5, 2026',
+    title: '🚑 Startup Hotfix',
+    notes: [
+      '🚑 Boot recovery — fixed a malformed config merge that blocked the game from loading for players',
+      '🧪 Validation pass — startup flow and the full automated suite were rechecked after the repair',
+    ],
+  },
+  {
     version: '1.0.4',
     date: 'May 4, 2026',
     title: '🔊 Multiplayer Audio Reliability',
@@ -1150,6 +1161,9 @@ const PATCH_NOTES = [
       '👥 Live online player count on the title screen — see who\'s playing right now',
       '💬 Global real-time chat panel — tap 💬 in the bottom-left corner to join the conversation',
       '🤓 A lot of QOL Changes and Bug Fixes',
+    ],
+  },
+  {
     version: '0.9.2',
     date: 'April 21, 2026',
     title: 'Void Campaign Overhaul & Balance Pass',

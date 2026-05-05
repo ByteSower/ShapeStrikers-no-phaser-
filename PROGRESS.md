@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: May 4, 2026
+> **Last Updated**: May 5, 2026
 
 ---
 
@@ -163,6 +163,7 @@
 - [x] Opponent-ready audio cue — `objective` SFX fires when opponent locks in
 - [x] Opponent-ready cue dedupe — repeated ready snapshots after reconnect/resync no longer replay the ready SFX
 - [x] Multiplayer lifecycle regression coverage — automated tests now cover guest saved-session resume, guest-observed host disconnect, and local host channel-loss termination
+- [x] Startup hotfix — repaired a malformed `config.js` merge so the game boots and players can enter again after the latest coverage sync
 - [x] Debug overlay (localhost only) — `Ctrl+Shift+D` toggles real-time Room event log panel
 - [x] `supabase_schema.sql` — `mp_queue`, `mp_rooms`, `mp_room_state` tables with RLS policies
 
@@ -279,6 +280,7 @@
 | Multiplayer guest resume self-aborted before room grace elapsed | Resume bootstrap timeout now derives from room disconnect grace with an explicit buffer | 9.2 |
 | Multiplayer host-loss behavior only covered by helper tests | Added game-level lifecycle regression tests for guest resume and both terminal host-disconnect flows | 9.2 |
 | Multiplayer title music persisted into live matches and mute missed active sounds on mobile | MP entry now swaps to gameplay music, audio retries on gesture, and mute stops active cloned SFX | 9 |
+| Latest coverage merge malformed `config.js`, blocking game boot and title entry | Restored the broken `PATCH_NOTES` boundaries and `SHAPE_COLORS` map, then revalidated startup | 9.2 |
 
 ---
 
