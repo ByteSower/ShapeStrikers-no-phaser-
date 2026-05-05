@@ -2468,6 +2468,10 @@ html, body {
   flex-wrap: wrap;
 }
 
+#btn-mp-quit {
+  margin-left: auto;
+}
+
 .mp-ready-timer {
   font-size: 22px;
   font-weight: 900;
@@ -2642,6 +2646,7 @@ html, body {
 
   /* Ready bar */
   .mp-ready-bar   { gap: 8px; justify-content: center; }
+  #btn-mp-quit    { margin-left: 0; }
   .mp-ready-timer { font-size: 18px; }
 
   /* HUD score — smaller on mobile */

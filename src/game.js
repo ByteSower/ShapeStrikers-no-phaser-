@@ -41,12 +41,41 @@ const Game = (() => {
   let _mpRoomWatchTimer = null;
   let _mpLastRoomWatchState = 'closed';
   let _mpReconnectAttemptTimer = null;
+  let _mpReplayResumeTimer = null;
+  let _mpReplayResumeCountdownTimer = null;
+  let _mpPausedPlaybackState = null;
+  let _mpQuitFlowActive = false;
+  let _mpMatchEndAutoReturnTimer = null;
   let _mpGuestResumeReplay = () => false;
+  let _mpGuestBattleSessionCleanup = () => {};
+  let _mpGuestBattleSessionRound = -1;
+  let _mpHostRoundSyncFn = null;
+  let _mpRoomOpponentDisconnectFn = null;
+  let _mpRoomReconnectSyncFn = null;
+  let _mpResumeBattleFromRoomStateFn = null;
+  let _mpExpectedRoundResultRound = -1;
+  let _mpExpectedRoundResultSeq = -1;
+  let _mpAwaitingGuestResultAck = false;
+  let _mpAwaitingGuestReadyToContinue = false;
+  let _mpHostLocalRoundResolved = false;
+  let _mpLastRoundResultAckPayload = null;
+  let _mpLastReadyToContinuePayload = null;
+  let _mpLastAuthoritativeStatePayload = null;
+  let _mpOwnPrepRevision = 0;
+  let _mpDebugReplayHashOverride = null;
+  let _mpPendingResumeAuthoritativeRequest = false;
+  let _mpLastResumeAuthoritativeStateAt = 0;
+  let _mpResumeBootstrapTimer = null;
+
+  const MP_PREP_SNAPSHOT_STORAGE_KEY = 'shape_strikers_mp_prep_snapshot';
+  const MP_RESUME_BOOTSTRAP_BUFFER_MS = 2_000;
 
   const MP_PHASE_EVENTS = Object.freeze({
     PREP_END: 'prep_end',
     BATTLE_SCRIPT_READY: 'battle_script_ready',
     PLAYBACK_START: 'playback_start',
+    PLAYBACK_PAUSED: 'playback_paused',
+    PLAYBACK_RESUME_PENDING: 'playback_resume_pending',
     RESULT_SHOW: 'result_show',
   });
 
@@ -78,6 +107,390 @@ const Game = (() => {
     const baseSlots   = GAME_CONFIG.maxUnits || 7;
     const armyLevel   = state.upgradeLevels['army_expansion'] || 0;
     return baseSlots + armyLevel;  // army_expansion adds 1 slot per level
+  }
+
+  function _mpOwnSlot() {
+    if (typeof Room === 'undefined') return null;
+    return Room.isHost?.() ? 'p1' : 'p2';
+  }
+
+  function _mpOppSlot() {
+    if (typeof Room === 'undefined') return null;
+    return Room.isHost?.() ? 'p2' : 'p1';
+  }
+
+  function _mpOwnPrepStateKey() {
+    const slot = _mpOwnSlot();
+    return slot ? `prep_${slot}` : null;
+  }
+
+  function _mpOwnReadyStateKey() {
+    const slot = _mpOwnSlot();
+    return slot ? `ready_${slot}` : null;
+  }
+
+  function _mpReadyPayloadMatchesRound(value, roundNumber) {
+    if (value === true) return true;
+    if (!value || value.ready !== true) return false;
+    if (value.roundNumber === undefined) return true;
+    return Number(value.roundNumber) === Number(roundNumber);
+  }
+
+  function _mpPayloadMatchesRound(value, roundNumber) {
+    if (!value || roundNumber === undefined || roundNumber === null) return !!value;
+    const payloadRound = value.roundNumber !== undefined ? Number(value.roundNumber) : Number(value.round);
+    if (!Number.isFinite(payloadRound) || payloadRound <= 0) return true;
+    return payloadRound === Number(roundNumber);
+  }
+
+  function _mpOppReadyStateKey() {
+    const slot = _mpOppSlot();
+    return slot ? `ready_${slot}` : null;
+  }
+
+  function _mpRenderPrepState() {
+    if (typeof Grid !== 'undefined') {
+      Grid.build();
+      Grid.onClick = _handleTileClick;
+      Grid.onRightClick = _handleTileRightClick;
+      Grid.clearSelection?.();
+      Grid.clearHighlights?.();
+      for (const unit of state.playerUnits) {
+        Grid.placeUnit(unit, unit.row, unit.col);
+        Grid.updateUpgradeIcons(unit.row, unit.col, state.upgradeLevels);
+      }
+    }
+
+    state.selectedShopIdx = null;
+    state.selectedUnit = null;
+    UI.clearUnitDetail();
+    UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
+    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
+    UI.updateSynergies(state.playerUnits);
+    _refreshSynergyIcons();
+    _updateRefreshBtn();
+    _mpRefreshRoundHud();
+    _mpRefreshBo5Dots('mp-bo5-tracker');
+    _refreshHUD();
+
+    if (typeof Room !== 'undefined') {
+      const roomState = Room.getState();
+      const currentRound = _mpState.round || state.wave;
+      const ownReady = _mpReadyPayloadMatchesRound(roomState[_mpOwnReadyStateKey()], currentRound);
+      const oppReady = _mpReadyPayloadMatchesRound(roomState[_mpOppReadyStateKey()], currentRound);
+      const readyBtn = document.getElementById('btn-mp-ready');
+      const oppStatus = document.getElementById('mp-ready-opp-status');
+      if (readyBtn) {
+        readyBtn.disabled = ownReady;
+        readyBtn.textContent = ownReady ? '✅ Waiting…' : '✅ Ready';
+      }
+      if (oppStatus) {
+        oppStatus.textContent = oppReady ? '✅ Opponent ready!' : 'Waiting for opponent…';
+        oppStatus.classList.toggle('ready', oppReady);
+      }
+    }
+  }
+
+  function _mpSaveOwnPrepSnapshot(snapshot) {
+    if (!_mpMode || typeof Room === 'undefined') return false;
+    const roomId = Room.getRoomId?.();
+    const slot = _mpOwnSlot();
+    if (!roomId || !slot) return false;
+
+    try {
+      sessionStorage.setItem(MP_PREP_SNAPSHOT_STORAGE_KEY, JSON.stringify({
+        roomId,
+        slot,
+        snapshot,
+        savedAt: Date.now(),
+      }));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function _mpLoadOwnPrepSnapshot() {
+    if (typeof Room === 'undefined') return null;
+    const roomId = Room.getRoomId?.();
+    const slot = _mpOwnSlot();
+    if (!roomId || !slot) return null;
+
+    try {
+      const raw = sessionStorage.getItem(MP_PREP_SNAPSHOT_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.roomId !== roomId || parsed.slot !== slot || !parsed.snapshot) return null;
+      return parsed.snapshot;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function _mpClearOwnPrepSnapshot() {
+    try { sessionStorage.removeItem(MP_PREP_SNAPSHOT_STORAGE_KEY); } catch (_) {}
+  }
+
+  function _mpResolveRoomStateRoundNumber(roomState = null) {
+    const source = roomState || ((typeof Room !== 'undefined' && typeof Room.getState === 'function') ? Room.getState() : null) || {};
+    if (typeof MultiplayerAuthorityState !== 'undefined' && typeof MultiplayerAuthorityState.resolveRoundNumber === 'function') {
+      return MultiplayerAuthorityState.resolveRoundNumber(source);
+    }
+    return 0;
+  }
+
+  function _mpGetSavedResumeContext() {
+    if (typeof Room === 'undefined' || typeof Room.getSavedSession !== 'function') return null;
+    return Room.getSavedSession()?.resumeContext || null;
+  }
+
+  function _mpResolveResumeTarget(roomState = null) {
+    const source = roomState || ((typeof Room !== 'undefined' && typeof Room.getState === 'function') ? Room.getState() : null) || {};
+    const savedSnapshot = _mpLoadOwnPrepSnapshot();
+    const snapshotRound = Number(savedSnapshot?.roundNumber || 0);
+    const localWave = Number(state?.wave || 0);
+    const trackedRound = Number(_mpState?.round || 0);
+    const liveRound = Number(_mpGetCurrentRoundNumber() || 0);
+
+    if (typeof MultiplayerAuthorityState !== 'undefined' && typeof MultiplayerAuthorityState.resolveResumeTarget === 'function') {
+      return MultiplayerAuthorityState.resolveResumeTarget({
+        savedResumeContext: _mpGetSavedResumeContext(),
+        roomState: source,
+        snapshotRound,
+        localWave,
+        trackedRound,
+        liveRound,
+      });
+    }
+
+    const roundNumber = Math.max(snapshotRound, _mpResolveRoomStateRoundNumber(source), localWave, trackedRound, liveRound, 0);
+    return {
+      roundNumber,
+      checkpointSeq: Number(source?.playback_checkpoint?.seq || 0),
+      requestedMode: 'auto',
+    };
+  }
+
+  function _mpApplySavedResumeContext(resumeContext = null) {
+    const roundNumber = Number(resumeContext?.roundNumber || 0);
+    if (roundNumber <= 0 || !state) return false;
+
+    const roundChanged = roundNumber !== Number(_mpState.round || 0) || roundNumber !== Number(state.wave || 0);
+    _mpState.round = roundNumber;
+    state.wave = roundNumber;
+    if (roundChanged) {
+      _mpRefreshRoundHud();
+      _mpRefreshBo5Dots('mp-bo5-tracker');
+    }
+    return true;
+  }
+
+  function _mpGetRoomDisconnectGraceMs() {
+    const roomGraceMs = Number((typeof Room !== 'undefined' && Room) ? Room.DISCONNECT_GRACE_MS : 0);
+    return Number.isFinite(roomGraceMs) && roomGraceMs > 0 ? roomGraceMs : 10_000;
+  }
+
+  function _mpGetResumeBootstrapTimeoutMs() {
+    return _mpGetRoomDisconnectGraceMs() + MP_RESUME_BOOTSTRAP_BUFFER_MS;
+  }
+
+  function getMultiplayerPolicy() {
+    return {
+      roomDisconnectGraceMs: _mpGetRoomDisconnectGraceMs(),
+      guestResumeBootstrapTimeoutMs: _mpGetResumeBootstrapTimeoutMs(),
+      guestResumeBootstrapBufferMs: MP_RESUME_BOOTSTRAP_BUFFER_MS,
+    };
+  }
+
+  function _mpResolveResumeRoundNumber() {
+    return Number(_mpResolveResumeTarget().roundNumber || 0);
+  }
+
+  function _mpHydrateLiveRoundState(payload = null, roomState = null) {
+    if (!_mpMode || !state || typeof MultiplayerGame === 'undefined' || typeof MultiplayerGame.hydrateMatchState !== 'function') {
+      return false;
+    }
+
+    const sourceState = roomState || ((typeof Room !== 'undefined' && typeof Room.getState === 'function') ? Room.getState() : null) || {};
+    const roundNumber = Number(payload?.roundNumber || payload?.round || _mpResolveRoomStateRoundNumber(sourceState) || 0);
+    if (roundNumber <= 0) return false;
+
+    const isHost = (typeof Room !== 'undefined') && !!Room.isHost?.();
+    const localGold = Number(isHost ? sourceState.prep_p1?.gold : sourceState.prep_p2?.gold);
+    const roundChanged = roundNumber !== Number(_mpState.round || 0) || roundNumber !== Number(state.wave || 0);
+
+    _mpState.round = roundNumber;
+    state.wave = roundNumber;
+    MultiplayerGame.hydrateMatchState({
+      round: roundNumber,
+      gold: Number.isFinite(localGold) && localGold >= 0 ? localGold : undefined,
+    });
+
+    if (roundChanged) {
+      _mpRefreshRoundHud();
+      _mpRefreshBo5Dots('mp-bo5-tracker');
+    }
+
+    return true;
+  }
+
+  function _mpMaybeRequestResumeAuthoritativeState() {
+    if (!_mpPendingResumeAuthoritativeRequest || !_mpMode) return false;
+    if (typeof Room === 'undefined' || typeof MultiplayerAuthorityState === 'undefined') return false;
+    if (Room.getConnectionState?.() !== 'SUBSCRIBED') return false;
+
+    const roomState = Room.getState();
+    const resumeTarget = _mpResolveResumeTarget(roomState);
+    const roundNumber = Number(resumeTarget.roundNumber || 0);
+    const hasRoundState =
+      _mpPayloadMatchesRound(roomState.prep_state, roundNumber) ||
+      _mpPayloadMatchesRound(roomState.battle_replay, roundNumber) ||
+      _mpPayloadMatchesRound(roomState.phase_event, roundNumber) ||
+      _mpPayloadMatchesRound(roomState.round_result, roundNumber);
+
+    _mpPendingResumeAuthoritativeRequest = false;
+    if (hasRoundState) {
+      _clearMPResumeBootstrapTimer();
+      return false;
+    }
+
+    const payload = MultiplayerAuthorityState.buildRequest({
+      roundNumber,
+      reason: 'reload_resume',
+      mode: resumeTarget.requestedMode || MultiplayerAuthorityState.getRequestModeForReason('reload_resume'),
+      checkpointSeq: Number(resumeTarget.checkpointSeq || 0),
+    });
+    Room.beginResync?.('reload_resume_authoritative_request', { roundNumber });
+    const requestResult = Room.syncState('request_authoritative_state', payload);
+    if (requestResult && typeof requestResult.then === 'function') {
+      requestResult.then((result) => {
+        if (!result?.ok) {
+          Room.endResync?.('reload_resume_authoritative_request_failed', { roundNumber });
+        }
+      }).catch(() => {
+        Room.endResync?.('reload_resume_authoritative_request_failed', { roundNumber });
+      });
+    }
+    console.info(`[MP:R${roundNumber || '?'}] Requested authoritative_state after reload resume.`);
+    return true;
+  }
+
+  function _mpApplyAuthoritativeMatchState(matchState) {
+    if (!matchState || typeof Room === 'undefined') return false;
+
+    const roundNumber = Number(matchState.roundNumber || matchState.round || 0);
+    const hostScores = matchState.scoresBeforeResult || matchState.scores || {};
+    const resolvedHostScores = matchState.scores || hostScores;
+    const isHost = !!Room.isHost?.();
+    const myScore = Math.max(0, Number(isHost ? hostScores.my : hostScores.opp) || 0);
+    const oppScore = Math.max(0, Number(isHost ? hostScores.opp : hostScores.my) || 0);
+    const resolvedMyScore = Math.max(0, Number(isHost ? resolvedHostScores.my : resolvedHostScores.opp) || 0);
+    const resolvedOppScore = Math.max(0, Number(isHost ? resolvedHostScores.opp : resolvedHostScores.my) || 0);
+    const hasResolvedRoundResult =
+      resolvedMyScore !== myScore || resolvedOppScore !== oppScore;
+    const goldBySlot = matchState.goldBySlot || {};
+    const localGold = Number(isHost ? goldBySlot.p1 : goldBySlot.p2);
+
+    if (roundNumber > 0) _mpState.round = roundNumber;
+    _mpState.myScore = myScore;
+    _mpState.oppScore = oppScore;
+
+    if (typeof MultiplayerGame !== 'undefined' && typeof MultiplayerGame.hydrateMatchState === 'function') {
+      MultiplayerGame.hydrateMatchState({
+        round: roundNumber,
+        myScore,
+        oppScore,
+        gold: Number.isFinite(localGold) ? localGold : undefined,
+        resolvedRoundNumber: hasResolvedRoundResult ? roundNumber : undefined,
+        resolvedMyScore: hasResolvedRoundResult ? resolvedMyScore : undefined,
+        resolvedOppScore: hasResolvedRoundResult ? resolvedOppScore : undefined,
+      });
+    }
+
+    _mpRefreshRoundHud();
+    _mpRefreshBo5Dots('mp-bo5-tracker');
+    return true;
+  }
+
+  function _mpMaybeApplyResumeAuthoritativeState(roomState, roundNumber) {
+    if (!_mpMode || typeof Room === 'undefined' || typeof MultiplayerAuthorityState === 'undefined') return false;
+
+    const payload = roomState?.authoritative_state;
+    if (!payload || !MultiplayerAuthorityState.matchesRound(payload, roundNumber)) return false;
+
+    const payloadAt = Number(payload.at || 0);
+    if (payloadAt > 0 && payloadAt === _mpLastResumeAuthoritativeStateAt) return false;
+
+    const entries = MultiplayerAuthorityState.getEntries(payload);
+    _mpLastResumeAuthoritativeStateAt = payloadAt > 0 ? payloadAt : Date.now();
+    if (!entries.length) {
+      Room.endResync?.('reload_resume_authoritative_empty', { roundNumber });
+      return false;
+    }
+
+    _clearMPResumeBootstrapTimer();
+    _mpApplyAuthoritativeMatchState(payload.meta?.matchState);
+    console.info(`[MP:R${roundNumber || '?'}] Resume bootstrap: applying authoritative_state bundle (${entries.length} keys).`);
+    for (const entry of entries) {
+      Room.applyState(entry.key, entry.value, 'authoritative_state');
+    }
+    Room.endResync?.('reload_resume_authoritative_applied', { roundNumber, keys: entries.length });
+    if (state?.phase === 'prep') _mpMaybeRestoreOwnPrepState(true);
+    return true;
+  }
+
+  function _mpSyncOwnPrepState(incrementRevision = false) {
+    if (!_mpMode || state?.phase !== 'prep' || typeof Room === 'undefined' || typeof MultiplayerPrepState === 'undefined') return false;
+    const key = _mpOwnPrepStateKey();
+    if (!key) return false;
+    if (incrementRevision) _mpOwnPrepRevision++;
+    const payload = MultiplayerPrepState.build({
+      roundNumber: _mpState.round || state.wave,
+      revision: _mpOwnPrepRevision,
+      gold: state.gold,
+      refreshesLeft: state.refreshesLeft,
+      upgradeLevels: state.upgradeLevels,
+      shopUnits: state.shopUnits,
+      playerUnits: state.playerUnits,
+    });
+    Room.syncState(key, payload);
+    _mpSaveOwnPrepSnapshot(payload);
+    return true;
+  }
+
+  function _mpMaybeRestoreOwnPrepState(force = false) {
+    if (!_mpMode || state?.phase !== 'prep' || typeof Room === 'undefined' || typeof MultiplayerPrepState === 'undefined') return false;
+    const key = _mpOwnPrepStateKey();
+    const snapshot = (key ? Room.getState()[key] : null) || _mpLoadOwnPrepSnapshot();
+    if (!snapshot) return false;
+
+    const restored = MultiplayerPrepState.inflate(snapshot, {
+      definitions: UNIT_DEFINITIONS,
+      createUnit: (def, row, col, isEnemy) => _mkUnit(def, row, col, isEnemy),
+    });
+    if (!restored) return false;
+
+    const snapshotRound = Number(restored.roundNumber || snapshot.roundNumber || 0);
+    const snapshotRevision = Math.max(0, Number(restored.revision ?? snapshot.revision) || 0);
+    const localRound = Number(_mpState.round || state.wave || 0);
+    if (!force) {
+      if (snapshotRound > 0 && localRound > snapshotRound) return false;
+      if (snapshotRound === localRound && snapshotRevision <= _mpOwnPrepRevision) return false;
+    }
+
+    if (snapshotRound > 0) {
+      state.wave = snapshotRound;
+      _mpState.round = snapshotRound;
+    }
+    state.gold = restored.gold;
+    state.refreshesLeft = restored.refreshesLeft;
+    state.upgradeLevels = restored.upgradeLevels || {};
+    state.shopUnits = Array.isArray(restored.shopUnits) && restored.shopUnits.length ? restored.shopUnits : state.shopUnits;
+    state.playerUnits = Array.isArray(restored.playerUnits) ? restored.playerUnits : [];
+    _mpOwnPrepRevision = snapshotRevision;
+    nextUnitId = Math.max(nextUnitId, state.playerUnits.reduce((maxId, unit) => Math.max(maxId, Number(unit.id) || 0), 0) + 1);
+    _mpRenderPrepState();
+    return true;
   }
 
   // ── HUD refresh helper ─────────────────────────────────────────────────────
@@ -598,6 +1011,7 @@ const Game = (() => {
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
     UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
     _refreshHUD();
+    _mpSyncOwnPrepState(true);
     _checkSoftLock();
   }
 
@@ -685,6 +1099,7 @@ const Game = (() => {
       UI.showMessage('');
       _refreshSynergyIcons();
       _refreshHUD();
+      _mpSyncOwnPrepState(true);
 
       // Contextual tips
       _showContextualTip('first_unit_placed');
@@ -707,6 +1122,7 @@ const Game = (() => {
       _refreshSynergyIcons();
       state.selectedUnit = null;
       UI.showMessage('');
+      _mpSyncOwnPrepState(true);
       return;
     }
 
@@ -1365,6 +1781,313 @@ const Game = (() => {
     return payload;
   }
 
+  function _clearMPReplayResumeTimers() {
+    if (_mpReplayResumeTimer) {
+      clearTimeout(_mpReplayResumeTimer);
+      _mpReplayResumeTimer = null;
+    }
+    if (_mpReplayResumeCountdownTimer) {
+      clearInterval(_mpReplayResumeCountdownTimer);
+      _mpReplayResumeCountdownTimer = null;
+    }
+  }
+
+  function _mpShowDisconnectNotice(message, timerText = '') {
+    const notice = document.getElementById('mp-disconnect-notice');
+    const msgEl = document.getElementById('mp-disconnect-msg');
+    const timerEl = document.getElementById('mp-disconnect-timer');
+    if (notice) notice.classList.remove('hidden');
+    if (msgEl && typeof message === 'string') msgEl.textContent = message;
+    if (timerEl) timerEl.textContent = timerText || '';
+  }
+
+  function _mpHideDisconnectNotice() {
+    _clearMPReplayResumeTimers();
+    const notice = document.getElementById('mp-disconnect-notice');
+    const timerEl = document.getElementById('mp-disconnect-timer');
+    if (notice) notice.classList.add('hidden');
+    if (timerEl) timerEl.textContent = '';
+  }
+
+  function _clearMPMatchEndAutoReturnTimer() {
+    if (_mpMatchEndAutoReturnTimer) {
+      clearTimeout(_mpMatchEndAutoReturnTimer);
+      _mpMatchEndAutoReturnTimer = null;
+    }
+  }
+
+  function _mpCleanupBattleForImmediateExit() {
+    _clearMPReplayResumeTimers();
+    _mpPausedPlaybackState = null;
+    _mpHideDisconnectNotice();
+    document.getElementById('mp-reconnect-banner')?.classList.add('hidden');
+    _stopMPRoomWatch();
+    if (_mpReplayPlayer && _mpReplayPlayer.isPlaying()) _mpReplayPlayer.stop();
+    _clearMPGuestBattleSession('match-quit');
+    if (battle) battle.stop();
+    _restorePlayerPositions();
+    _cleanupBattleArtifacts();
+  }
+
+  function _mpBuildQuitPayload() {
+    const isHost = typeof Room !== 'undefined' && !!Room.isHost?.();
+    return {
+      seat: isHost ? 'host' : 'guest',
+      roundNumber: _mpGetCurrentRoundNumber(),
+      phase: state?.phase || null,
+      at: Date.now(),
+    };
+  }
+
+  function _mpHandleMatchQuit(payload, source = 'remote') {
+    if (!_mpMode || _mpQuitFlowActive || !payload) return false;
+
+    _mpQuitFlowActive = true;
+    _mpCleanupBattleForImmediateExit();
+
+    const isHost = typeof Room !== 'undefined' && !!Room.isHost?.();
+    const localSeat = isHost ? 'host' : 'guest';
+    const localQuitter = payload.seat === localSeat;
+    const winner = localQuitter ? 'opponent' : 'me';
+    const meta = {
+      reason: 'quit',
+      source,
+      quitter: localQuitter ? 'me' : 'opponent',
+      roundNumber: Number(payload.roundNumber || _mpGetCurrentRoundNumber() || 0) || 0,
+    };
+
+    if (typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isActive()) {
+      if (!MultiplayerGame.forceMatchEnd(winner, meta)) {
+        _mpEndMatch(winner, meta);
+      }
+    } else {
+      _mpEndMatch(winner, meta);
+    }
+    return true;
+  }
+
+  function _mpHandleHostDisconnectTermination(source = 'host-disconnect') {
+    if (!_mpMode || _mpQuitFlowActive) return false;
+
+    _mpQuitFlowActive = true;
+    _mpCleanupBattleForImmediateExit();
+
+    const isHost = typeof Room !== 'undefined' && !!Room.isHost?.();
+    const winner = isHost ? 'opponent' : 'me';
+    const meta = {
+      reason: 'host_disconnect',
+      source,
+      disconnected: isHost ? 'me' : 'opponent',
+      roundNumber: Number(_mpGetCurrentRoundNumber() || 0) || 0,
+    };
+
+    if (typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isActive()) {
+      if (!MultiplayerGame.forceMatchEnd(winner, meta)) {
+        _mpEndMatch(winner, meta);
+      }
+    } else {
+      _mpEndMatch(winner, meta);
+    }
+    return true;
+  }
+
+  async function _mpQuitMatch() {
+    if (!_mpMode || _mpQuitFlowActive || typeof Room === 'undefined') return false;
+    if (window.confirm && !window.confirm('Quit this multiplayer match and count it as a loss?')) {
+      return false;
+    }
+
+    const payload = _mpBuildQuitPayload();
+    const result = await Room.syncState('mp_match_quit', payload);
+    if (!result?.ok) {
+      console.warn(`[MP] Quit sync failed: ${result?.error || 'unknown error'}`);
+      UI.showMessage('Room link unavailable — quitting locally.', 1800);
+    }
+
+    _mpHandleMatchQuit(payload, result?.ok ? 'local' : 'local-fallback');
+    return !!result?.ok;
+  }
+
+  function _mpStartReplayResumeCountdown(resumeAt, message = '✅ Opponent reconnected — resuming battle…') {
+    const targetAt = Number(resumeAt || 0);
+    if (!(targetAt > Date.now())) {
+      _mpShowDisconnectNotice(message, '');
+      return;
+    }
+
+    const render = () => {
+      const remainingMs = Math.max(0, targetAt - Date.now());
+      const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+      _mpShowDisconnectNotice(message, remainingSeconds > 0 ? `${remainingSeconds}s` : '');
+      if (remainingMs <= 0 && _mpReplayResumeCountdownTimer) {
+        clearInterval(_mpReplayResumeCountdownTimer);
+        _mpReplayResumeCountdownTimer = null;
+      }
+    };
+
+    if (_mpReplayResumeCountdownTimer) clearInterval(_mpReplayResumeCountdownTimer);
+    render();
+    _mpReplayResumeCountdownTimer = setInterval(render, 250);
+  }
+
+  function _mpBuildPausedPlaybackState(checkpoint = null) {
+    const payload = checkpoint || _mpLastPlaybackCheckpoint || {
+      roundNumber: _mpGetCurrentRoundNumber(),
+      seq: 0,
+      turn: 0,
+      boardHash: _mpLastBattleReplayPayload?.boardHash ?? null,
+    };
+
+    return {
+      roundNumber: Number(payload.roundNumber || _mpGetCurrentRoundNumber() || 0),
+      seq: Math.max(0, Number(payload.seq || payload.checkpointSeq || 0) || 0),
+      turn: Math.max(0, Number(payload.turn || payload.checkpointTurn || 0) || 0),
+      boardHash: payload.boardHash ?? _mpLastBattleReplayPayload?.boardHash ?? null,
+      pausedAt: Date.now(),
+    };
+  }
+
+  function _mpPauseReplayForDisconnect(source = 'disconnect', checkpoint = null) {
+    _clearMPReplayResumeTimers();
+    _mpPausedPlaybackState = _mpBuildPausedPlaybackState(checkpoint);
+    if (_mpReplayPlayer && _mpReplayPlayer.isPlaying()) {
+      _mpReplayPlayer.stop();
+    }
+    if (battle && battle._running && !battle._paused) {
+      battle.pause();
+    }
+    console.info(`[MP:R${_mpPausedPlaybackState.roundNumber || '?'}] Paused playback (${source}) at seq=${_mpPausedPlaybackState.seq}, turn=${_mpPausedPlaybackState.turn}.`);
+    return _mpPausedPlaybackState;
+  }
+
+  function _mpScheduleReplayResume(reason = 'reconnect', delayMs = 3000) {
+    if (!_mpMode || typeof MultiplayerGame === 'undefined' || !MultiplayerGame.isActive() || !MultiplayerGame.isHost()) return false;
+    if (!_mpPausedPlaybackState || !_mpLastBattleReplayPayload) return false;
+
+    _clearMPReplayResumeTimers();
+    const resumeState = {
+      ..._mpPausedPlaybackState,
+      resumeAt: Date.now() + Math.max(0, Number(delayMs) || 0),
+    };
+    _mpPausedPlaybackState = resumeState;
+
+    _mpEmitPlaybackCheckpoint(resumeState.seq, resumeState.turn, { boardHash: resumeState.boardHash });
+    _mpEmitPhaseEvent(MP_PHASE_EVENTS.PLAYBACK_RESUME_PENDING, {
+      boardHash: resumeState.boardHash,
+      checkpointSeq: resumeState.seq,
+      checkpointTurn: resumeState.turn,
+      resumeAt: resumeState.resumeAt,
+      reason,
+    });
+    _mpStartReplayResumeCountdown(resumeState.resumeAt);
+
+    _mpReplayResumeTimer = setTimeout(() => {
+      const activeResume = _mpPausedPlaybackState;
+      _mpReplayResumeTimer = null;
+      if (!activeResume || !_mpMode || state?.phase !== 'battle' || !_mpLastBattleReplayPayload) return;
+
+      _mpPausedPlaybackState = null;
+      _mpOpponentOfflineDuringBattle = false;
+      _mpHideDisconnectNotice();
+      _mpEmitPlaybackCheckpoint(activeResume.seq, activeResume.turn, { boardHash: activeResume.boardHash });
+      _mpEmitPhaseEvent(MP_PHASE_EVENTS.PLAYBACK_START, {
+        boardHash: activeResume.boardHash,
+        checkpointSeq: activeResume.seq,
+        checkpointTurn: activeResume.turn,
+        resumed: true,
+        resumeAt: activeResume.resumeAt,
+      });
+
+      const replayPayload = _mpLastBattleReplayPayload;
+      _mpPlayReplayLog(replayPayload, {
+        turnDelay: 120,
+        showCompleteMessage: false,
+        startSeq: activeResume.seq,
+        onTurnStart: (evt) => {
+          _mpEmitPlaybackCheckpoint(evt.seq || 0, evt.turn || 0, { boardHash: replayPayload.boardHash });
+        },
+      }).then((result) => {
+        if (result?.stopped) {
+          console.info(`[MP:R${activeResume.roundNumber || '?'}] Host playback stopped before completion (${reason}).`);
+          return;
+        }
+        const hostWon = result?.finalEvent ? !!result.finalEvent.playerWon : _mpExtractReplayHostWon(replayPayload);
+        _mpHandleRoundEnd(hostWon);
+      });
+    }, Math.max(0, Number(delayMs) || 0));
+
+    return true;
+  }
+
+  function _mpBuildReplayBoardHash(evt) {
+    if (typeof HashUtils === 'undefined' || !evt) return null;
+    const playerUnits = Array.isArray(evt.playerUnits) ? evt.playerUnits : [];
+    const enemyUnits = Array.isArray(evt.enemyUnits) ? evt.enemyUnits : [];
+    return HashUtils.hashState([...playerUnits, ...enemyUnits]).toString();
+  }
+
+  function _mpConsumeDebugReplayHashOverride(boardHash, source = 'unknown') {
+    if (!_mpDebugReplayHashOverride) return boardHash;
+
+    const override = _mpDebugReplayHashOverride;
+    _mpDebugReplayHashOverride = null;
+
+    const baseHash = boardHash == null ? 'guest-hash' : String(boardHash);
+    const forcedHash = override.hash ? String(override.hash) : `${baseHash}::${override.label || 'debug-mismatch'}`;
+
+    console.warn(`[MP] Debug: forcing guest replay hash mismatch (${source}) => ${forcedHash}`);
+    if (typeof window !== 'undefined' && typeof window._mpDebugLog === 'function') {
+      window._mpDebugLog(`Forced guest replay hash mismatch (${source}) => ${forcedHash}`, 'warn');
+    }
+
+    return forcedHash;
+  }
+
+  function _mpSendAuthoritativeState(reason = 'resync', requestPayload = null) {
+    if (typeof Room === 'undefined' || typeof MultiplayerAuthorityState === 'undefined') return null;
+    const roomState = Room.getState();
+    const currentScores = (typeof MultiplayerGame !== 'undefined' && typeof MultiplayerGame.getScores === 'function')
+      ? MultiplayerGame.getScores()
+      : { my: _mpState.myScore, opp: _mpState.oppScore };
+    const scoresBeforeResult = {
+      my: Math.max(0, Number(currentScores.my) || 0),
+      opp: Math.max(0, Number(currentScores.opp) || 0),
+    };
+    const currentRound = _mpGetCurrentRoundNumber();
+    const currentResult = roomState.round_result;
+    if (_mpPayloadMatchesRound(currentResult, currentRound) && typeof currentResult?.hostWon === 'boolean') {
+      if (currentResult.hostWon) scoresBeforeResult.my = Math.max(0, scoresBeforeResult.my - 1);
+      else scoresBeforeResult.opp = Math.max(0, scoresBeforeResult.opp - 1);
+    }
+    const responseMode = MultiplayerAuthorityState.resolveResponseMode({
+      requestedMode: requestPayload?.mode,
+      reason: requestPayload?.reason || reason,
+      roomState,
+      roundNumber: currentRound,
+    });
+    const payload = MultiplayerAuthorityState.buildPayload({
+      roundNumber: currentRound,
+      mode: responseMode,
+      roomState,
+      meta: {
+        reason,
+        request: requestPayload ? { ...requestPayload, responseMode } : null,
+        matchState: {
+          roundNumber: currentRound,
+          scores: currentScores,
+          scoresBeforeResult,
+          goldBySlot: {
+            p1: roomState.prep_p1?.gold ?? null,
+            p2: roomState.prep_p2?.gold ?? null,
+          },
+        },
+      },
+    });
+    _mpLastAuthoritativeStatePayload = payload;
+    Room.syncState('authoritative_state', payload);
+    return payload;
+  }
+
   async function _mpPlayReplayLog(replaySource, options = {}) {
     const replayLog = _mpExtractReplayLog(replaySource);
     if (!replayLog || !Array.isArray(replayLog.events) || replayLog.events.length === 0) {
@@ -1384,7 +2107,7 @@ const Game = (() => {
     if (options.startMessage) UI.showMessage(options.startMessage, 1200);
 
     let finalEvent = null;
-    await _mpReplayPlayer.play(replayLog, {
+    const playResult = await _mpReplayPlayer.play(replayLog, {
       onBattleStart: (evt) => {
         _mpRenderReplayStart(evt);
         if (typeof options.onBattleStart === 'function') options.onBattleStart(evt);
@@ -1435,7 +2158,10 @@ const Game = (() => {
       startSeq: options.startSeq ?? 0,
     });
 
-    return finalEvent;
+    return {
+      finalEvent,
+      stopped: !!playResult?.stopped,
+    };
   }
 
   function _mpCloneBattleUnit(unit) {
@@ -1515,12 +2241,12 @@ const Game = (() => {
   }
 
   async function _playLastMpReplay() {
-    const finalEvent = await _mpPlayReplayLog(_mpLastBattleReplay, {
+    const result = await _mpPlayReplayLog(_mpLastBattleReplay, {
       startMessage: 'Replaying last shared multiplayer battle...',
       showCompleteMessage: true,
       turnDelay: 120,
     });
-    return !!finalEvent;
+    return !!result?.finalEvent;
   }
 
   // ── Post-Battle Healing ───────────────────────────────────────────────────
@@ -1720,6 +2446,8 @@ const Game = (() => {
       _refreshUpgradeIcons();
       VFX.screenFlash(id === 'elite_training' ? '#44dd44' : '#ff5544', 200);
     }
+
+    _mpSyncOwnPrepState(true);
 
     _showContextualTip('first_upgrade');
   }
@@ -2214,7 +2942,7 @@ const Game = (() => {
             statusEl.dataset.source = 'manual';
             statusEl.textContent = 'Room connection restored.';
           }
-          _mpUpdateConnIndicator('connected');
+          _mpUpdateConnIndicator(Room.getLifecycleState?.() || 'connected');
           setTimeout(() => _syncMPReconnectBanner(), 1200);
           return;
         }
@@ -2230,6 +2958,9 @@ const Game = (() => {
           }
         }
       }, 300);
+    });
+    document.getElementById('btn-mp-quit')?.addEventListener('click', () => {
+      _mpQuitMatch();
     });
     document.getElementById('btn-tutorial')?.addEventListener('click', () => {
       UI.showMessage('Place units in the bottom rows, then press Fight! Same-element units grant bonuses.', 0);
@@ -2354,6 +3085,7 @@ const Game = (() => {
           Grid.clearSelection();
           UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
           _refreshHUD();
+          _mpSyncOwnPrepState(true);
         }
       } else {
         refreshShop(false);
@@ -2759,6 +3491,205 @@ const Game = (() => {
     _initMPDebugOverlay();
   }
 
+  function _clearMPRoomLifecycleHandlers() {
+    if (typeof Room === 'undefined') return;
+    if (_mpRoomOpponentDisconnectFn) Room.offOpponentDisconnect(_mpRoomOpponentDisconnectFn);
+    if (_mpRoomReconnectSyncFn) Room.offReconnect(_mpRoomReconnectSyncFn);
+    _mpRoomOpponentDisconnectFn = null;
+    _mpRoomReconnectSyncFn = null;
+  }
+
+  function _mpBindRoomLifecycleHandlers(isHost) {
+    if (typeof Room === 'undefined') return;
+
+    _clearMPRoomLifecycleHandlers();
+
+    _mpRoomOpponentDisconnectFn = () => _mpHandleDisconnect();
+    _mpRoomReconnectSyncFn = () => {
+      _mpUpdateConnIndicator(Room.getLifecycleState?.() || 'connected');
+
+      if (isHost && state?.phase === 'battle' && _mpOpponentOfflineDuringBattle && _mpLastBattleReplayPayload) {
+        const pausedState = _mpPausedPlaybackState || _mpPauseReplayForDisconnect('opponent reconnect');
+        console.info(`[MP:R${pausedState?.roundNumber || '?'}] Opponent reconnected — scheduling battle resume from seq=${pausedState?.seq || 0}.`);
+        Room.syncState('battle_replay', _mpLastBattleReplayPayload);
+        _mpEmitPlaybackCheckpoint(pausedState?.seq || 0, pausedState?.turn || 0, { boardHash: pausedState?.boardHash ?? _mpLastBattleReplayPayload.boardHash });
+        _mpEmitPhaseEvent(MP_PHASE_EVENTS.PLAYBACK_PAUSED, {
+          boardHash: pausedState?.boardHash ?? _mpLastBattleReplayPayload.boardHash,
+          checkpointSeq: pausedState?.seq || 0,
+          checkpointTurn: pausedState?.turn || 0,
+          resumed: true,
+        });
+        _mpScheduleReplayResume('opponent reconnect', 3000);
+      } else {
+        _mpOpponentOfflineDuringBattle = false;
+      }
+
+      if (isHost && _mpLastBattleReplayPayload) {
+        console.info(`[MP:R${_mpLastBattleReplayPayload.roundNumber}] Opponent reconnected — re-broadcasting battle_replay.`);
+        Room.syncState('battle_replay', _mpLastBattleReplayPayload);
+      }
+      if (isHost && !_mpOpponentOfflineDuringBattle && _mpLastPlaybackCheckpoint && _mpLastPhaseEventPayload?.type === MP_PHASE_EVENTS.PLAYBACK_START) {
+        console.info(`[MP:R${_mpLastPlaybackCheckpoint.roundNumber}] Opponent reconnected — re-broadcasting playback_checkpoint seq=${_mpLastPlaybackCheckpoint.seq}.`);
+        Room.syncState('playback_checkpoint', _mpLastPlaybackCheckpoint);
+      }
+      if (isHost && !_mpOpponentOfflineDuringBattle && _mpLastPhaseEventPayload) {
+        const phasePayload = (_mpLastPhaseEventPayload.type === MP_PHASE_EVENTS.PLAYBACK_START && _mpLastPlaybackCheckpoint)
+          ? {
+              ..._mpLastPhaseEventPayload,
+              checkpointSeq: _mpLastPlaybackCheckpoint.seq,
+              checkpointTurn: _mpLastPlaybackCheckpoint.turn,
+              resumed: true,
+            }
+          : _mpLastPhaseEventPayload;
+        _mpLastPhaseEventPayload = phasePayload;
+        console.info(`[MP:R${phasePayload.roundNumber}] Opponent reconnected — re-broadcasting phase_event ${phasePayload.type}.`);
+        Room.syncState('phase_event', phasePayload);
+      }
+      if (isHost && _mpLastRoundResultPayload) {
+        console.info(`[MP:R${_mpLastRoundResultPayload.roundNumber}] Opponent reconnected — re-broadcasting last round_result.`);
+        Room.syncState('round_result', _mpLastRoundResultPayload);
+      }
+      if (isHost && state?.phase === 'prep') {
+        const cachedState = Room.getState();
+        for (const key of ['prep_state', 'shop_seed', 'mp_reroll', 'prep_p1', 'prep_p2', 'ready_p1', 'ready_p2']) {
+          if (cachedState[key] === undefined || cachedState[key] === null) continue;
+          console.info(`[MP] Opponent reconnected — re-broadcasting ${key} during prep.`);
+          Room.syncState(key, cachedState[key]);
+        }
+      }
+      if (isHost && _mpHeldRoundAdvanceFn) {
+        console.info('[MP] Opponent reconnected — waiting for guest catch-up before releasing round advance.');
+        _mpMaybeReleaseHeldRoundAdvance('opponent reconnect');
+      }
+      if (!isHost) {
+        _mpGuestResumeReplay();
+        _mpGuestCheckCachedResult();
+      }
+    };
+
+    Room.onOpponentDisconnect(_mpRoomOpponentDisconnectFn);
+    Room.onReconnect(_mpRoomReconnectSyncFn);
+  }
+
+  function _clearMPResumeBattleWatcher() {
+    if (_mpResumeBattleFromRoomStateFn && typeof Room !== 'undefined') {
+      Room.offStateChange(_mpResumeBattleFromRoomStateFn);
+    }
+    _mpResumeBattleFromRoomStateFn = null;
+  }
+
+  function _clearMPResumeBootstrapTimer() {
+    if (_mpResumeBootstrapTimer) {
+      clearTimeout(_mpResumeBootstrapTimer);
+      _mpResumeBootstrapTimer = null;
+    }
+  }
+
+  function _mpHasLiveBootstrapState(roomState = null, roundNumber = null) {
+    const source = roomState || ((typeof Room !== 'undefined' && typeof Room.getState === 'function') ? Room.getState() : null);
+    if (!source) return false;
+
+    const targetRound = Number(roundNumber || _mpResolveResumeTarget(source).roundNumber || _mpState.round || state?.wave || 0);
+    return (
+      _mpPayloadMatchesRound(source.authoritative_state, targetRound) ||
+      _mpPayloadMatchesRound(source.prep_state, targetRound) ||
+      _mpPayloadMatchesRound(source.battle_replay, targetRound) ||
+      _mpPayloadMatchesRound(source.phase_event, targetRound) ||
+      _mpPayloadMatchesRound(source.round_result, targetRound)
+    );
+  }
+
+  function _mpArmResumeBootstrapTimer(reason = 'resume', timeoutMs = 8000) {
+    _clearMPResumeBootstrapTimer();
+    _mpResumeBootstrapTimer = setTimeout(() => {
+      _mpResumeBootstrapTimer = null;
+
+      if (!_mpMode || typeof MultiplayerGame === 'undefined' || !MultiplayerGame.isActive() || MultiplayerGame.isHost()) {
+        return;
+      }
+
+      const roomState = (typeof Room !== 'undefined' && typeof Room.getState === 'function') ? Room.getState() : null;
+      if (_mpHasLiveBootstrapState(roomState)) return;
+
+      console.warn(`[MP] ${reason} bootstrap timed out — clearing stale guest room session.`);
+      _mpCleanupAndReturnToLobby();
+    }, timeoutMs);
+  }
+
+  function _clearMPGuestBattleSession(reason = 'reset') {
+    const cleanup = _mpGuestBattleSessionCleanup;
+    _mpGuestBattleSessionCleanup = () => {};
+    _mpGuestBattleSessionRound = -1;
+    cleanup(reason);
+  }
+
+  function _mpMaybeResumeBattleFromRoomState() {
+    if (!_mpMode || !state || state.phase !== 'prep') return false;
+    if (typeof Room === 'undefined' || typeof MultiplayerGame === 'undefined') return false;
+    if (!MultiplayerGame.isActive() || MultiplayerGame.isHost()) return false;
+
+    let roomState = Room.getState();
+    let roundNumber = Number(_mpResolveResumeTarget(roomState).roundNumber || 0);
+    if (_mpMaybeApplyResumeAuthoritativeState(roomState, roundNumber)) {
+      roomState = Room.getState();
+      roundNumber = Number(_mpResolveResumeTarget(roomState).roundNumber || 0);
+    }
+    _mpHydrateLiveRoundState(null, roomState);
+    const phaseEvent = roomState.phase_event;
+    const shouldResume =
+      _mpPayloadMatchesRound(roomState.battle_replay, roundNumber) ||
+      (phaseEvent && (
+        phaseEvent.type === MP_PHASE_EVENTS.PLAYBACK_START ||
+        phaseEvent.type === MP_PHASE_EVENTS.PLAYBACK_PAUSED ||
+        phaseEvent.type === MP_PHASE_EVENTS.PLAYBACK_RESUME_PENDING ||
+        phaseEvent.type === MP_PHASE_EVENTS.RESULT_SHOW
+      ) && _mpPayloadMatchesRound(phaseEvent, roundNumber)) ||
+      _mpPayloadMatchesRound(roomState.round_result, roundNumber);
+
+    if (!shouldResume) return false;
+
+    console.info(`[MP:R${roundNumber}] Resume bootstrap: battle state detected from room cache.`);
+    _clearMPResumeBootstrapTimer();
+    _clearMPResumeBattleWatcher();
+    _mpStartMPBattle();
+    return true;
+  }
+
+  function _mpMaybeResumeSavedRoomSession() {
+    if (_mpMode || typeof Room === 'undefined' || typeof Room.getSavedSession !== 'function') return false;
+
+    const savedSession = Room.getSavedSession();
+    if (!savedSession || savedSession.isHost) return false;
+
+    const started = Room.reconnect();
+    if (!started) return false;
+
+    console.info(`[MP] Restoring saved guest room session ${savedSession.roomId.slice(0, 8)}…`);
+    _mpPendingResumeAuthoritativeRequest = true;
+    _mpLastResumeAuthoritativeStateAt = 0;
+    _mpBindRoomLifecycleHandlers(false);
+    _mpEnterBattleMode();
+    _mpApplySavedResumeContext(savedSession.resumeContext);
+    // Keep the bootstrap window longer than the room disconnect grace so slow
+    // reconnects do not self-abort before the host can observe the guest return.
+    _mpArmResumeBootstrapTimer('saved-session resume', _mpGetResumeBootstrapTimeoutMs());
+    UI.showMessage('🔄 Rejoining live match…', 1500);
+    return true;
+  }
+
+  function _mpMaybeDiscardUnsupportedSavedHostSession() {
+    if (_mpMode || typeof Room === 'undefined' || typeof Room.getSavedSession !== 'function') return false;
+
+    const savedSession = Room.getSavedSession();
+    if (!savedSession || !savedSession.isHost) return false;
+
+    if (typeof Room.discardSavedSession === 'function') {
+      Room.discardSavedSession('host_resume_unsupported');
+    }
+    console.info(`[MP] Cleared saved host room session ${savedSession.roomId.slice(0, 8)} — cold host resume is not supported yet.`);
+    return true;
+  }
+
   function _initMPLobbyUI() {
     const overlay    = document.getElementById('mp-lobby-overlay');
     const statusEl   = document.getElementById('mp-status');
@@ -2831,55 +3762,7 @@ const Game = (() => {
         // Join the room channel
         if (typeof Room !== 'undefined') {
           Room.join(roomId, isHost, opponentId);
-          Room.onOpponentDisconnect(() => _mpHandleDisconnect());
-          Room.onReconnect(() => {
-            _mpUpdateConnIndicator('connected');
-            // Clear battle-pause flag so normal flow resumes.
-            const wasPaused = _mpOpponentOfflineDuringBattle;
-            _mpOpponentOfflineDuringBattle = false;
-
-            if (isHost && _mpLastBattleReplayPayload) {
-              console.info(`[MP:R${_mpLastBattleReplayPayload.roundNumber}] Opponent reconnected — re-broadcasting battle_replay.`);
-              Room.syncState('battle_replay', _mpLastBattleReplayPayload);
-            }
-            if (isHost && _mpLastPlaybackCheckpoint && _mpLastPhaseEventPayload?.type === MP_PHASE_EVENTS.PLAYBACK_START) {
-              console.info(`[MP:R${_mpLastPlaybackCheckpoint.roundNumber}] Opponent reconnected — re-broadcasting playback_checkpoint seq=${_mpLastPlaybackCheckpoint.seq}.`);
-              Room.syncState('playback_checkpoint', _mpLastPlaybackCheckpoint);
-            }
-            if (isHost && _mpLastPhaseEventPayload) {
-              const phasePayload = (_mpLastPhaseEventPayload.type === MP_PHASE_EVENTS.PLAYBACK_START && _mpLastPlaybackCheckpoint)
-                ? {
-                    ..._mpLastPhaseEventPayload,
-                    checkpointSeq: _mpLastPlaybackCheckpoint.seq,
-                    checkpointTurn: _mpLastPlaybackCheckpoint.turn,
-                    resumed: true,
-                  }
-                : _mpLastPhaseEventPayload;
-              _mpLastPhaseEventPayload = phasePayload;
-              console.info(`[MP:R${phasePayload.roundNumber}] Opponent reconnected — re-broadcasting phase_event ${phasePayload.type}.`);
-              Room.syncState('phase_event', phasePayload);
-            }
-            // If we are the HOST and have already broadcast a round_result this round,
-            // re-send it immediately — the guest may have missed it during their reconnect.
-            if (isHost && _mpLastRoundResultPayload) {
-              console.info(`[MP:R${_mpLastRoundResultPayload.roundNumber}] Opponent reconnected — re-broadcasting last round_result.`);
-              Room.syncState('round_result', _mpLastRoundResultPayload);
-            }
-            // If host was holding round advancement (battle finished while guest was offline),
-            // release it now that the guest is back.
-            if (isHost && _mpHeldRoundAdvanceFn) {
-              console.info('[MP] Releasing held round advance now that opponent reconnected.');
-              const fn = _mpHeldRoundAdvanceFn;
-              _mpHeldRoundAdvanceFn = null;
-              fn();
-            }
-            // If we are the GUEST and still waiting for a round_result, check the
-            // Room state cache — the reconnect may have replayed the host's payload.
-            if (!isHost) {
-              _mpGuestResumeReplay();
-              _mpGuestCheckCachedResult();
-            }
-          });
+          _mpBindRoomLifecycleHandlers(isHost);
         }
 
         // Close lobby and show versus screen, then transition to MP battle prep
@@ -2931,6 +3814,7 @@ const Game = (() => {
     readyTimer: null,
     readySeconds: 35,
   };
+  let _mpLastResolvedRoundNumber = -1;
 
   // ── Versus screen ──────────────────────────────────────────────────────
   function _mpShowVersusScreen(opponentId, onDone) {
@@ -2959,6 +3843,10 @@ const Game = (() => {
   function _mpEnterBattleMode() {
     _mpMode = true;
 
+    // Multiplayer bypasses startGame(), so switch away from the title track here.
+    Audio.stopMusic();
+    Audio.playGameplayMusic();
+
     // Switch to game screen
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     const gameScreen = document.getElementById('screen-game');
@@ -2972,7 +3860,7 @@ const Game = (() => {
     document.getElementById('btn-battle')?.classList.add('mp-hidden');
 
     // Show MP-specific elements
-    ['#mp-hud-round', '#mp-hud-score', '#mp-conn-indicator', '#mp-ready-bar'].forEach(sel => {
+    ['#mp-hud-round', '#mp-hud-score', '#mp-conn-indicator', '#mp-ready-bar', '#btn-mp-quit'].forEach(sel => {
       const el = document.querySelector(sel);
       if (el) el.classList.remove('mp-hidden');
     });
@@ -3005,22 +3893,48 @@ const Game = (() => {
             // Optionally show a message
             UI.showMessage('Opponent rerolled their shop!', 1500);
           },
-          onMatchEnd:       (winner) => _mpEndMatch(winner),
+          onMatchEnd:       (winner, meta) => _mpEndMatch(winner, meta),
         }
       );
     }
 
-    _mpUpdateConnIndicator('connected');
+    if (typeof Room !== 'undefined') {
+      if (_mpHostRoundSyncFn) Room.offStateChange(_mpHostRoundSyncFn);
+      _mpHostRoundSyncFn = _mpHandleHostRoundSync;
+      Room.onStateChange(_mpHostRoundSyncFn);
+    }
+
+    _mpUpdateConnIndicator(
+      (typeof Room !== 'undefined' && typeof Room.getLifecycleState === 'function')
+        ? Room.getLifecycleState()
+        : 'connected'
+    );
     _startMPRoomWatch();
+    _clearMPResumeBattleWatcher();
+    if (typeof Room !== 'undefined' && typeof MultiplayerGame !== 'undefined' && !MultiplayerGame.isHost()) {
+      _mpHydrateLiveRoundState(null, Room.getState());
+      _mpResumeBattleFromRoomStateFn = () => _mpMaybeResumeBattleFromRoomState();
+      Room.onStateChange(_mpResumeBattleFromRoomStateFn);
+      _mpMaybeResumeBattleFromRoomState();
+      _mpMaybeRequestResumeAuthoritativeState();
+    }
   }
 
   // ── Prepare an MP round (called by MultiplayerGame.onRoundReady) ─────
   function _mpPrepRound(round, gold) {
+    _clearMPGuestBattleSession(`prep-round-${round}`);
+    _clearMPResumeBootstrapTimer();
+    _clearMPReplayResumeTimers();
+    _mpPausedPlaybackState = null;
+    _mpHideDisconnectNotice();
+
     // Update state
     state.phase = 'prep';
     state.wave  = round; // use round number as wave for enemy generation
     state.gold  = gold;
     state.refreshesLeft = 1; // one free refresh per round (rerolls via MP are separate)
+    _mpOwnPrepRevision = 0;
+    _mpLastResolvedRoundNumber = -1;
 
     // Sync scores from MultiplayerGame
     if (typeof MultiplayerGame !== 'undefined') {
@@ -3055,14 +3969,10 @@ const Game = (() => {
       refreshShop(true);
       return;
     }
-    state.selectedShopIdx = null;
-    Grid.clearSelection();
-    UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
-    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
-
-    _mpRefreshRoundHud();
-    _mpRefreshBo5Dots('mp-bo5-tracker');
-    _refreshHUD();
+    _mpRenderPrepState();
+    if (!_mpMaybeRestoreOwnPrepState()) {
+      _mpSyncOwnPrepState();
+    }
     _mpStartReadyTimer();
 
     UI.showMessage(`⚔️ Round ${round} of ${typeof MultiplayerGame !== 'undefined' ? MultiplayerGame.getTotalRounds() : 5} — Build your army!`);
@@ -3117,7 +4027,19 @@ const Game = (() => {
 
   // ── Start MP battle (both players ready) ─────────────────────────────
   function _mpStartMPBattle() {
+    const currentRoundNumber = (typeof MultiplayerGame !== 'undefined' && typeof MultiplayerGame.getRound === 'function')
+      ? Number(MultiplayerGame.getRound() || 0)
+      : Number(_mpState.round || state?.wave || 0);
+
+    if (currentRoundNumber > 0 && _mpGuestBattleSessionRound === currentRoundNumber &&
+        (state?.phase === 'battle' || state?.phase === 'result')) {
+      console.info(`[MP:R${currentRoundNumber}] Battle controller already active — skipping duplicate start.`);
+      return;
+    }
+
     if (_mpState.readyTimer) { clearInterval(_mpState.readyTimer); _mpState.readyTimer = null; }
+    _clearMPResumeBattleWatcher();
+    _clearMPGuestBattleSession(`start-round-${currentRoundNumber || '?'}`);
 
     // Reset per-round reconnect helpers so stale data from last round cannot interfere.
     _mpLastRoundResultPayload = null;
@@ -3129,6 +4051,7 @@ const Game = (() => {
     _mpGuestResumeReplay = () => false;
     _mpOpponentOfflineDuringBattle = false;
     _mpHeldRoundAdvanceFn = null;
+    _mpResetRoundContinueState();
     _mpGuestExtendResultTimeout = () => {}; // will be overwritten by guest block below
     // seq counters: host increments before each broadcast; guest tracks last applied.
     // Both reset per-round so round 2's seq=2 cannot be confused with round 1's seq=1.
@@ -3156,17 +4079,37 @@ const Game = (() => {
     // Host generates the authoritative replay log instantly, then both clients
     // consume that same event stream for battle presentation.
     const HOST_RESULT_TIMEOUT_MS = 9000;
-    const _expectedRound = (typeof MultiplayerGame !== 'undefined') ? MultiplayerGame.getRound() : -1;
+    const AUTHORITATIVE_REQUEST_COOLDOWN_MS = 1000;
+    const _expectedRound = () => {
+      const roomRound = _mpResolveRoomStateRoundNumber((typeof Room !== 'undefined' && typeof Room.getState === 'function') ? Room.getState() : null);
+      const liveRound = (typeof MultiplayerGame !== 'undefined' && typeof MultiplayerGame.getRound === 'function')
+        ? Number(MultiplayerGame.getRound() || 0)
+        : 0;
+      const trackedRound = Number(_mpState.round || state?.wave || 0);
+      return Math.max(roomRound, liveRound, trackedRound, 0);
+    };
 
     if (typeof MultiplayerGame !== 'undefined' && !MultiplayerGame.isHost()) {
       let _roundResultHandled = false;
       let _battleReplayStarted = false;
       let _replayHostWon = null;
+      let _guestReplayBoardHash = null;
       let _hostResultTimer = null;
+      let _lastHandledRoundResult = null;
+      let _lastAckSeq = -1;
+      let _lastReadySeq = -1;
+      let _lastAuthoritativeRequestSeq = -1;
+      let _lastAuthoritativeRequestAt = 0;
+      let _authoritativeStateSeq = -1;
+      let _hostResultWaitStartedAt = 0;
+
+      _mpGuestBattleSessionRound = Math.max(currentRoundNumber, _expectedRound());
 
       const _matchesRound = (payload) => {
         if (!payload) return false;
-        return payload.roundNumber === undefined || payload.roundNumber === _expectedRound;
+        const expectedRound = _expectedRound();
+        if (expectedRound <= 0) return true;
+        return payload.roundNumber === undefined || Number(payload.roundNumber) === expectedRound;
       };
 
       const _getCachedState = (key) => {
@@ -3194,6 +4137,63 @@ const Game = (() => {
         UI.showMessage('⏳ Awaiting results…', 0);
       };
 
+      const _shouldDeferHostResultFallback = () => {
+        if (typeof Room === 'undefined') return false;
+        const roomState = Room.getState();
+        const phaseEvent = roomState?.phase_event;
+        const roundResult = roomState?.round_result;
+        return !roundResult && phaseEvent?.type === MP_PHASE_EVENTS.PLAYBACK_START && _matchesRound(phaseEvent);
+      };
+
+      const _armHostResultTimer = (reason = 'timeout', timeoutMs = HOST_RESULT_TIMEOUT_MS) => {
+        if (_roundResultHandled) return;
+        if (_hostResultTimer) {
+          clearTimeout(_hostResultTimer);
+          _hostResultTimer = null;
+        }
+        if (!_hostResultWaitStartedAt) _hostResultWaitStartedAt = Date.now();
+        _hostResultTimer = setTimeout(() => {
+          if (_roundResultHandled) return;
+
+          const waitedMs = Date.now() - _hostResultWaitStartedAt;
+          if ((reason === 'timeout' || reason === 'timeout-reconnect') && waitedMs < 60_000 && _shouldDeferHostResultFallback()) {
+            _requestAuthoritativeState('waiting_for_round_result', {
+              seq: Number(_getCachedState('playback_checkpoint')?.seq || 0),
+              hostBoardHash: _getCachedState('playback_checkpoint')?.boardHash ?? _getCachedState('phase_event')?.boardHash ?? _mpLastBattleReplay?.boardHash ?? null,
+            });
+            UI.showMessage('⏳ Awaiting host result…', 0);
+            _armHostResultTimer(reason, 5000);
+            return;
+          }
+
+          _applyResult(!_replayHostWon, reason);
+        }, timeoutMs);
+      };
+
+      const _pauseReplayForSyncHold = (payload = null, message = '⏸️ Battle paused — waiting for reconnect…') => {
+        if (_hostResultTimer) {
+          clearTimeout(_hostResultTimer);
+          _hostResultTimer = null;
+        }
+        _hostResultWaitStartedAt = 0;
+        _battleReplayStarted = false;
+        if (_mpReplayPlayer && _mpReplayPlayer.isPlaying()) {
+          _mpReplayPlayer.stop();
+        }
+
+        const pausedCheckpoint = {
+          roundNumber: _expectedRound(),
+          seq: Math.max(0, Number(payload?.checkpointSeq ?? _getCachedState('playback_checkpoint')?.seq ?? _mpLastPlaybackCheckpoint?.seq ?? 0) || 0),
+          turn: Math.max(0, Number(payload?.checkpointTurn ?? _getCachedState('playback_checkpoint')?.turn ?? _mpLastPlaybackCheckpoint?.turn ?? 0) || 0),
+          boardHash: payload?.boardHash ?? _getCachedState('playback_checkpoint')?.boardHash ?? _getCachedState('phase_event')?.boardHash ?? _mpLastBattleReplay?.boardHash ?? null,
+        };
+
+        _mpLastPlaybackCheckpoint = pausedCheckpoint;
+        _mpPausedPlaybackState = _mpBuildPausedPlaybackState(pausedCheckpoint);
+        _mpShowDisconnectNotice('⚠️ Opponent disconnected — battle paused.', '');
+        UI.showMessage(message, 0);
+      };
+
       const _maybeStartReplay = (source) => {
         if (_battleReplayStarted) return false;
 
@@ -3210,6 +4210,7 @@ const Game = (() => {
       const _applyPhaseEvent = (payload, source) => {
         if (!_matchesRound(payload)) return false;
         _mpLastPhaseEventPayload = payload;
+        _mpHydrateLiveRoundState(payload);
 
         switch (payload.type) {
           case MP_PHASE_EVENTS.PREP_END:
@@ -3218,8 +4219,20 @@ const Game = (() => {
           case MP_PHASE_EVENTS.BATTLE_SCRIPT_READY:
             UI.showMessage('🧾 Battle ready — syncing both players…', 0);
             return true;
+          case MP_PHASE_EVENTS.PLAYBACK_PAUSED:
+            _pauseReplayForSyncHold(payload);
+            return true;
+          case MP_PHASE_EVENTS.PLAYBACK_RESUME_PENDING:
+            _pauseReplayForSyncHold(payload, '✅ Opponent reconnected — resuming battle…');
+            if (payload?.resumeAt) _mpStartReplayResumeCountdown(payload.resumeAt);
+            return true;
           case MP_PHASE_EVENTS.PLAYBACK_START:
-            return _maybeStartReplay(`${source}:phase_event`);
+            _mpPausedPlaybackState = null;
+            _mpHideDisconnectNotice();
+            if (_maybeStartReplay(`${source}:phase_event`)) return true;
+            _maybeRequestReplayBootstrap(payload, `${source}:phase_event`);
+            UI.showMessage('⚔️ Waiting for battle sync…', 0);
+            return true;
           case MP_PHASE_EVENTS.RESULT_SHOW:
             if (!_roundResultHandled) _setAwaitingResultState();
             return true;
@@ -3228,9 +4241,117 @@ const Game = (() => {
         }
       };
 
-      const _applyResult = (guestWon, source) => {
+      const _buildGuestResultSyncPayload = (resultPayload) => {
+        if (!resultPayload) return null;
+        const seq = Number(resultPayload.seq || 0);
+        if (!(seq > 0)) return null;
+        return {
+          roundNumber: resultPayload.roundNumber === undefined ? _expectedRound() : resultPayload.roundNumber,
+          seq,
+          at: Date.now(),
+        };
+      };
+
+      const _sendGuestResultSync = (key, resultPayload, reason, force = false) => {
+        if (typeof Room === 'undefined') return false;
+        const payload = _buildGuestResultSyncPayload(resultPayload);
+        if (!payload) return false;
+
+        if (key === 'round_result_ack') {
+          if (!force && _lastAckSeq === payload.seq) return false;
+          _lastAckSeq = payload.seq;
+        } else if (key === 'ready_to_continue') {
+          if (!force && _lastReadySeq === payload.seq) return false;
+          _lastReadySeq = payload.seq;
+        }
+
+        Room.syncState(key, payload);
+        console.info(`[MP:R${_expectedRound()}] Guest: sent ${key} seq=${payload.seq} (${reason}).`);
+        return true;
+      };
+
+      const _requestAuthoritativeState = (reason, extra = {}) => {
+        if (typeof Room === 'undefined' || typeof MultiplayerAuthorityState === 'undefined') return false;
+        const seq = Number(extra.seq || 0);
+        const guestBoardHash = extra.guestBoardHash ?? _guestReplayBoardHash ?? null;
+        const hostBoardHash = extra.hostBoardHash ?? _mpLastBattleReplay?.boardHash ?? null;
+        const allowReplayBootstrap = reason === 'missing_battle_replay';
+        const requestedAt = Date.now();
+        if (_lastAuthoritativeRequestAt > 0 && (requestedAt - _lastAuthoritativeRequestAt) < AUTHORITATIVE_REQUEST_COOLDOWN_MS) {
+          console.info(`[MP:R${_expectedRound()}] Suppressing duplicate authoritative_state request (${reason}) during cooldown.`);
+          return false;
+        }
+        if (!allowReplayBootstrap && !MultiplayerAuthorityState.shouldRequestResync({
+          guestBoardHash,
+          hostBoardHash,
+          seq,
+          lastRequestedSeq: _lastAuthoritativeRequestSeq,
+          authoritativeSeq: _authoritativeStateSeq,
+        })) {
+          return false;
+        }
+
+        const payload = MultiplayerAuthorityState.buildRequest({
+          roundNumber: _expectedRound(),
+          seq,
+          reason,
+          mode: MultiplayerAuthorityState.getRequestModeForReason(reason),
+          guestBoardHash,
+          hostBoardHash,
+          checkpointSeq: _resolveReplayStartSeq(),
+        });
+        if (seq > 0) _lastAuthoritativeRequestSeq = seq;
+        _lastAuthoritativeRequestAt = requestedAt;
+        Room.beginResync?.(`authoritative_request:${reason}`, {
+          roundNumber: _expectedRound(),
+          seq,
+        });
+        const requestResult = Room.syncState('request_authoritative_state', payload);
+        if (requestResult && typeof requestResult.then === 'function') {
+          requestResult.then((result) => {
+            if (!result?.ok && _lastAuthoritativeRequestAt === requestedAt) {
+              _lastAuthoritativeRequestAt = 0;
+              Room.endResync?.('authoritative_request_failed', {
+                roundNumber: _expectedRound(),
+                seq,
+              });
+            }
+          }).catch(() => {
+            if (_lastAuthoritativeRequestAt === requestedAt) {
+              _lastAuthoritativeRequestAt = 0;
+              Room.endResync?.('authoritative_request_failed', {
+                roundNumber: _expectedRound(),
+                seq,
+              });
+            }
+          });
+        }
+        console.warn(`[MP:R${_expectedRound()}] Requested authoritative_state (${reason}) guestHash=${guestBoardHash} hostHash=${hostBoardHash}.`);
+        UI.showMessage('⚠️ Sync mismatch detected — requesting authoritative sync…', 0);
+        return true;
+      };
+
+      const _maybeRequestReplayBootstrap = (payload, reason) => {
+        const replayPayload = _getCachedState('battle_replay') || _mpLastBattleReplay;
+        if (replayPayload) return false;
+
+        const phaseEvent = _getCachedState('phase_event');
+        if (!phaseEvent || phaseEvent.type !== MP_PHASE_EVENTS.PLAYBACK_START) return false;
+
+        return _requestAuthoritativeState('missing_battle_replay', {
+          seq: Number(payload?.seq || payload?.checkpointSeq || phaseEvent?.checkpointSeq || 0),
+          hostBoardHash: payload?.boardHash ?? phaseEvent?.boardHash ?? _getCachedState('playback_checkpoint')?.boardHash ?? null,
+          reason,
+        });
+      };
+
+      const _applyResult = (guestWon, source, resultPayload = null) => {
         if (_roundResultHandled) return;
+        if (resultPayload) _lastHandledRoundResult = resultPayload;
         _roundResultHandled = true;
+        _hostResultWaitStartedAt = 0;
+        _mpPausedPlaybackState = null;
+        _mpHideDisconnectNotice();
         if (_hostResultTimer) { clearTimeout(_hostResultTimer); _hostResultTimer = null; }
         if (_mpReplayPlayer && _mpReplayPlayer.isPlaying()) _mpReplayPlayer.stop();
         if (typeof Room !== 'undefined') {
@@ -3238,14 +4359,17 @@ const Game = (() => {
           Room.offStateChange(_battleReplayFn);
           Room.offStateChange(_phaseEventFn);
           Room.offStateChange(_playbackCheckpointFn);
+          Room.offStateChange(_authoritativeStateFn);
         }
         if (battle) { battle.stop(); battle = null; }
         if (source === 'timeout') {
-          console.warn(`[MP:R${_expectedRound}] Host round_result not received within ${HOST_RESULT_TIMEOUT_MS}ms — applying replay result as fallback.`);
+          console.warn(`[MP:R${_expectedRound()}] Host round_result not received within ${HOST_RESULT_TIMEOUT_MS}ms — applying replay result as fallback.`);
         } else {
-          console.info(`[MP:R${_expectedRound}] Applying host round_result (source=${source}), guestWon=${guestWon}`);
+          console.info(`[MP:R${_expectedRound()}] Applying host round_result (source=${source}), guestWon=${guestWon}`);
         }
+        if (resultPayload) _sendGuestResultSync('round_result_ack', resultPayload, source);
         _mpHandleRoundEnd(guestWon);
+        if (resultPayload) _sendGuestResultSync('ready_to_continue', resultPayload, source);
       };
 
       const _startReplayFromPayload = (payload, source, startSeq = 0) => {
@@ -3258,16 +4382,27 @@ const Game = (() => {
         _battleReplayStarted = true;
         _mpLastBattleReplay = payload;
         _replayHostWon = _mpExtractReplayHostWon(payload);
-        console.info(`[MP:R${_expectedRound}] Starting authoritative replay (source=${source}, startSeq=${startSeq}).`);
+        console.info(`[MP:R${_expectedRound()}] Starting authoritative replay (source=${source}, startSeq=${startSeq}).`);
 
         _mpPlayReplayLog(payload, {
           turnDelay: 120,
           showCompleteMessage: false,
           startSeq,
-        }).then(() => {
+        }).then((result) => {
+          if (result?.stopped) return;
           if (_roundResultHandled) return;
+          const finalEvent = result?.finalEvent || null;
+          _guestReplayBoardHash = _mpConsumeDebugReplayHashOverride(
+            _mpBuildReplayBoardHash(finalEvent),
+            'battle_replay_complete'
+          );
+          _requestAuthoritativeState('replay_hash_mismatch', {
+            guestBoardHash: _guestReplayBoardHash,
+            hostBoardHash: payload.boardHash,
+          });
           _setAwaitingResultState();
-          _hostResultTimer = setTimeout(() => _applyResult(!_replayHostWon, 'timeout'), HOST_RESULT_TIMEOUT_MS);
+          _hostResultWaitStartedAt = Date.now();
+          _armHostResultTimer('timeout');
         });
 
         return true;
@@ -3288,64 +4423,129 @@ const Game = (() => {
       const _playbackCheckpointFn = (key, value) => {
         if (key !== 'playback_checkpoint') return;
         if (!_matchesRound(value)) return;
+        const previousSeq = Number(_mpLastPlaybackCheckpoint?.seq || -1);
         _mpLastPlaybackCheckpoint = value;
+        _mpHydrateLiveRoundState(value);
+        _maybeRequestReplayBootstrap(value, 'playback_checkpoint');
+        if (_hostResultTimer && !_roundResultHandled && Number(value?.seq || 0) > previousSeq) {
+          _armHostResultTimer('timeout');
+        }
+      };
+
+      const _authoritativeStateFn = (key, value) => {
+        if (key !== 'authoritative_state') return;
+        if (typeof Room === 'undefined' || typeof MultiplayerAuthorityState === 'undefined') return;
+        if (!MultiplayerAuthorityState.matchesRound(value, _expectedRound())) return;
+
+        const entries = MultiplayerAuthorityState.getEntries(value);
+        const authoritativeSeq = Number(value?.state?.round_result?.seq || 0);
+        if (authoritativeSeq > 0) _authoritativeStateSeq = authoritativeSeq;
+        _lastAuthoritativeRequestAt = 0;
+        _mpLastAuthoritativeStatePayload = value;
+        if (!entries.length) {
+          Room.endResync?.('authoritative_state_empty', { roundNumber: _expectedRound() });
+          return;
+        }
+
+        console.info(`[MP:R${_expectedRound()}] Applying authoritative_state bundle (${entries.length} keys).`);
+        for (const entry of entries) {
+          Room.applyState(entry.key, entry.value, 'authoritative_state');
+        }
+        Room.endResync?.('authoritative_state_applied', {
+          roundNumber: _expectedRound(),
+          seq: authoritativeSeq,
+          keys: entries.length,
+        });
       };
 
       const _roundResultFn = (key, value) => {
-        if (key !== 'round_result') return;
-        if (_roundResultHandled) return;
+        if (key !== 'round_result' || !value) return;
+        if (_roundResultHandled) {
+          if (_lastHandledRoundResult && _matchesRound(value) && Number(value?.seq || 0) === Number(_lastHandledRoundResult.seq || 0)) {
+            _sendGuestResultSync('round_result_ack', value, 'duplicate-round_result', true);
+            _sendGuestResultSync('ready_to_continue', value, 'duplicate-round_result', true);
+          }
+          return;
+        }
 
         // Phase guard: only apply results while we are in a battle or result phase.
         // Ignores stale broadcasts that arrive during shop/prep/versus/matchmaking.
         if (state.phase !== 'battle' && state.phase !== 'result') {
-          console.warn(`[MP:R${_expectedRound}] Ignoring round_result — wrong phase (${state.phase})`);
+          console.warn(`[MP:R${_expectedRound()}] Ignoring round_result — wrong phase (${state.phase})`);
           return;
         }
 
         // Round guard: ignore stale results from a previous round.
         // A missing roundNumber is treated as valid (backward compat with older host).
-        if (value.roundNumber !== undefined && value.roundNumber !== _expectedRound) {
-          console.warn(`[MP:R${_expectedRound}] Ignoring stale round_result for round ${value.roundNumber}`);
+        if (value.roundNumber !== undefined && value.roundNumber !== _expectedRound()) {
+          console.warn(`[MP:R${_expectedRound()}] Ignoring stale round_result for round ${value.roundNumber}`);
           return;
         }
 
         // Seq guard: ignore duplicate or out-of-order deliveries.
         if (value.seq !== undefined && value.seq <= _mpLastAppliedSeq) {
-          console.warn(`[MP:R${_expectedRound}] Ignoring duplicate round_result seq=${value.seq} (last applied=${_mpLastAppliedSeq})`);
+          console.warn(`[MP:R${_expectedRound()}] Ignoring duplicate round_result seq=${value.seq} (last applied=${_mpLastAppliedSeq})`);
           return;
         }
         if (value.seq !== undefined) _mpLastAppliedSeq = value.seq;
 
-        if (typeof HashUtils !== 'undefined' && _mpLastBattleReplay?.boardHash && value.boardHash) {
-          if (_mpLastBattleReplay.boardHash !== value.boardHash) {
-            HashUtils.warnMismatch(_mpLastBattleReplay.boardHash, value.boardHash);
+        if (typeof HashUtils !== 'undefined' && _guestReplayBoardHash && value.boardHash) {
+          if (_guestReplayBoardHash !== value.boardHash) {
+            HashUtils.warnMismatch(_guestReplayBoardHash, value.boardHash);
+            _requestAuthoritativeState('round_result_hash_mismatch', {
+              seq: value.seq,
+              guestBoardHash: _guestReplayBoardHash,
+              hostBoardHash: value.boardHash,
+            });
           } else {
-            console.info(`[MP:R${_expectedRound}] Replay hash matches host ✓`);
+            console.info(`[MP:R${_expectedRound()}] Replay hash matches host ✓`);
           }
         }
 
         // Guest won = host lost.
-        _applyResult(!value.hostWon, 'host');
+        _applyResult(!value.hostWon, 'host', value);
       };
+
+      _mpGuestBattleSessionCleanup = () => {
+        if (_hostResultTimer) {
+          clearTimeout(_hostResultTimer);
+          _hostResultTimer = null;
+        }
+        if (typeof Room !== 'undefined') {
+          Room.offStateChange(_roundResultFn);
+          Room.offStateChange(_battleReplayFn);
+          Room.offStateChange(_phaseEventFn);
+          Room.offStateChange(_playbackCheckpointFn);
+          Room.offStateChange(_authoritativeStateFn);
+        }
+      };
+
       if (typeof Room !== 'undefined') {
         Room.onStateChange(_battleReplayFn);
         Room.onStateChange(_phaseEventFn);
         Room.onStateChange(_playbackCheckpointFn);
+        Room.onStateChange(_authoritativeStateFn);
         Room.onStateChange(_roundResultFn);
       }
 
       _mpGuestResumeReplay = () => _maybeStartReplay('reconnect-cache');
 
       _mpGuestCheckCachedResult = () => {
-        if (_roundResultHandled) return false;
-        if (state.phase !== 'battle' && state.phase !== 'result') return false;
         const cached = (typeof Room !== 'undefined') ? Room.getState()['round_result'] : null;
+        if (_roundResultHandled) {
+          if (_lastHandledRoundResult && cached && _matchesRound(cached) && Number(cached?.seq || 0) === Number(_lastHandledRoundResult.seq || 0)) {
+            _sendGuestResultSync('round_result_ack', cached, 'cache-check', true);
+            _sendGuestResultSync('ready_to_continue', cached, 'cache-check', true);
+          }
+          return false;
+        }
+        if (state.phase !== 'battle' && state.phase !== 'result') return false;
         if (cached && cached.hostWon !== undefined &&
-            (cached.roundNumber === undefined || cached.roundNumber === _expectedRound) &&
+            (cached.roundNumber === undefined || cached.roundNumber === _expectedRound()) &&
             (cached.seq === undefined || cached.seq > _mpLastAppliedSeq)) {
           if (cached.seq !== undefined) _mpLastAppliedSeq = cached.seq;
-          console.info(`[MP:R${_expectedRound}] Guest: applying cached round_result (source=cache-check), guestWon=${!cached.hostWon}`);
-          _applyResult(!cached.hostWon, 'cached');
+          console.info(`[MP:R${_expectedRound()}] Guest: applying cached round_result (source=cache-check), guestWon=${!cached.hostWon}`);
+          _applyResult(!cached.hostWon, 'cached', cached);
           return true;
         }
         return false;
@@ -3353,13 +4553,8 @@ const Game = (() => {
 
       _mpGuestExtendResultTimeout = () => {
         if (_roundResultHandled) return;
-        if (_hostResultTimer) {
-          clearTimeout(_hostResultTimer);
-          _hostResultTimer = null;
-          console.info(`[MP:R${_expectedRound}] Guest: result timer suspended — opponent offline. Will resume on reconnect.`);
-          UI.showMessage('⚠️ Opponent connection lost — awaiting reconnect…', 0);
-        }
-        _hostResultTimer = setTimeout(() => _applyResult(!_replayHostWon, 'timeout-reconnect'), 60_000);
+        _pauseReplayForSyncHold(null, '⚠️ Opponent connection lost — awaiting reconnect…');
+        console.info(`[MP:R${_expectedRound()}] Guest: playback paused — waiting for reconnect.`);
       };
 
       const handledCachedPhase = _applyPhaseEvent(_getCachedState('phase_event'), 'cache-check');
@@ -3391,8 +4586,12 @@ const Game = (() => {
       onTurnStart: (evt) => {
         _mpEmitPlaybackCheckpoint(evt.seq || 0, evt.turn || 0, { boardHash: replayPayload.boardHash });
       },
-    }).then((finalEvent) => {
-      const hostWon = finalEvent ? !!finalEvent.playerWon : _mpExtractReplayHostWon(replayPayload);
+    }).then((result) => {
+      if (result?.stopped) {
+        console.info(`[MP:R${replayPayload.roundNumber}] Host playback stopped before completion.`);
+        return;
+      }
+      const hostWon = result?.finalEvent ? !!result.finalEvent.playerWon : _mpExtractReplayHostWon(replayPayload);
       _mpHandleRoundEnd(hostWon);
     });
   }
@@ -3411,10 +4610,23 @@ const Game = (() => {
 
   // ── Handle MP round result ────────────────────────────────────────────
   function _mpHandleRoundEnd(playerWon) {
+    const roundNumber = (typeof MultiplayerGame !== 'undefined' && typeof MultiplayerGame.getRound === 'function')
+      ? MultiplayerGame.getRound()
+      : -1;
+
+    _clearMPReplayResumeTimers();
+    _mpPausedPlaybackState = null;
+    _mpHideDisconnectNotice();
+
+    if (roundNumber > 0 && _mpLastResolvedRoundNumber === roundNumber) {
+      console.warn(`[MP:R${roundNumber}] Ignoring duplicate _mpHandleRoundEnd call.`);
+      return;
+    }
+    if (roundNumber > 0) _mpLastResolvedRoundNumber = roundNumber;
+
     // Host broadcasts authoritative round result so guest scores correctly.
     if (typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isHost() &&
         typeof Room !== 'undefined') {
-      const roundNumber = MultiplayerGame.getRound();
       const boardHash = _mpLastBattleReplayPayload?.boardHash ?? null;
       _mpEmitPhaseEvent(MP_PHASE_EVENTS.RESULT_SHOW, {
         boardHash,
@@ -3424,6 +4636,12 @@ const Game = (() => {
       // roundNumber + seq together let guests reject stale/duplicate/out-of-order payloads.
       const seq = ++_mpResultSeq;
       const payload = { hostWon: playerWon, roundNumber, seq, boardHash };
+
+      _mpExpectedRoundResultRound = roundNumber;
+      _mpExpectedRoundResultSeq = seq;
+      _mpAwaitingGuestResultAck = true;
+      _mpAwaitingGuestReadyToContinue = true;
+      _mpHostLocalRoundResolved = false;
 
       // Store payload so we can re-broadcast to a guest that reconnects mid-result.
       _mpLastRoundResultPayload = payload;
@@ -3479,29 +4697,31 @@ const Game = (() => {
     document.getElementById('btn-refresh').disabled = false;
 
     if (typeof MultiplayerGame !== 'undefined') {
-      if (_mpOpponentOfflineDuringBattle) {
-        // Opponent dropped during this battle — defer the internal round counter increment
-        // until they reconnect and receive the authoritative result.  This keeps both
-        // clients' round numbers in sync and prevents the match from advancing before
-        // the guest has a chance to apply the correct result.
+      if (MultiplayerGame.isHost()) {
         const _survivingCount = survivingCount;
-        const _playerWon      = playerWon;
+        const _playerWon = playerWon;
         _mpHeldRoundAdvanceFn = () => {
-          console.info('[MP] Releasing deferred MultiplayerGame.endRound().');
           MultiplayerGame.endRound(_playerWon, _survivingCount);
         };
-        console.info(`[MP:R${roundNumber ?? '?'}] Round advance held — opponent offline.`);
+        _mpHostLocalRoundResolved = true;
+
+        if (_mpOpponentOfflineDuringBattle) {
+          console.info(`[MP:R${roundNumber ?? '?'}] Round advance held — opponent offline.`);
+        } else {
+          console.info(`[MP:R${roundNumber ?? '?'}] Waiting for guest round_result_ack and ready_to_continue.`);
+        }
+        _mpMaybeReleaseHeldRoundAdvance('host local round resolved');
       } else {
-        // Normal path: both clients online, advance immediately.
         MultiplayerGame.endRound(playerWon, survivingCount);
       }
     }
   }
 
   // ── Match end — show proper end screen (MP-5) ────────────────────────
-  function _mpEndMatch(winner) {
+  function _mpEndMatch(winner, meta = null) {
     // Hide round result if still visible
     document.getElementById('mp-round-result')?.classList.add('hidden');
+    _clearMPMatchEndAutoReturnTimer();
 
     const overlay  = document.getElementById('mp-match-end-overlay');
     const titleEl  = document.getElementById('mp-match-end-title');
@@ -3514,13 +4734,34 @@ const Game = (() => {
     const scores = (typeof MultiplayerGame !== 'undefined') ? MultiplayerGame.getScores() : { my: 0, opp: 0 };
     const titleMap = { me: '🏆 Victory!', opponent: '💀 Defeat', draw: '🤝 Draw' };
     const clsMap   = { me: 'win', opponent: 'loss', draw: 'draw' };
+    const quitTitleMap = { me: '🏆 Opponent Quit', opponent: '🚪 You Quit', draw: '🤝 Match Ended' };
+    const hostDisconnectTitleMap = { me: '🏆 Host Disconnected', opponent: '📡 Connection Lost', draw: '🤝 Match Ended' };
+    const isQuitFlow = meta?.reason === 'quit';
+    const isHostDisconnectFlow = meta?.reason === 'host_disconnect';
+    const isImmediateExitFlow = isQuitFlow || isHostDisconnectFlow;
 
     if (titleEl) {
-      titleEl.textContent = titleMap[winner] || 'Match Over';
+      titleEl.textContent = (
+        isHostDisconnectFlow
+          ? hostDisconnectTitleMap[winner]
+          : (isQuitFlow ? quitTitleMap[winner] : titleMap[winner])
+      ) || 'Match Over';
       titleEl.className   = `mp-match-end-title ${clsMap[winner] || ''}`;
     }
     if (scoreEl) scoreEl.textContent = `${scores.my} – ${scores.opp}`;
-    if (statusEl) statusEl.textContent = '';
+    if (statusEl) {
+      if (isQuitFlow) {
+        statusEl.textContent = meta?.quitter === 'me'
+          ? 'You forfeited the match. Returning to title…'
+          : 'Opponent forfeited the match. Returning to title…';
+      } else if (isHostDisconnectFlow) {
+        statusEl.textContent = meta?.disconnected === 'me'
+          ? 'Your host connection was lost. The match is ending and returning to title…'
+          : 'Host disconnected. The match is ending and returning to title…';
+      } else {
+        statusEl.textContent = '';
+      }
+    }
 
     _mpRefreshBo5Dots('mp-match-end-dots');
     overlay.classList.remove('hidden');
@@ -3530,6 +4771,9 @@ const Game = (() => {
     let _rematchHandler = null;
 
     if (rematchBtn) {
+      rematchBtn.disabled = false;
+      rematchBtn.textContent = '🔁 Rematch';
+      rematchBtn.style.display = isImmediateExitFlow ? 'none' : '';
       rematchBtn.onclick = () => {
         _wantRematch = true;
         rematchBtn.disabled = true;
@@ -3538,6 +4782,8 @@ const Game = (() => {
       };
     }
     if (returnBtn) {
+      returnBtn.disabled = false;
+      returnBtn.textContent = '🏠 Return to Lobby';
       returnBtn.onclick = () => {
         overlay.classList.add('hidden');
         if (_rematchHandler && typeof Room !== 'undefined') Room.offStateChange(_rematchHandler);
@@ -3558,22 +4804,59 @@ const Game = (() => {
       }
     };
     if (typeof Room !== 'undefined') Room.onStateChange(_rematchHandler);
+
+    if (isImmediateExitFlow) {
+      if (returnBtn) {
+        returnBtn.disabled = true;
+        returnBtn.textContent = '🏠 Returning…';
+      }
+      _mpMatchEndAutoReturnTimer = setTimeout(() => {
+        overlay.classList.add('hidden');
+        if (_rematchHandler && typeof Room !== 'undefined') Room.offStateChange(_rematchHandler);
+        _mpCleanupAndReturnToLobby();
+      }, 2200);
+    }
   }
 
   function _mpHandleDisconnect() {
-    _mpUpdateConnIndicator('disconnected');
+    _mpUpdateConnIndicator(
+      (typeof Room !== 'undefined' && typeof Room.getLifecycleState === 'function')
+        ? Room.getLifecycleState()
+        : 'disconnected'
+    );
+
+    const shouldForceHostDisconnectEnd = typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isActive() && (
+      typeof MultiplayerGame.shouldForceMatchEndOnOpponentDisconnect === 'function'
+        ? MultiplayerGame.shouldForceMatchEndOnOpponentDisconnect()
+        : !MultiplayerGame.isHost()
+    );
+    if (shouldForceHostDisconnectEnd) {
+      console.warn('[MP] Host disconnected — ending match immediately.');
+      _mpHandleHostDisconnectTermination('opponent-disconnect');
+      return;
+    }
+
     const notice   = document.getElementById('mp-disconnect-notice');
     const msgEl    = document.getElementById('mp-disconnect-msg');
     const timerEl  = document.getElementById('mp-disconnect-timer');
     if (notice) notice.classList.remove('hidden');
+    _mpPendingResumeAuthoritativeRequest = true;
 
     // During battle: pause/hold so a reconnecting opponent can still receive the
     // authoritative result.  Use a longer grace period and don't forfeit immediately.
     const duringBattle = (state.phase === 'battle');
     if (duringBattle) {
       _mpOpponentOfflineDuringBattle = true;
-      if (msgEl) msgEl.textContent = '⚠️ Opponent disconnected mid-battle — holding result…';
-      // Guest: suspend the 9s result timer so a late re-broadcast can still be applied.
+      const pausedState = _mpPauseReplayForDisconnect('opponent disconnect');
+      if (msgEl) msgEl.textContent = '⚠️ Opponent disconnected mid-battle — battle paused.';
+      if (typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isActive() && MultiplayerGame.isHost() && pausedState) {
+        _mpEmitPhaseEvent(MP_PHASE_EVENTS.PLAYBACK_PAUSED, {
+          boardHash: pausedState.boardHash,
+          checkpointSeq: pausedState.seq,
+          checkpointTurn: pausedState.turn,
+        });
+      }
+      // Guest: stop waiting on result / playback and wait for the host to resume.
       _mpGuestExtendResultTimeout();
       console.info('[MP] Opponent offline during battle — activating sync hold.');
     } else {
@@ -3595,8 +4878,11 @@ const Game = (() => {
         if (notice) notice.classList.add('hidden');
         if (!_mpMode) return; // match already ended elsewhere
         // Forfeit for disconnected player — handle both prep and mid-battle phases
-        if (state.phase === 'battle' && battle) {
-          battle.stop(); // halt mid-battle; onBattleEnd won't fire so call handler directly
+        if (state.phase === 'battle') {
+          _clearMPReplayResumeTimers();
+          _mpPausedPlaybackState = null;
+          if (_mpReplayPlayer && _mpReplayPlayer.isPlaying()) _mpReplayPlayer.stop();
+          if (battle) battle.stop();
           _mpOpponentOfflineDuringBattle = false; // forfeit overrides hold
           _mpHandleRoundEnd(true);
         } else if (state.phase === 'prep') {
@@ -3611,8 +4897,18 @@ const Game = (() => {
     }
     _mpDisconnectReconnectFn = () => {
       clearInterval(graceTimer);
-      if (notice) notice.classList.add('hidden');
-      _mpUpdateConnIndicator('connected');
+      _mpUpdateConnIndicator(
+        (typeof Room !== 'undefined' && typeof Room.getLifecycleState === 'function')
+          ? Room.getLifecycleState()
+          : 'connected'
+      );
+      if (state?.phase === 'battle' && _mpOpponentOfflineDuringBattle) {
+        if (msgEl) msgEl.textContent = '✅ Opponent reconnected!';
+        if (typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isActive() && !MultiplayerGame.isHost()) {
+          _mpShowDisconnectNotice('✅ Opponent reconnected — syncing battle…', '');
+        }
+        return;
+      }
       if (msgEl) msgEl.textContent = '✅ Opponent reconnected!';
       if (notice) {
         notice.classList.remove('hidden');
@@ -3625,7 +4921,16 @@ const Game = (() => {
   // ── Clean up MP session and return to title ───────────────────────────
   function _mpCleanupAndReturnToLobby() {
     _mpMode = false;
+    _mpQuitFlowActive = false;
+    _clearMPMatchEndAutoReturnTimer();
     _mpDisconnectReconnectFn = null;
+    _mpClearOwnPrepSnapshot();
+    _clearMPResumeBattleWatcher();
+    _clearMPResumeBootstrapTimer();
+    _clearMPReplayResumeTimers();
+    _mpPausedPlaybackState = null;
+    _clearMPGuestBattleSession('return-to-lobby');
+    _clearMPRoomLifecycleHandlers();
     _stopMPRoomWatch();
     if (_mpState.readyTimer) { clearInterval(_mpState.readyTimer); _mpState.readyTimer = null; }
 
@@ -3635,13 +4940,19 @@ const Game = (() => {
     _mpLastAppliedSeq           = -1;
     _mpOpponentOfflineDuringBattle = false;
     _mpHeldRoundAdvanceFn       = null;
+    _mpResetRoundContinueState();
     _mpGuestCheckCachedResult   = () => false;
     _mpGuestExtendResultTimeout = () => {};
     _mpLastBattleReplay         = null;
     _mpLastBattleReplayPayload  = null;
     _mpLastPhaseEventPayload    = null;
     _mpLastPlaybackCheckpoint   = null;
+    _mpPendingResumeAuthoritativeRequest = false;
+    _mpLastResumeAuthoritativeStateAt = 0;
+    _mpLastResolvedRoundNumber  = -1;
     _mpGuestResumeReplay        = () => false;
+    if (typeof Room !== 'undefined' && _mpHostRoundSyncFn) Room.offStateChange(_mpHostRoundSyncFn);
+    _mpHostRoundSyncFn          = null;
     if (_mpReplayPlayer && _mpReplayPlayer.isPlaying()) _mpReplayPlayer.stop();
     _mpReplayPlayer             = null;
     _mpResetReplayUnits();
@@ -3743,9 +5054,100 @@ const Game = (() => {
   function _mpUpdateConnIndicator(connStatus) {
     const el = document.getElementById('mp-conn-indicator');
     if (!el) return;
-    const icons = { connected: '🟢', reconnecting: '🟡', disconnected: '🔴' };
-    el.textContent = icons[connStatus] || '🟡';
-    el.title = connStatus.charAt(0).toUpperCase() + connStatus.slice(1);
+    const normalized = String(connStatus || 'connecting').trim();
+    const key = normalized.toUpperCase();
+    const states = {
+      ACTIVE: { icon: '🟢', label: 'Active' },
+      CONNECTED: { icon: '🟢', label: 'Active' },
+      SUBSCRIBED: { icon: '🟢', label: 'Active' },
+      CONNECTING: { icon: '🟡', label: 'Connecting' },
+      RECONNECTING: { icon: '🟡', label: 'Reconnecting' },
+      PENDING: { icon: '🟡', label: 'Connecting' },
+      CHANNEL_ERROR: { icon: '🟡', label: 'Reconnecting' },
+      TIMED_OUT: { icon: '🟡', label: 'Reconnecting' },
+      RESYNCING: { icon: '🟡', label: 'Resyncing' },
+      STALE: { icon: '🟠', label: 'Stale' },
+      DISCONNECTED: { icon: '🔴', label: 'Disconnected' },
+      CLOSED: { icon: '⚪', label: 'Closed' },
+    };
+    const resolved = states[key] || {
+      icon: '🟡',
+      label: normalized.charAt(0).toUpperCase() + normalized.slice(1).replace(/_/g, ' '),
+    };
+    el.textContent = resolved.icon;
+    el.title = resolved.label;
+  }
+
+  function _mpResetRoundContinueState() {
+    _mpExpectedRoundResultRound = -1;
+    _mpExpectedRoundResultSeq = -1;
+    _mpAwaitingGuestResultAck = false;
+    _mpAwaitingGuestReadyToContinue = false;
+    _mpHostLocalRoundResolved = false;
+    _mpLastRoundResultAckPayload = null;
+    _mpLastReadyToContinuePayload = null;
+  }
+
+  function _mpMaybeReleaseHeldRoundAdvance(reason = 'ready') {
+    if (!_mpHeldRoundAdvanceFn) return false;
+    if (!_mpHostLocalRoundResolved) return false;
+    if (_mpOpponentOfflineDuringBattle) return false;
+    if (_mpAwaitingGuestResultAck || _mpAwaitingGuestReadyToContinue) return false;
+
+    const roundNumber = _mpExpectedRoundResultRound > 0 ? _mpExpectedRoundResultRound : '?';
+    const fn = _mpHeldRoundAdvanceFn;
+    _mpHeldRoundAdvanceFn = null;
+    _mpResetRoundContinueState();
+    console.info(`[MP:R${roundNumber}] Releasing held round advance (${reason}).`);
+    fn();
+    return true;
+  }
+
+  function _mpHandleHostRoundSync(key, value) {
+    if (!_mpMode) return;
+    if (!value) return;
+
+    if (key === 'mp_match_quit') {
+      _mpHandleMatchQuit(value, 'remote');
+      return;
+    }
+
+    if (typeof MultiplayerGame === 'undefined' || !MultiplayerGame.isActive() || !MultiplayerGame.isHost()) return;
+
+    if (key === 'request_authoritative_state') {
+      const roundNumber = Number(value.roundNumber || 0);
+      const currentRound = _mpGetCurrentRoundNumber();
+      if (roundNumber > 0 && currentRound > 0 && roundNumber !== currentRound) return;
+      const payload = _mpSendAuthoritativeState(value.reason || 'guest-request', value);
+      if (payload) {
+        console.info(`[MP:R${currentRound}] Sent authoritative_state in response to ${value.reason || 'guest-request'}.`);
+      }
+      return;
+    }
+
+    if (key !== 'round_result_ack' && key !== 'ready_to_continue') return;
+
+    const roundNumber = Number(value.roundNumber);
+    const seq = Number(value.seq);
+    if (_mpExpectedRoundResultRound > 0 && roundNumber !== _mpExpectedRoundResultRound) return;
+    if (_mpExpectedRoundResultSeq > 0 && seq !== _mpExpectedRoundResultSeq) return;
+
+    if (key === 'round_result_ack') {
+      _mpLastRoundResultAckPayload = value;
+      if (_mpAwaitingGuestResultAck) {
+        _mpAwaitingGuestResultAck = false;
+        console.info(`[MP:R${_mpExpectedRoundResultRound}] Guest acknowledged round_result seq=${_mpExpectedRoundResultSeq}.`);
+      }
+      _mpMaybeReleaseHeldRoundAdvance('guest round_result_ack');
+      return;
+    }
+
+    _mpLastReadyToContinuePayload = value;
+    if (_mpAwaitingGuestReadyToContinue) {
+      _mpAwaitingGuestReadyToContinue = false;
+      console.info(`[MP:R${_mpExpectedRoundResultRound}] Guest ready_to_continue received for seq=${_mpExpectedRoundResultSeq}.`);
+    }
+    _mpMaybeReleaseHeldRoundAdvance('guest ready_to_continue');
   }
 
   function _clearMPReconnectAttemptTimer() {
@@ -3775,7 +5177,7 @@ const Game = (() => {
       statusEl.textContent = '';
       delete statusEl.dataset.source;
       if (activeBattle && roomState === 'SUBSCRIBED' && disconnectNotice?.classList.contains('hidden')) {
-        _mpUpdateConnIndicator('connected');
+        _mpUpdateConnIndicator(Room.getLifecycleState?.() || 'connected');
       }
       return;
     }
@@ -3799,12 +5201,27 @@ const Game = (() => {
       const roomState = (typeof Room !== 'undefined' && typeof Room.getConnectionState === 'function')
         ? Room.getConnectionState()
         : 'closed';
+      const roomLifecycle = (typeof Room !== 'undefined' && typeof Room.getLifecycleState === 'function')
+        ? Room.getLifecycleState()
+        : roomState;
       const prevState = _mpLastRoomWatchState;
-      if (_mpMode && roomState !== 'SUBSCRIBED' && roomState !== 'closed') {
-        _mpUpdateConnIndicator('reconnecting');
+
+      const shouldForceLocalHostDisconnectEnd = _mpMode && typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isActive() && (
+        typeof MultiplayerGame.shouldForceMatchEndOnLocalDisconnect === 'function'
+          ? MultiplayerGame.shouldForceMatchEndOnLocalDisconnect()
+          : MultiplayerGame.isHost()
+      );
+      if (shouldForceLocalHostDisconnectEnd && prevState === 'SUBSCRIBED' && roomState !== 'SUBSCRIBED' && roomState !== 'closed') {
+        _mpLastRoomWatchState = roomState;
+        console.warn(`[MP] Host room channel left SUBSCRIBED (${roomLifecycle}) — ending match.`);
+        _mpHandleHostDisconnectTermination('local-host-disconnect');
+        return;
       }
+
+      if (_mpMode) _mpUpdateConnIndicator(roomLifecycle);
       if (_mpMode && roomState === 'SUBSCRIBED' && prevState !== 'SUBSCRIBED') {
-        _mpUpdateConnIndicator('connected');
+        if (state?.phase === 'prep') _mpMaybeRestoreOwnPrepState();
+        _mpMaybeRequestResumeAuthoritativeState();
         if (typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isActive() && !MultiplayerGame.isHost()) {
           _mpGuestResumeReplay();
           _mpGuestCheckCachedResult();
@@ -3847,7 +5264,7 @@ const Game = (() => {
       const el = document.querySelector(sel);
       if (el) el.classList.remove('mp-hidden');
     });
-    ['#mp-hud-round', '#mp-hud-score', '#mp-conn-indicator', '#mp-ready-bar'].forEach(sel => {
+    ['#mp-hud-round', '#mp-hud-score', '#mp-conn-indicator', '#mp-ready-bar', '#btn-mp-quit'].forEach(sel => {
       const el = document.querySelector(sel);
       if (el) el.classList.add('mp-hidden');
     });
@@ -3855,6 +5272,7 @@ const Game = (() => {
     _mpState.myScore = 0;
     _mpState.oppScore = 0;
     _mpState.round = 1;
+    _mpOwnPrepRevision = 0;
   }
 
   // ── Debug overlay (MP-5, localhost only, Ctrl+Shift+D) ───────────────
@@ -3890,6 +5308,61 @@ const Game = (() => {
       return true;
     }
 
+    function _forceReplayHashMismatchOnce(label = 'manual-browser-test') {
+      const cleanLabel = String(label || 'manual-browser-test').trim().replace(/\s+/g, '-').slice(0, 48) || 'manual-browser-test';
+      _mpDebugReplayHashOverride = {
+        label: cleanLabel,
+        hash: `debug-guest-mismatch:${cleanLabel}:${Date.now()}`,
+        at: Date.now(),
+      };
+      _log(`Armed guest replay hash mismatch for next replay (${_mpDebugReplayHashOverride.hash}).`, 'warn');
+      return true;
+    }
+
+    async function _forceAuthoritativeStateRequest(overrides = {}) {
+      if (typeof Room === 'undefined' || typeof Room.syncState !== 'function') {
+        _log('Room sync is unavailable for authoritative request.', 'error');
+        return false;
+      }
+      if (!_mpMode || !MultiplayerGame?.isActive?.()) {
+        _log('No active multiplayer match for authoritative request.', 'warn');
+        return false;
+      }
+
+      const roomState = Room.getState?.() || {};
+      const roundNumber = Number(overrides.roundNumber || _mpGetCurrentRoundNumber() || state?.wave || 0);
+      const seq = Number(overrides.seq || roomState.round_result?.seq || 0);
+      const payload = (typeof MultiplayerAuthorityState !== 'undefined')
+        ? MultiplayerAuthorityState.buildRequest({
+            roundNumber,
+            seq,
+            reason: overrides.reason || 'manual-browser-test',
+            mode: MultiplayerAuthorityState.getRequestModeForReason(overrides.reason || 'manual-browser-test'),
+            guestBoardHash: overrides.guestBoardHash || 'debug-guest-mismatch',
+            hostBoardHash: overrides.hostBoardHash || roomState.round_result?.boardHash || roomState.battle_replay?.boardHash || 'debug-host-hash',
+            checkpointSeq: Number(overrides.checkpointSeq || roomState.playback_checkpoint?.seq || 0),
+          })
+        : {
+            roundNumber,
+            seq: seq > 0 ? seq : undefined,
+            reason: overrides.reason || 'manual-browser-test',
+            guestBoardHash: overrides.guestBoardHash || 'debug-guest-mismatch',
+            hostBoardHash: overrides.hostBoardHash || roomState.round_result?.boardHash || roomState.battle_replay?.boardHash || 'debug-host-hash',
+            checkpointSeq: Number(overrides.checkpointSeq || roomState.playback_checkpoint?.seq || 0),
+            at: Date.now(),
+          };
+
+      Room.beginResync?.('manual_authoritative_request', { roundNumber, seq });
+      const result = await Room.syncState('request_authoritative_state', payload);
+      if (result?.ok) {
+        _log(`Requested authoritative_state (${payload.reason}) seq=${payload.seq || 0}`);
+        return true;
+      }
+      Room.endResync?.('manual_authoritative_request_failed', { roundNumber, seq });
+      _log(`authoritative_state request failed: ${result?.error || 'unknown error'}`, 'error');
+      return false;
+    }
+
     // Intercept Room state changes
     if (typeof Room !== 'undefined') {
       Room.onStateChange((key, value) => {
@@ -3909,13 +5382,25 @@ const Game = (() => {
       if (e.ctrlKey && e.shiftKey && e.key.toUpperCase() === 'X') {
         e.preventDefault();
         _forceRealtimeDisconnect();
+        return;
+      }
+      if (e.ctrlKey && e.shiftKey && e.key.toUpperCase() === 'H') {
+        e.preventDefault();
+        _forceAuthoritativeStateRequest();
+        return;
+      }
+      if (e.ctrlKey && e.shiftKey && e.key.toUpperCase() === 'M') {
+        e.preventDefault();
+        _forceReplayHashMismatchOnce();
       }
     });
 
     // Expose so other helpers can log
     window._mpDebugLog = _log;
     window._mpDebugForceRealtimeDisconnect = _forceRealtimeDisconnect;
-    _log('MP debug overlay ready (Ctrl+Shift+D toggle, Ctrl+Shift+X drop realtime)');
+    window._mpDebugForceReplayHashMismatchOnce = _forceReplayHashMismatchOnce;
+    window._mpDebugRequestAuthoritativeState = _forceAuthoritativeStateRequest;
+    _log('MP debug overlay ready (Ctrl+Shift+D toggle, Ctrl+Shift+X drop realtime, Ctrl+Shift+H request authoritative state, Ctrl+Shift+M force next replay hash mismatch)');
   }
 
   function _initChatUI() {
@@ -4019,6 +5504,20 @@ const Game = (() => {
     }, CHECK_INTERVAL_MS);
   }
 
+  let _pageExitListenerBound = false;
+  let _pageExitRealtimeReleased = false;
+
+  function _releaseRealtimeOnPageHide(event) {
+    if (_pageExitRealtimeReleased) return;
+    if (event?.persisted === true) return;
+    _pageExitRealtimeReleased = true;
+    try {
+      SupabaseClient?.leaveAll?.();
+    } catch (err) {
+      console.warn('[MP] Failed to release realtime channels on page exit:', err);
+    }
+  }
+
   // ── Init ──────────────────────────────────────────────────────────────────
 
   function init() {
@@ -4027,6 +5526,10 @@ const Game = (() => {
     Audio.init();
     Backend.init();       // fire-and-forget — leaderboards degrade gracefully
     _initMultiplayer();   // fire-and-forget — presence + chat degrade gracefully
+    if (!_pageExitListenerBound) {
+      window.addEventListener('pagehide', _releaseRealtimeOnPageHide);
+      _pageExitListenerBound = true;
+    }
     _wireDOMButtons();
     _updateTitleUnlocks();
 
@@ -4073,6 +5576,9 @@ const Game = (() => {
         document.getElementById('btn-splash-dismiss')?.focus({ preventScroll: true });
       });
     }
+
+    _mpMaybeResumeSavedRoomSession();
+    _mpMaybeDiscardUnsupportedSavedHostSession();
   }
 
   return {
@@ -4087,6 +5593,7 @@ const Game = (() => {
     setSpeed,
     playLastMpReplay: _playLastMpReplay,
     getRefreshCost,
+    getMultiplayerPolicy,
     showAchievements: _showAchievements,
     showChallenges: _showChallenges,
     showLeaderboard: _showLeaderboard,
