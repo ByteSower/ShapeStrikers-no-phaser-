@@ -297,19 +297,19 @@ const UNIT_DEFINITIONS = [
     id: 'blood_imp', name: 'Blood Imp Rix', element: 'blood', cost: 2, tier: 1, role: 'skirmisher', trait: 'vampire',
     visual: { color: 'red', shape: 'triangle' },
     stats: { hp: 65, maxHp: 65, attack: 13, defense: 4, speed: 9, range: 1 },
-    ability: { name: 'Frenzy Bite', description: 'Attacks twice, heals 20% of total damage', cooldown: 2 },
+    ability: { name: 'Frenzy Bite', description: 'Two 0.6x bites, heals 20% of total damage', cooldown: 2 },
   },
   {
     id: 'crimson_mage', name: 'Crimson Mage Vael', element: 'blood', cost: 4, tier: 2, role: 'caster', trait: 'vampire',
     visual: { color: 'red', shape: 'hexagon' },
     stats: { hp: 140, maxHp: 140, attack: 22, defense: 8, speed: 6, range: 2 },
-    ability: { name: 'Sanguine Bolt', description: 'Ranged blood bolt, heals self 30% of damage', cooldown: 3 },
+    ability: { name: 'Sanguine Bolt', description: '1.4x ranged bolt, heals self 30% of damage', cooldown: 3 },
   },
   {
     id: 'blood_lord', name: 'Blood Lord Draven', element: 'blood', cost: 6, tier: 3, role: 'tank', trait: 'vampire',
     visual: { color: 'red', shape: 'star' },
     stats: { hp: 260, maxHp: 260, attack: 32, defense: 16, speed: 5, range: 1 },
-    ability: { name: 'Crimson Tide', description: 'AoE cleave hitting 3 enemies, heals 25% of total damage', cooldown: 4, maxTargets: 3 },
+    ability: { name: 'Crimson Tide', description: '0.9x cleave to 3 enemies, heals 25% of total damage', cooldown: 4, maxTargets: 3 },
   },
 
   // ── PLAGUE FACTION (new units) ──────────────────────────────────────────────
@@ -317,19 +317,19 @@ const UNIT_DEFINITIONS = [
     id: 'plague_rat', name: 'Plague Rat Skrit', element: 'plague', cost: 2, tier: 1, role: 'skirmisher',
     visual: { color: 'green', shape: 'pentagon' },
     stats: { hp: 60, maxHp: 60, attack: 11, defense: 4, speed: 10, range: 1 },
-    ability: { name: 'Infect', description: 'Poisons target for 3 turns on attack', cooldown: 2 },
+    ability: { name: 'Infect', description: '0.8x hit + poison (3 turns, 5% max HP/tick)', cooldown: 2 },
   },
   {
     id: 'blight_weaver', name: 'Blight Weaver Morra', element: 'plague', cost: 4, tier: 2, role: 'caster',
     visual: { color: 'green', shape: 'oval' },
     stats: { hp: 120, maxHp: 120, attack: 20, defense: 7, speed: 5, range: 3 },
-    ability: { name: 'Miasma', description: 'Poisons and weakens up to 2 enemies in range', cooldown: 3, maxTargets: 2 },
+    ability: { name: 'Miasma', description: '0.7x to 2 closest in range + poison + 20% weaken', cooldown: 3, maxTargets: 2 },
   },
   {
     id: 'plague_sovereign', name: 'Plague Sovereign Vex', element: 'plague', cost: 6, tier: 3, role: 'caster',
     visual: { color: 'green', shape: 'hexagon' },
     stats: { hp: 210, maxHp: 210, attack: 30, defense: 14, speed: 4, range: 3 },
-    ability: { name: 'Pandemic', description: 'Poisons all enemies for 3 turns + deals tick damage', cooldown: 5 },
+    ability: { name: 'Pandemic', description: '0.6x to all enemies + poison (3 turns, 5% max HP/tick)', cooldown: 5 },
   },
 
   // ── BOSSES (tier 4, enemy-only) ─────────────────────────────────────────────
@@ -370,7 +370,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_void_leviathan', name: '🕳️ VOID LEVIATHAN', element: 'void', cost: 0, tier: 4, isBoss: true, isVoid: true,
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 800, maxHp: 800, attack: 52, defense: 25, speed: 5, range: 4 },
-    ability: { name: 'Abyssal Devour', description: 'Consumes target HP, heals self, applies wound + weaken', cooldown: 4, healAmount: 60 },
+    ability: { name: 'Abyssal Devour', description: '15% max HP true damage + 20% wound/weaken + heal self 60 HP', cooldown: 4, healAmount: 60 },
     bossPhases: [
       { hpThreshold: 1.0, phaseHp: 500, name: 'Emergence',   statModifiers: {},                                        description: 'The Void Leviathan emerges from the abyss!' },
       { hpThreshold: 0.5, phaseHp: 600, name: 'Deep Hunger', statModifiers: { attackMult: 1.4, speedMult: 1.3 },      description: 'Phase 2: DEEP HUNGER! (+40% ATK, +30% SPD)' },
@@ -380,7 +380,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_void_architect', name: '🕳️ THE VOID ARCHITECT', element: 'void', cost: 0, tier: 5, isBoss: true, isVoid: true,
     visual: { color: 'purple', shape: 'rhombus' },
     stats: { hp: 900, maxHp: 900, attack: 60, defense: 18, speed: 8, range: 4 },
-    ability: { name: 'Reality Tear', description: 'Massive void damage to all + blind + poison', cooldown: 5 },
+    ability: { name: 'Reality Tear', description: '1.0x to all enemies + blind + poison (3 turns, 5% max HP/tick)', cooldown: 5 },
     bossPhases: [
       { hpThreshold: 1.0,  phaseHp: 600, name: 'Blueprint',      statModifiers: {},                                                            description: 'The Void Architect studies your formation!' },
       { hpThreshold: 0.66, phaseHp: 675, name: 'Reconstruction',  statModifiers: { attackMult: 1.3, defenseMult: 1.3 },                        description: 'Phase 2: RECONSTRUCTION! (+30% ATK & DEF)' },
@@ -1084,6 +1084,17 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '1.0.14',
+    date: 'May 7, 2026',
+    title: '🧪 Faction & Boss Audit Fixes',
+    notes: [
+      '🧭 Documented battle movement now holds position when advance lanes are blocked instead of letting units sidestep into the wrong lane',
+      '⚡ Void Horror now still loses damage under Weaken even while Void Rupture ignores defense',
+      '🌪️ Ice Guardian, Arcane Illusionist, Lightning Lord, Ice Empress, and Void Blighter now truly hit their full documented enemy roster instead of stopping at base attack range',
+      '🩸 Blood and Plague faction abilities plus Void Leviathan and Void Architect now follow the clarified damage, healing, poison, blind, wound, and weaken rules',
+    ],
+  },
   {
     version: '1.0.13',
     date: 'May 7, 2026',

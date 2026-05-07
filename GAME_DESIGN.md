@@ -491,7 +491,7 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 | HP | 800 |
 | ATK / DEF / SPD | 52 / 25 / 5 |
 | Range | 4 |
-| Ability | Abyssal Devour — consumes target HP, heals self 60 HP, applies wound + weaken |
+| Ability | Abyssal Devour — 15% target max HP true damage + wound (2 turns, 20% heal reduction) + weaken (2 turns, 20% damage reduction) + self-heal 60 HP |
 
 | Phase | HP Threshold | New HP Pool | Modifier |
 |-------|-------------|-------------|----------|
@@ -505,7 +505,7 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 | HP | 600 |
 | ATK / DEF / SPD | 60 / 18 / 8 |
 | Range | 4 |
-| Ability | Reality Tear — massive void damage to ALL + blind + poison |
+| Ability | Reality Tear — 1.0× void damage to ALL + blind (2 turns) + poison (3 turns, 5% max HP/tick) |
 
 | Phase | HP Threshold | New HP Pool | Modifier |
 |-------|-------------|-------------|----------|

@@ -488,9 +488,37 @@ class BattleSystem {
       case 'blood_sprite':   // Drain Touch: 1.4× + 40% lifesteal
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.4, true);
         break;
+      case 'blood_imp':      // Frenzy Bite: two 0.6× hits + 20% total lifesteal
+        { const target = aliveEnemies[0];
+          let totalDamage = 0;
+          if (!target) break;
+          for (let i = 0; i < 2; i++) {
+            if (target.hp <= 0) break;
+            const dmg = this._calcDamage(unit, target, 0.6);
+            totalDamage += dmg;
+            this._applyDamage(target, dmg);
+            this._emitUnitHit(target, dmg, unit.definition.element, unit.id);
+            this._log(`💥 ${this._n(target)} takes ${dmg} ability damage`, 'attack', this._side(unit));
+            if (target.hp <= 0) {
+              this._killUnit(target, unit);
+              break;
+            }
+          }
+          if (totalDamage > 0) {
+            const raw = Math.floor(totalDamage * 0.2);
+            const heal = Math.floor(raw * this._healMod(unit));
+            unit.hp = Math.min(unit.maxHp, unit.hp + heal);
+            this._log(`🩸 ${this._n(unit)} heals ${heal} HP`, 'heal', this._side(unit));
+            this._emitUnitHit(unit, -heal, null, unit.id);
+          } }
+        break;
       case 'konji_scout':    // Toxic Dart: 1.4× + poison 3 turns
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.4);
         this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'poison', 3, 8);
+        break;
+      case 'plague_rat':     // Infect: 0.8× + plague poison
+        this._abilityDamage(unit, aliveEnemies.slice(0, 1), 0.8);
+        this._applyPercentPoisonToTargets(aliveEnemies.slice(0, 1), 3);
         break;
       case 'void_shade':     // Shadow Phase: untargetable 1 turn + 1.8× stealth strike
         this._addStatus(unit, 'untargetable', 1);
@@ -520,9 +548,11 @@ class BattleSystem {
         if (aliveEnemies[0]) this._log(`⚡ ${this._n(aliveEnemies[0])} frozen!`, 'ability');
         break;
       case 'ice_guardian':   // Frozen Wall: self shield 3 turns + slow ALL enemies
+        { const allEnemies = enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable'));
         this._addStatus(unit, 'shield', 3, 15);
-        for (const t of aliveEnemies) this._addStatus(t, 'slow', 2);
+        for (const t of allEnemies) this._addStatus(t, 'slow', 2);
         this._log(`❄️ All enemies slowed by Frozen Wall!`, 'ability');
+        }
         break;
       case 'arcane_assassin': // Shadow Strike: 50% chance 2.5× crit or 1.5×
         { const crit = this._rng() < 0.5;
@@ -546,17 +576,28 @@ class BattleSystem {
       case 'blood_knight':   // Crimson Cleave: 1.2× to up to 3 + 30% lifesteal
         this._abilityDamage(unit, aliveEnemies.slice(0, 3), 1.2, true, 0.3, true);
         break;
+      case 'crimson_mage':   // Sanguine Bolt: 1.4× + 30% lifesteal
+        this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.4, true, 0.3);
+        break;
       case 'konji_shaman':   // Plague Cloud: 0.3× + poison ALL enemies
         this._abilityDamage(unit, enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable')), 0.3);
         this._applyStatusToTargets(enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable')), 'poison', 2, 8);
+        break;
+      case 'blight_weaver':  // Miasma: 0.7× to 2 closest + plague poison + custom weaken
+        { const closest = this._pickClosestTargets(unit, aliveEnemies, 2);
+          this._abilityDamage(unit, closest, 0.7);
+          this._applyPercentPoisonToTargets(closest, 3);
+          for (const target of closest) this._addStatus(target, 'weaken', 2, 0.2); }
         break;
       case 'void_knight':    // Corruption Strike: 1.4× + weaken
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.4);
         this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'weaken', 2);
         break;
       case 'void_blighter':  // Cursed Wound: 0.6× ALL enemies + wound
-        this._abilityDamage(unit, aliveEnemies, 0.6);
-        this._applyStatusToTargets(aliveEnemies, 'wound', 3);
+        { const allEnemies = enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable'));
+        this._abilityDamage(unit, allEnemies, 0.6);
+        this._applyStatusToTargets(allEnemies, 'wound', 3);
+        }
         break;
 
       case 'earth_enforcer':  // Ground Slam: 1.4× + knockback 1 row
@@ -572,6 +613,15 @@ class BattleSystem {
       case 'fire_ravager':    // Rampage: 1.5× to 2 targets (kill-stack is passive via _calcDamage)
         this._abilityDamage(unit, aliveEnemies.slice(0, 2), 1.5);
         break;
+      case 'blood_lord':     // Crimson Tide: 0.9× to 3 + 25% total lifesteal
+        this._abilityDamage(unit, aliveEnemies.slice(0, 3), 0.9, true, 0.25, true);
+        break;
+      case 'plague_sovereign': // Pandemic: 0.6× ALL + plague poison
+        { const allEnemies = enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable'));
+        this._abilityDamage(unit, allEnemies, 0.6);
+        this._applyPercentPoisonToTargets(allEnemies, 3);
+        }
+        break;
 
       // ---- TIER 3 ----
       case 'fire_demon':     // Hellfire: 0.6× up to 3 targets + burn
@@ -586,11 +636,13 @@ class BattleSystem {
         }
         break;
       case 'lightning_lord':  // Thunder Storm: 0.7× ALL enemies
-        this._abilityDamage(unit, aliveEnemies, 0.7);
+        this._abilityDamage(unit, enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable')), 0.7);
         break;
       case 'ice_empress':    // Blizzard: 0.5× ALL + freeze
-        this._abilityDamage(unit, aliveEnemies, 0.5);
-        this._applyStatusToTargets(aliveEnemies, 'freeze', 1);
+        { const allEnemies = enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable'));
+        this._abilityDamage(unit, allEnemies, 0.5);
+        this._applyStatusToTargets(allEnemies, 'freeze', 1);
+        }
         break;
       case 'life_guardian':  // Guardian's Blessing: heal ALL 30 + barrier ALL
         this._healAllies(unit, aliveAllies, ab.healAmount || 30, true);
@@ -598,7 +650,7 @@ class BattleSystem {
         break;
       case 'void_horror':    // Void Rupture: AoE ignores defense
         for (const t of aliveEnemies) {
-          const dmg = Math.max(1, Math.floor(unit.stats.attack * 1.2));
+          const dmg = Math.max(1, Math.floor(this._calcAttackPower(unit) * 1.2));
           this._applyDamage(t, dmg);
           this._emitUnitHit(t, dmg, 'void', unit.id);
           this._log(`💥 ${this._n(t)} takes ${dmg} Void damage`, 'attack', this._side(unit));
@@ -607,9 +659,11 @@ class BattleSystem {
         break;
 
       case 'arcane_illusionist': // Mirage: 0.3× ALL + blind all enemies
-        this._abilityDamage(unit, aliveEnemies, 0.3);
-        this._applyStatusToTargets(aliveEnemies.filter(e => e.hp > 0), 'blind', 2);
+        { const allEnemies = enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable'));
+        this._abilityDamage(unit, allEnemies, 0.3);
+        this._applyStatusToTargets(allEnemies, 'blind', 2);
         this._log(`😵 All enemies blinded by Mirage!`, 'ability');
+        }
         break;
 
       // ---- BOSSES ----
@@ -632,6 +686,29 @@ class BattleSystem {
           this._addStatus(unit, 'shield', 1, 20);
           this._log(`⚡ ${this._n(unit)} is enraged!`, 'ability');
         }
+        break;
+      case 'boss_void_leviathan': // Abyssal Devour: 15% max HP true dmg + wound/weaken + self-heal
+        { const target = this._pickTarget(unit, enemies);
+          if (!target) break;
+          const dmg = Math.max(1, Math.floor(target.maxHp * 0.15));
+          this._applyDamage(target, dmg);
+          this._emitUnitHit(target, dmg, 'void', unit.id);
+          this._log(`💥 ${this._n(target)} takes ${dmg} Void damage`, 'attack', this._side(unit));
+          if (target.hp > 0) {
+            this._addStatus(target, 'wound', 2, 0.2);
+            this._addStatus(target, 'weaken', 2, 0.2);
+          }
+          const raw = Math.min(ab.healAmount || 60, unit.maxHp - unit.hp);
+          const actual = Math.floor(raw * this._healMod(unit));
+          unit.hp += actual;
+          if (actual > 0) this._log(`💚 ${this._n(unit)} restores ${actual} HP`, 'heal', this._side(unit));
+          if (target.hp <= 0) this._killUnit(target, unit); }
+        break;
+      case 'boss_void_architect': // Reality Tear: 1.0× ALL + blind + plague poison
+        { const allEnemies = enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable'));
+          this._abilityDamage(unit, allEnemies, 1.0);
+          this._applyStatusToTargets(allEnemies, 'blind', 2);
+          this._applyPercentPoisonToTargets(allEnemies, 3); }
         break;
 
       // ---- FALLBACK: generic ability ----
@@ -704,28 +781,59 @@ class BattleSystem {
     }
   }
 
+  _applyPercentPoisonToTargets(targets, duration, ratio = 0.05) {
+    for (const target of targets) {
+      if (target.hp > 0) this._addStatus(target, 'poison', duration, this._poisonTickFromMaxHp(target, ratio));
+    }
+  }
+
+  _poisonTickFromMaxHp(target, ratio = 0.05) {
+    return Math.max(1, Math.floor(target.maxHp * ratio));
+  }
+
+  _pickClosestTargets(attacker, targets, maxTargets) {
+    return targets
+      .filter(target => target.hp > 0 && !target.statusEffects.find(s => s.type === 'untargetable'))
+      .slice()
+      .sort((left, right) => {
+        const leftDistance = Math.abs(attacker.row - left.row) + Math.abs(attacker.col - left.col);
+        const rightDistance = Math.abs(attacker.row - right.row) + Math.abs(attacker.col - right.col);
+        if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+        return String(left.id) < String(right.id) ? -1 : String(left.id) > String(right.id) ? 1 : 0;
+      })
+      .slice(0, maxTargets);
+  }
+
   /** Healing modifier: wound reduces healing by 50% */
   _healMod(unit) {
-    return unit.statusEffects.find(s => s.type === 'wound') ? 0.5 : 1;
+    const wound = unit.statusEffects.find(s => s.type === 'wound');
+    if (!wound) return 1;
+    const reductionPerStack = wound.value > 0 ? wound.value : 0.5;
+    return Math.max(0, 1 - reductionPerStack * wound.stacks);
+  }
+
+  _calcAttackPower(attacker) {
+    const atk = attacker.stats.attack;
+
+    // Weaken reduces attacker (8% per stack, max 24% at 3 stacks)
+    const weaken = attacker.statusEffects.find(s => s.type === 'weaken');
+    const weakenPerStack = weaken && weaken.value > 0 ? weaken.value : 0.08;
+    const atkMod = weaken ? atk * Math.max(0.5, 1 - weaken.stacks * weakenPerStack) : atk;
+
+    // Kill-stack bonus: +% ATK per kill
+    const ksb = attacker.definition.killStackBonus;
+    return ksb && attacker._kills > 0
+      ? atkMod * (1 + Math.min(ksb.maxBonus, attacker._kills * ksb.atkPerKill))
+      : atkMod;
   }
 
   _calcDamage(attacker, target, mult = 1.0) {
-    const atk = attacker.stats.attack;
     const def = Math.max(0, target.stats.defense);
 
     // Shield adds to defense (value per stack)
     const shield = target.statusEffects.find(s => s.type === 'shield');
     const defTotal = shield ? def + (shield.value || 10) * shield.stacks : def;
-
-    // Weaken reduces attacker (8% per stack, max 24% at 3 stacks)
-    const weaken = attacker.statusEffects.find(s => s.type === 'weaken');
-    const atkMod = weaken ? atk * Math.max(0.5, 1 - weaken.stacks * 0.08) : atk;
-
-    // Kill-stack bonus: +% ATK per kill
-    const ksb = attacker.definition.killStackBonus;
-    const atkFinal = ksb && attacker._kills > 0
-      ? atkMod * (1 + Math.min(ksb.maxBonus, attacker._kills * ksb.atkPerKill))
-      : atkMod;
+    const atkFinal = this._calcAttackPower(attacker);
 
     // Diminishing returns defense: reduction = def / (def + 50)
     const dmgReduction = defTotal / (defTotal + 50);
@@ -762,6 +870,24 @@ class BattleSystem {
 
   _canUseAbility(unit, targets) {
     if (unit.definition.id === 'konji_shaman') {
+      return targets.some(target => target.hp > 0 && !target.statusEffects.find(s => s.type === 'untargetable'));
+    }
+    if (unit.definition.id === 'plague_sovereign') {
+      return targets.some(target => target.hp > 0 && !target.statusEffects.find(s => s.type === 'untargetable'));
+    }
+    if (unit.definition.id === 'ice_guardian') {
+      return targets.some(target => target.hp > 0 && !target.statusEffects.find(s => s.type === 'untargetable'));
+    }
+    if (unit.definition.id === 'void_blighter') {
+      return targets.some(target => target.hp > 0 && !target.statusEffects.find(s => s.type === 'untargetable'));
+    }
+    if (unit.definition.id === 'lightning_lord') {
+      return targets.some(target => target.hp > 0 && !target.statusEffects.find(s => s.type === 'untargetable'));
+    }
+    if (unit.definition.id === 'ice_empress') {
+      return targets.some(target => target.hp > 0 && !target.statusEffects.find(s => s.type === 'untargetable'));
+    }
+    if (unit.definition.id === 'arcane_illusionist') {
       return targets.some(target => target.hp > 0 && !target.statusEffects.find(s => s.type === 'untargetable'));
     }
     if (unit.definition.id === 'ice_slime') {
@@ -833,20 +959,6 @@ class BattleSystem {
           moved = true;
         }
       }
-      // Fallback: if same column or blocked, try moving toward ANY reachable enemy
-      if (!moved) {
-        for (const t of alive) {
-          const dir = t.col > unit.col ? 1 : t.col < unit.col ? -1 : 0;
-          if (dir !== 0) {
-            const nc = unit.col + dir;
-            if (nc >= 0 && nc < GRID_CONFIG.cols && !isOccupied(unit.row, nc)) {
-              unit.col = nc;
-              moved = true;
-              break;
-            }
-          }
-        }
-      }
     } else {
       // Priority 1: advance forward in same column
       if (!isOccupied(preferredRow, unit.col)) {
@@ -866,19 +978,7 @@ class BattleSystem {
           }
         }
       }
-      // Priority 3: blocked ahead — try lateral on CURRENT row
-      if (!moved) {
-        const lateralDirs = colDir !== 0 ? [colDir, -colDir] : [-1, 1];
-        for (const d of lateralDirs) {
-          const tryCol = unit.col + d;
-          if (tryCol >= 0 && tryCol < GRID_CONFIG.cols && !isOccupied(unit.row, tryCol)) {
-            unit.col = tryCol;
-            moved = true;
-            break;
-          }
-        }
-      }
-      // Priority 4: all blocked — stay put and wait
+      // Priority 3: all forward-advance tiles blocked — stay put and wait
     }
 
     if (moved) {
