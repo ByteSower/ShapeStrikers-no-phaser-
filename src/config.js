@@ -1085,6 +1085,15 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.11',
+    date: 'May 7, 2026',
+    title: '🩹 Battle Rules Audit Fixes',
+    notes: [
+      '🩹 Support healers now cast their healing ability when an ally needs help even if no enemy is currently in range',
+      '🩸 Blood Knight ability lifesteal now matches the documented 30% value instead of over-healing from the vampire fallback rate',
+    ],
+  },
+  {
     version: '1.0.10',
     date: 'May 7, 2026',
     title: '🧭 Matchmaking Fallback Policy',

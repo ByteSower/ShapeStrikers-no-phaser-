@@ -186,6 +186,7 @@
 - [x] Player-facing multiplayer rules, reconnect expectations, and mobile-readable upgrade descriptions are now surfaced in the queue overlay and help overlay
 - [x] Two-client live validation rechecked guest reload/rejoin telemetry and confirmed reconnect and recovery events arrive in the shared telemetry log
 - [x] Added game-level regression coverage to confirm host matches stay reconnectable on guest disconnect while confirmed host-loss paths still terminate immediately
+- [x] Battle-system audit fixes now let support healers cast without an in-range enemy when an ally is damaged, and restore Blood Knight ability lifesteal to the documented 30%
 - [x] Fixed a live repro where confirmed guest disconnects during prep could fabricate a host win; prep now freezes and the ready timer resumes after reconnect
 - [x] Matchmaking now falls back cleanly when optional Supabase multiplayer room tables are unavailable, and the near-term release target is explicitly locked to terminal host-loss handling on the current host-authoritative architecture
 - [ ] Revisit stronger multiplayer authority when ranked, spectate, or broader platform targets raise the reliability bar beyond transient reconnect recovery
