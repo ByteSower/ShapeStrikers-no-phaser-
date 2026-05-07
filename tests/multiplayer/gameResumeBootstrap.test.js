@@ -919,6 +919,54 @@ await test('Host opponent-disconnect callback keeps the match reconnectable thro
   assert.equal(screenCalls.length, screenCallCountBeforeDisconnect);
 });
 
+await test('Host prep disconnect confirmation does not auto-award the round while waiting for reconnect', () => {
+  const {
+    Game,
+    intervals,
+    roomEvents,
+    multiplayerEvents,
+    fireMultiplayerCallback,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-refresh',
+      'btn-mp-ready',
+      'mp-ready-opp-status',
+      'mp-ready-timer',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-conn-indicator',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-prep-disconnect',
+    opponentId: 'guest-prep-drop',
+    isHost: true,
+  });
+  fireMultiplayerCallback('onRoundReady', 1, 25);
+
+  assert.equal(Game.state.gold, 25);
+  const intervalCountBeforeDisconnect = intervals.length;
+  roomEvents.opponentDisconnectHandlers[0]();
+
+  const disconnectGraceInterval = intervals[intervalCountBeforeDisconnect];
+  assert.ok(disconnectGraceInterval, 'disconnect grace interval should be registered');
+
+  for (let tick = 0; tick < 5; tick += 1) {
+    disconnectGraceInterval.fn();
+  }
+
+  assert.equal(multiplayerEvents.forceMatchEndCalls.length, 0);
+  assert.equal(Game.state.gold, 25, 'prep disconnect wait should not fabricate a round win');
+});
+
 await test('Quit button ends the active match and clears the saved room session through the public flow', async () => {
   const {
     Game,

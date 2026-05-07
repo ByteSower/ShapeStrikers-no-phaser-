@@ -4061,6 +4061,7 @@ const Game = (() => {
       _mpState.oppScore = scores.opp;
     }
     _mpState.round = round;
+    _mpState.readySeconds = 35;
 
     // Reset ready button UI
     const readyBtn = document.getElementById('btn-mp-ready');
@@ -4993,11 +4994,15 @@ const Game = (() => {
       console.info('[MP] Opponent offline during battle — activating sync hold.');
     } else {
       if (msgEl) msgEl.textContent = '⚠️ Opponent disconnected — waiting…';
+      if (_mpState.readyTimer) {
+        clearInterval(_mpState.readyTimer);
+        _mpState.readyTimer = null;
+      }
     }
 
-    // Room already waited 10s before firing this; use a short UI countdown before forfeiting.
-    // During battle we give extra time: 30s instead of 5s (host still runs simulation; we
-    // just need them to reconnect and receive the authoritative result).
+    // Room already waited 10s before firing this. During battle we give extra time to reconnect
+    // and receive the authoritative result. During prep we only use the short countdown for UI
+    // feedback; the round must stay frozen instead of advancing while the opponent is offline.
     const GRACE = duringBattle ? 30 : 5;
     let remaining = GRACE;
     if (timerEl) timerEl.textContent = `${remaining}s`;
@@ -5007,10 +5012,9 @@ const Game = (() => {
       if (timerEl) timerEl.textContent = `${remaining}s`;
       if (remaining <= 0) {
         clearInterval(graceTimer);
-        if (notice) notice.classList.add('hidden');
         if (!_mpMode) return; // match already ended elsewhere
-        // Forfeit for disconnected player — handle both prep and mid-battle phases
         if (state.phase === 'battle') {
+          if (notice) notice.classList.add('hidden');
           _clearMPReplayResumeTimers();
           _mpPausedPlaybackState = null;
           if (_mpReplayPlayer && _mpReplayPlayer.isPlaying()) _mpReplayPlayer.stop();
@@ -5018,7 +5022,8 @@ const Game = (() => {
           _mpOpponentOfflineDuringBattle = false; // forfeit overrides hold
           _mpHandleRoundEnd(true);
         } else if (state.phase === 'prep') {
-          _mpHandleRoundEnd(true);
+          if (msgEl) msgEl.textContent = '⚠️ Opponent still disconnected — waiting for reconnect…';
+          if (timerEl) timerEl.textContent = '';
         }
       }
     }, 1000);
@@ -5040,6 +5045,9 @@ const Game = (() => {
           _mpShowDisconnectNotice('✅ Opponent reconnected — syncing battle…', '');
         }
         return;
+      }
+      if (state?.phase === 'prep' && !_mpState.readyTimer && Number(_mpState.readySeconds || 0) > 0) {
+        _mpStartReadyTimer();
       }
       if (msgEl) msgEl.textContent = '✅ Opponent reconnected!';
       if (notice) {
@@ -5113,12 +5121,14 @@ const Game = (() => {
   // ── Ready countdown timer ─────────────────────────────────────────────
   function _mpStartReadyTimer() {
     if (_mpState.readyTimer) clearInterval(_mpState.readyTimer);
-    let secs = _mpState.readySeconds;
+    let secs = Math.max(0, Number(_mpState.readySeconds || 35) || 35);
     const timerEl = document.getElementById('mp-ready-timer');
+    _mpState.readySeconds = secs;
     if (timerEl) timerEl.textContent = secs;
 
     _mpState.readyTimer = setInterval(() => {
       secs--;
+      _mpState.readySeconds = Math.max(0, secs);
       if (timerEl) {
         timerEl.textContent = secs;
         timerEl.classList.toggle('urgent', secs <= 10);

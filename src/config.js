@@ -1085,6 +1085,15 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.9',
+    date: 'May 7, 2026',
+    title: '⏸️ Prep Disconnect Freeze',
+    notes: [
+      '⏸️ Multiplayer prep rounds now stay frozen instead of auto-awarding a win when the opponent stays disconnected past the reconnect warning',
+      '🔁 The multiplayer prep timer now pauses during disconnect waits and resumes from the remaining time after the opponent reconnects',
+    ],
+  },
+  {
     version: '1.0.8',
     date: 'May 7, 2026',
     title: '🧪 Multiplayer Disconnect Coverage',
