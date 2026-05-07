@@ -191,6 +191,7 @@
 - [x] Fixed a live repro where confirmed guest disconnects during prep could fabricate a host win; prep now freezes and the ready timer resumes after reconnect
 - [x] Matchmaking now falls back cleanly when optional Supabase multiplayer room tables are unavailable, and the near-term release target is explicitly locked to terminal host-loss handling on the current host-authoritative architecture
 - [x] Single-player audit fixes now recheck shop affordability at placement time, apply War Chest interest before victory rewards, block upgrades outside prep, and ignore non-prep tile moves after battle
+- [x] Additional unit-action audit fixes now let Ice Slime cast at its documented 2-row ability range, keep Fire Warrior hits in the same column, let Konji Shaman poison the full enemy team, and align Earth Archer and Lightning Knight freeze wording with their implemented status effect
 - [ ] Revisit stronger multiplayer authority when ranked, spectate, or broader platform targets raise the reliability bar beyond transient reconnect recovery
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance

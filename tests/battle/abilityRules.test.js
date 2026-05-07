@@ -63,6 +63,25 @@ test('support healers cast even when no enemy is in range', () => {
   assert.equal(healer.abilityCooldown, UNIT_MAP.frost_fairy.ability.cooldown, 'support cast should consume ability cooldown');
 });
 
+test('ice slime uses frost coat on enemies at the documented 2-row ability range', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const slime = mkUnit(UNIT_MAP.ice_slime, 3, 0, false);
+  const distantEnemy = mkUnit(UNIT_MAP.earth_golem, 1, 0, true);
+
+  battleSystem._playerUnits = [slime];
+  battleSystem._enemyUnits = [distantEnemy];
+  battleSystem._actionQueue = [slime];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  const slow = distantEnemy.statusEffects.find(effect => effect.type === 'slow');
+  assert.ok(slow, 'frost coat should slow enemies within 2 rows');
+  assert.equal(slow.duration, 2, 'frost coat slow should last 2 turns');
+  assert.equal(slime.row, 3, 'ice slime should cast frost coat instead of moving when an enemy is in ability range');
+  assert.equal(slime.abilityCooldown, UNIT_MAP.ice_slime.ability.cooldown, 'frost coat should consume the ability cooldown when cast');
+});
+
 test('blood knight ability honors its documented 30 percent lifesteal', () => {
   const battleSystem = makeIdleBattleSystem();
   const knight = mkUnit(UNIT_MAP.blood_knight, 2, 0, false);
@@ -146,4 +165,76 @@ test('fire scout fire blast applies the documented 3 damage minor burn', () => {
   const hpAfterAbility = target.hp;
   battleSystem._tickStatus(target);
   assert.equal(target.hp, hpAfterAbility - 3, 'fire blast burn tick should deal 3 damage');
+});
+
+test('earth archer boulder shot applies the implemented freeze skip status', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const caster = mkUnit(UNIT_MAP.earth_archer, 2, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 2, 0, true);
+
+  battleSystem._playerUnits = [caster];
+  battleSystem._enemyUnits = [target];
+
+  battleSystem._useAbility(caster, [target], [caster]);
+
+  const freeze = target.statusEffects.find(effect => effect.type === 'freeze');
+  assert.ok(freeze, 'boulder shot should apply freeze');
+  assert.equal(freeze.duration, 1, 'boulder shot freeze should last 1 turn');
+});
+
+test('lightning knight thunder strike applies the implemented freeze skip status', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const caster = mkUnit(UNIT_MAP.lightning_knight, 2, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 2, 0, true);
+
+  battleSystem._playerUnits = [caster];
+  battleSystem._enemyUnits = [target];
+
+  battleSystem._useAbility(caster, [target], [caster]);
+
+  const freeze = target.statusEffects.find(effect => effect.type === 'freeze');
+  assert.ok(freeze, 'thunder strike should apply freeze');
+  assert.equal(freeze.duration, 1, 'thunder strike freeze should last 1 turn');
+});
+
+test('fire warrior blazing charge does not hit off-column enemies', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const caster = mkUnit(UNIT_MAP.fire_warrior, 3, 0, false);
+  const offColumnTarget = mkUnit(UNIT_MAP.earth_golem, 2, 1, true);
+
+  battleSystem._playerUnits = [caster];
+  battleSystem._enemyUnits = [offColumnTarget];
+
+  battleSystem._useAbility(caster, [offColumnTarget], [caster]);
+
+  assert.equal(
+    offColumnTarget.hp,
+    offColumnTarget.maxHp,
+    'blazing charge should not damage an enemy that is only in range but not in the same column'
+  );
+  assert.equal(
+    offColumnTarget.statusEffects.some(effect => effect.type === 'burn'),
+    false,
+    'blazing charge should not burn an off-column enemy'
+  );
+});
+
+test('konji shaman plague cloud reaches enemies outside base range because it targets all enemies', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const shaman = mkUnit(UNIT_MAP.konji_shaman, 3, 0, false);
+  const distantEnemy = mkUnit(UNIT_MAP.earth_golem, 0, 0, true);
+
+  battleSystem._playerUnits = [shaman];
+  battleSystem._enemyUnits = [distantEnemy];
+  battleSystem._actionQueue = [shaman];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  const poison = distantEnemy.statusEffects.find(effect => effect.type === 'poison');
+  assert.ok(poison, 'plague cloud should poison enemies even when they are outside the caster\'s base attack range');
+  assert.equal(poison.duration, 2, 'plague cloud poison should last 2 turns');
+  assert.equal(poison.value, 8, 'plague cloud poison should tick for 8 damage');
+  assert.equal(shaman.row, 3, 'konji shaman should cast plague cloud instead of moving when only a distant enemy is alive');
+  assert.equal(shaman.abilityCooldown, UNIT_MAP.konji_shaman.ability.cooldown, 'plague cloud should consume the ability cooldown when cast');
 });

@@ -119,7 +119,7 @@ const UNIT_DEFINITIONS = [
     id: 'earth_archer', name: 'Scout Trooper Pebbles', element: 'earth', cost: 2, tier: 1, role: 'sniper',
     visual: { color: 'green', shape: 'rhombus' },
     stats: { hp: 90, maxHp: 90, attack: 14, defense: 10, speed: 5, range: 2 },
-    ability: { name: 'Boulder Shot', description: 'Stuns target for 1 turn', cooldown: 3 },
+    ability: { name: 'Boulder Shot', description: 'Freezes target for 1 turn', cooldown: 3 },
   },
   {
     id: 'fire_scout', name: 'Flame Child Yunni', element: 'fire', cost: 2, tier: 1, role: 'skirmisher',
@@ -162,7 +162,7 @@ const UNIT_DEFINITIONS = [
     id: 'fire_warrior', name: 'Flame Soldier Magna', element: 'fire', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'red', shape: 'squircle' },
     stats: { hp: 180, maxHp: 180, attack: 25, defense: 12, speed: 6, range: 1 },
-    ability: { name: 'Blazing Dash', description: 'Dash forward, damages all enemies in same lane', cooldown: 3 },
+    ability: { name: 'Blazing Dash', description: 'Dash forward, damages all enemies in same column', cooldown: 3 },
   },
   {
     id: 'ice_archer', name: 'Ice Archer ColdShot', element: 'ice', cost: 4, tier: 2, role: 'sniper',
@@ -180,7 +180,7 @@ const UNIT_DEFINITIONS = [
     id: 'lightning_knight', name: 'Thundorian Soldier', element: 'lightning', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'yellow', shape: 'squircle' },
     stats: { hp: 160, maxHp: 160, attack: 20, defense: 14, speed: 8, range: 1 },
-    ability: { name: 'Thunder', description: 'Stuns target and deals bonus damage', cooldown: 3 },
+    ability: { name: 'Thunder', description: 'Freezes target and deals bonus damage', cooldown: 3 },
   },
   {
     id: 'ice_guardian', name: 'Frost Guardian IceBur', element: 'ice', cost: 4, tier: 2, role: 'tank',
@@ -1084,6 +1084,17 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '1.0.13',
+    date: 'May 7, 2026',
+    title: '🧪 Unit Action Audit Fixes',
+    notes: [
+      '❄️ Ice Slime now casts Frost Coat at its documented 2-row ability range instead of waiting for base attack range',
+      '🔥 Fire Warrior Blazing Charge now only damages enemies in the same column, matching the design text and preventing off-column hits',
+      '☠️ Konji Shaman Plague Cloud now targets the full enemy team as documented instead of stopping at base attack range',
+      '💫 Earth Archer and Lightning Knight ability text and combat logs now consistently describe their implemented freeze effect instead of stun wording',
+    ],
+  },
   {
     version: '1.0.12',
     date: 'May 7, 2026',

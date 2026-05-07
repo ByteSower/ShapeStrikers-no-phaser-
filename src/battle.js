@@ -375,6 +375,7 @@ class BattleSystem {
     // Use ability if off cooldown, else try attack, else move
     const targets = unit.isEnemy ? players : enemies;
     const hasTarget = this._pickTarget(unit, targets);
+    const hasAbilityTarget = this._canUseAbility(unit, targets);
 
     // Healers should only use ability when an ally is actually damaged
     const isAllySupportAbility = unit.definition.ability?.healAmount > 0;
@@ -382,7 +383,7 @@ class BattleSystem {
       ? (unit.isEnemy ? enemies : players).some(u => u.hp > 0 && u.hp < u.maxHp)
       : true;
 
-    if (((hasTarget || isAllySupportAbility) && unit.abilityCooldown <= 0 && allyNeedsHeal)) {
+    if (((hasAbilityTarget || isAllySupportAbility) && unit.abilityCooldown <= 0 && allyNeedsHeal)) {
       this._useAbility(unit, unit.isEnemy ? players : enemies, unit.isEnemy ? enemies : players);
       unit.abilityCooldown = unit.definition.ability.cooldown;
     } else if (hasTarget) {
@@ -461,7 +462,7 @@ class BattleSystem {
         this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'burn', 3, 5);
         break;
       case 'ice_slime':      // Frost Coat: slow all nearby enemies (range 2)
-        { const nearby = aliveEnemies.filter(e => Math.abs(unit.row - e.row) <= 2);
+        { const nearby = enemies.filter(e => e.hp > 0 && Math.abs(unit.row - e.row) <= 2 && !e.statusEffects.find(s => s.type === 'untargetable'));
           for (const t of nearby) this._addStatus(t, 'slow', 2);
           if (nearby.length) this._log(`❄️ ${nearby.length} enemies slowed!`, 'ability'); }
         break;
@@ -472,10 +473,10 @@ class BattleSystem {
       case 'lightning_sprite': // Chain Lightning: bounces to 3 targets
         this._abilityDamage(unit, aliveEnemies.slice(0, 3), 1.4);
         break;
-      case 'earth_archer':   // Boulder Toss: 1.4× + stun 1 turn
+      case 'earth_archer':   // Boulder Toss: 1.4× + freeze 1 turn
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.4);
         this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'freeze', 1);
-        if (aliveEnemies[0]) this._log(`💫 ${this._n(aliveEnemies[0])} stunned!`, 'ability');
+        if (aliveEnemies[0]) this._log(`💫 ${this._n(aliveEnemies[0])} frozen!`, 'ability');
         break;
       case 'fire_scout':     // Fire Bolt: 1.4× + minor burn
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.4);
@@ -503,9 +504,8 @@ class BattleSystem {
       // ---- TIER 2 ----
       case 'fire_warrior':   // Blazing Charge: damage enemies in front in same column + burn
         { const inFront = aliveEnemies.filter(e => e.col === unit.col && (unit.isEnemy ? e.row > unit.row : e.row < unit.row));
-          const targets = inFront.length ? inFront : aliveEnemies.slice(0, 1);
-          this._abilityDamage(unit, targets, 1.4);
-          this._applyStatusToTargets(targets, 'burn', 3, 3); }
+          this._abilityDamage(unit, inFront, 1.4);
+          this._applyStatusToTargets(inFront, 'burn', 3, 3); }
         break;
       case 'ice_archer':     // Frost Arrow: 1.2× + freeze
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.2);
@@ -514,10 +514,10 @@ class BattleSystem {
       case 'arcane_mage':    // Arcane Blast: 2.0× single
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 2.0);
         break;
-      case 'lightning_knight': // Thunder Strike: 1.6× + stun
+      case 'lightning_knight': // Thunder Strike: 1.6× + freeze
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.6);
         this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'freeze', 1);
-        if (aliveEnemies[0]) this._log(`⚡ ${this._n(aliveEnemies[0])} stunned!`, 'ability');
+        if (aliveEnemies[0]) this._log(`⚡ ${this._n(aliveEnemies[0])} frozen!`, 'ability');
         break;
       case 'ice_guardian':   // Frozen Wall: self shield 3 turns + slow ALL enemies
         this._addStatus(unit, 'shield', 3, 15);
@@ -547,8 +547,8 @@ class BattleSystem {
         this._abilityDamage(unit, aliveEnemies.slice(0, 3), 1.2, true, 0.3, true);
         break;
       case 'konji_shaman':   // Plague Cloud: 0.3× + poison ALL enemies
-        this._abilityDamage(unit, aliveEnemies, 0.3);
-        this._applyStatusToTargets(aliveEnemies, 'poison', 2, 8);
+        this._abilityDamage(unit, enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable')), 0.3);
+        this._applyStatusToTargets(enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable')), 'poison', 2, 8);
         break;
       case 'void_knight':    // Corruption Strike: 1.4× + weaken
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.4);
@@ -758,6 +758,30 @@ class BattleSystem {
       if (diff !== 0) return diff;
       return String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0;
     })[0];
+  }
+
+  _canUseAbility(unit, targets) {
+    if (unit.definition.id === 'konji_shaman') {
+      return targets.some(target => target.hp > 0 && !target.statusEffects.find(s => s.type === 'untargetable'));
+    }
+    if (unit.definition.id === 'ice_slime') {
+      return targets.some(target => {
+        if (target.hp <= 0) return false;
+        if (target.statusEffects.find(s => s.type === 'untargetable')) return false;
+        return Math.abs(unit.row - target.row) <= 2;
+      });
+    }
+    if (unit.definition.id === 'fire_warrior') {
+      const range = unit.stats.range || 1;
+      return targets.some(target => {
+        if (target.hp <= 0) return false;
+        if (target.statusEffects.find(s => s.type === 'untargetable')) return false;
+        if (Math.abs(unit.row - target.row) > range) return false;
+        if (target.col !== unit.col) return false;
+        return unit.isEnemy ? target.row > unit.row : target.row < unit.row;
+      });
+    }
+    return Boolean(this._pickTarget(unit, targets));
   }
 
   _moveTowardEnemy(unit, targets) {

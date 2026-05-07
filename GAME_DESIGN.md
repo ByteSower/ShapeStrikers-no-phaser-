@@ -227,7 +227,7 @@ Each unit has one ability with a **cooldown** (number of rounds between uses). W
 | Ice Slime | Frost Coat | — | Slows ALL enemies in range 2 |
 | Earth Golem | Stone Skin | — | Self shield (+15 DEF, 2 turns) |
 | Lightning Sprite | Chain Lightning | 1.4× | Bounces to 3 targets |
-| Earth Archer | Boulder Toss | 1.4× | + Stun (1 turn) |
+| Earth Archer | Boulder Toss | 1.4× | + Freeze (1 turn) |
 | Fire Scout | Fire Bolt | 1.4× | + Minor burn (2 turns, 3 dmg) |
 | Frost Fairy | Healing Frost | — | Heals lowest HP ally 25 HP |
 | Blood Sprite | Drain Touch | 1.4× | + 40% lifesteal |
@@ -236,7 +236,7 @@ Each unit has one ability with a **cooldown** (number of rounds between uses). W
 | Fire Warrior | Blazing Charge | 1.4× | Hits ALL enemies in same column + burn |
 | Ice Archer | Frost Arrow | 1.2× | + Freeze (1 turn) |
 | Arcane Mage | Arcane Blast | 2.0× | Heavy single-target magic |
-| Lightning Knight | Thunder Strike | 1.6× | + Stun (1 turn) |
+| Lightning Knight | Thunder Strike | 1.6× | + Freeze (1 turn) |
 | Ice Guardian | Frozen Wall | — | Self shield (3 turns) + slow ALL enemies |
 | Arcane Assassin | Shadow Strike | 1.5–2.5× | 50% chance for 2.5× crit |
 | Nature Spirit | Rejuvenate | — | Heals ALL allies 15 HP |
