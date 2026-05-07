@@ -38,6 +38,7 @@ const Matchmaking = (() => {
   let _searching = false;
   let _matched   = false;
   let _listeners = [];
+  let _roomRecordUnsupported = false;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -68,6 +69,13 @@ const Matchmaking = (() => {
       return SupabaseClient.getChannelStatus(CHANNEL_NAME);
     }
     return SupabaseClient.getChannel(CHANNEL_NAME) ? 'SUBSCRIBED' : 'pending';
+  }
+
+  function _isMissingRoomRecordTableError(error) {
+    if (!error) return false;
+    if (error.code === 'PGRST205') return true;
+    if (typeof error.message !== 'string') return false;
+    return error.message.includes("Could not find the table 'public.mp_rooms' in the schema cache");
   }
 
   async function _broadcastJoin(reason) {
@@ -112,7 +120,7 @@ const Matchmaking = (() => {
 
     // Persist the room record in Supabase (best-effort — falls back to local UUID).
     const client = (typeof Backend !== 'undefined') && Backend.getClient();
-    if (client) {
+    if (client && !_roomRecordUnsupported) {
       try {
         const { data, error } = await client
           .from('mp_rooms')
@@ -120,7 +128,12 @@ const Matchmaking = (() => {
           .select('room_id')
           .single();
         if (!error && data) roomId = data.room_id;
-        else if (error) console.warn('[Matchmaking] DB room insert failed:', error.message);
+        else if (_isMissingRoomRecordTableError(error)) {
+          _roomRecordUnsupported = true;
+          console.info('[Matchmaking] Supabase mp_rooms table unavailable — using local roomId fallback.');
+        } else if (error) {
+          console.warn('[Matchmaking] DB room insert failed:', error.message);
+        }
       } catch (e) {
         console.warn('[Matchmaking] DB room insert threw:', e);
       }

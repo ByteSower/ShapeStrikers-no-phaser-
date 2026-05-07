@@ -22,8 +22,8 @@ Purpose: this is the single source of truth for the active work order in `games/
 - Multiplayer-only upgrade rules are now enforced in the live prep flow: economy/scouting upgrades are hidden in multiplayer and round-sensitive buffs clear between prep rounds.
 - Player-facing multiplayer rules and reconnect expectations are now surfaced in the title help overlay and the multiplayer queue overlay, and mobile players can read upgrade details there without hover.
 - A two-client live pass on 2026-05-07 confirmed guest reload and recovery events land in the shared telemetry log, alongside real disconnect and recovery transitions.
-- The current release target is stable host-authoritative multiplayer with strong transient reconnect recovery.
-- Host-loss survival remains an unresolved release-hardening gap.
+- The current release target is stable host-authoritative multiplayer with strong transient reconnect recovery and explicit terminal host-loss handling.
+- Near-term release policy is now locked: confirmed host loss ends the match, and stronger authority is deferred until ranked, spectate, or broader platform requirements make it necessary.
 
 ## Active Roadmap
 
@@ -65,16 +65,16 @@ Exit criteria:
 - mobile players can inspect upgrade behavior without hover-only UI
 
 ### 4. Release Architecture Decision
-Status: later, but strategically important
+Status: near-term decision made 2026-05-07; revisit before ranked or spectate work
 
-Decision to make:
-- continue with host authority plus host migration
-- or move to a dedicated authoritative match service
+Current decision:
+- keep the current host-authoritative model for the near-term public release
+- keep confirmed host-loss handling terminal instead of adding host migration now
 
-Needed before public-release confidence:
-- decide the real target for crash/reload recovery
-- decide whether host-loss survival is required
-- define the minimum server-side state and telemetry retention model
+Revisit triggers:
+- ranked or spectate modes need stronger continuity guarantees
+- broader platform targets raise the reliability bar beyond transient reconnect recovery
+- live telemetry shows host-loss frequency or player impact high enough to justify new infrastructure
 
 ## Non-Active But Important Backlog
 
@@ -93,6 +93,6 @@ Needed before public-release confidence:
 
 ## Immediate Next Actions
 
-1. Decide whether host-loss survival stays on the host-authority path or needs a stronger authoritative match service before wider public release.
-2. Keep future live passes focused on host-loss and confirmed disconnect cases now that guest reload recovery is verified in shared telemetry.
+1. Keep future live passes focused on host-loss and confirmed disconnect cases now that the near-term terminal host-loss policy is explicit.
+2. Reopen the stronger authoritative service decision when ranked, spectate, or broader release targets enter scope, or when live telemetry shows the current policy is not enough.
 3. Reopen audio/mobile polish only if the next live multiplayer pass shows a real regression.

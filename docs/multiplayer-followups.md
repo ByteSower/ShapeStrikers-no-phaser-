@@ -107,6 +107,11 @@ Before treating multiplayer as release-ready beyond the current testing phase, d
 - full crash/reload recovery
 - full host-loss survival
 
+Current near-term decision (2026-05-07):
+
+- the release target is good transient reconnect only, with confirmed host loss remaining terminal
+- revisit host migration or a dedicated authoritative match service when ranked, spectate, or broader platform targets enter scope
+
 If the target includes Steam / console readiness, assume we need at least full crash/reload recovery and centralized telemetry, and very likely host-loss survival too.
 
 ### Current Hardening Track
@@ -116,7 +121,7 @@ If the target includes Steam / console readiness, assume we need at least full c
 - [x] define reconnect identity and rejoin tokens for full reload recovery without trusting only transient tab state
 - [x] split partial replay resume from full authoritative resync with explicit policy per failure mode
 - [x] add a best-effort centralized telemetry upload path plus `mp_telemetry_events` schema for reconnect, resync, disconnect, and desync events
-- [ ] decide whether release hardening continues on host authority + migration, or pivots to a dedicated authoritative match service
+- [x] keep the near-term release on the current host-authoritative path with terminal host-loss handling; revisit stronger authority for ranked, spectate, or broader platform goals
 
 ## Priority 1: Audio Audit And Mobile Mute Regression
 

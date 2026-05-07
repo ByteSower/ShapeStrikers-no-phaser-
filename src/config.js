@@ -1085,6 +1085,15 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.10',
+    date: 'May 7, 2026',
+    title: '🧭 Matchmaking Fallback Policy',
+    notes: [
+      '🧭 Matchmaking now treats missing optional Supabase room-record tables as a local roomId fallback instead of surfacing a noisy runtime warning during pairing',
+      '📘 The release roadmap now locks the near-term multiplayer target to host authority with terminal host-loss handling, while deferring stronger authority to future ranked or spectate work',
+    ],
+  },
+  {
     version: '1.0.9',
     date: 'May 7, 2026',
     title: '⏸️ Prep Disconnect Freeze',

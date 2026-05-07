@@ -187,7 +187,8 @@
 - [x] Two-client live validation rechecked guest reload/rejoin telemetry and confirmed reconnect and recovery events arrive in the shared telemetry log
 - [x] Added game-level regression coverage to confirm host matches stay reconnectable on guest disconnect while confirmed host-loss paths still terminate immediately
 - [x] Fixed a live repro where confirmed guest disconnects during prep could fabricate a host win; prep now freezes and the ready timer resumes after reconnect
-- [ ] Long-term option: move battle authority from host to backend if host disconnects become a recurring issue
+- [x] Matchmaking now falls back cleanly when optional Supabase multiplayer room tables are unavailable, and the near-term release target is explicitly locked to terminal host-loss handling on the current host-authoritative architecture
+- [ ] Revisit stronger multiplayer authority when ranked, spectate, or broader platform targets raise the reliability bar beyond transient reconnect recovery
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance
 - [x] Gameplay BGM rotates between two tracks; boss waves play dedicated boss music
