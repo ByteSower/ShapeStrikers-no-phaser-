@@ -1155,6 +1155,8 @@ const Game = (() => {
       return;
     }
 
+    if (state.phase !== 'prep') return;
+
     // (A) Pending shop purchase — place unit
     if (state.selectedShopIdx !== null) {
       const def = state.shopUnits[state.selectedShopIdx];
@@ -1167,6 +1169,10 @@ const Game = (() => {
         // If they clicked an existing unit, select it (fall through to C)
         if (!clickedUnit) return;
       } else {
+      if (state.gold < def.cost) {
+        UI.showMessage('Not enough gold!');
+        return;
+      }
 
       // Deduct gold NOW on actual placement
       state.gold -= def.cost;
@@ -1659,10 +1665,8 @@ const Game = (() => {
       const goldBase = Math.floor(((GAME_CONFIG.goldPerWave ?? 7) + (_currentWaveDef?.bonusGold ?? 0)) * _challengeGoldModifier());
       const victoryBonusUpg = UPGRADES.find(u => u.id === 'victory_bonus');
       const victoryBonus = (victoryBonusUpg?.effect?.value || 2) * (state.upgradeLevels['victory_bonus'] || 0);
-      // Add base gold first, then calculate interest on new total (matches Phaser)
-      state.gold += goldBase + victoryBonus;
       const interest = _calcInterest(state.gold);
-      state.gold += interest;
+      state.gold += goldBase + victoryBonus + interest;
       const earnedGold = goldBase + interest + victoryBonus;
       state.score += state.wave * 100;
       _restorePlayerPositions();
@@ -2535,6 +2539,10 @@ const Game = (() => {
   function buyUpgrade(id) {
     const upg   = UPGRADES.find(u => u.id === id);
     if (!upg) return;
+    if (state.phase !== 'prep') {
+      UI.showMessage('Can only buy during the shop phase.');
+      return;
+    }
     if (_mpMode && MP_DISABLED_UPGRADE_IDS.has(id)) {
       UI.showMessage('This upgrade is disabled in multiplayer.');
       return;

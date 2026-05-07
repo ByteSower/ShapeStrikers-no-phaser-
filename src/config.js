@@ -1085,6 +1085,17 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.12',
+    date: 'May 7, 2026',
+    title: '🧪 Economy & Placement Audit Fixes',
+    notes: [
+      '🔥 Fire Imp and Fire Scout burn effects now match their documented tick damage, and Blood Knight cleave lifesteal now heals from 30% of total damage across all struck targets',
+      '💰 War Chest interest now applies to current gold before victory rewards are added, matching the documented single-player payout formula',
+      '🛒 Pending shop purchases now recheck affordability at placement time so later spending cannot force negative gold',
+      '🧭 Upgrades and unit repositioning are now correctly limited to prep phase interactions instead of staying active during result-state clicks',
+    ],
+  },
+  {
     version: '1.0.11',
     date: 'May 7, 2026',
     title: '🩹 Battle Rules Audit Fixes',

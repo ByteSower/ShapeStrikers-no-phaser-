@@ -165,6 +165,7 @@ function loadGameContext({
   roomGraceMs = 10_000,
   reconnectResult = true,
   battleEndOverride = null,
+  autoResolveBattle = false,
   savedSession = {
     roomId: 'room-abcdef12',
     isHost: false,
@@ -181,7 +182,9 @@ function loadGameContext({
   const timeouts = [];
   const intervals = [];
   const uiMessages = [];
+  const resultCalls = [];
   const screenCalls = [];
+  const shopRenderCalls = [];
   const stopMusicCalls = [];
   const gameplayMusicCalls = [];
   const musicCalls = [];
@@ -271,10 +274,34 @@ function loadGameContext({
       startingGold: 10,
       maxRefreshesPerRound: 1,
     },
+    ELEMENT_EMOJI: {
+      fire: 'F',
+      earth: 'E',
+      lightning: 'L',
+      arcane: 'A',
+      void: 'V',
+    },
+    Element: {
+      FIRE: 'fire',
+      EARTH: 'earth',
+      LIGHTNING: 'lightning',
+      ARCANE: 'arcane',
+      VOID: 'void',
+    },
     GRID_CONFIG: {
       rows: 6,
       cols: 5,
       battleLineRow: 2,
+    },
+    WaveGenerator: {
+      setVoidCampaign() {},
+      setSeed() {},
+      generate() {
+        return {
+          bonusGold: 3,
+          enemies: [{ unitId: 'test_unit', count: 1 }],
+        };
+      },
     },
     Room: {
       DISCONNECT_GRACE_MS: roomGraceMs,
@@ -488,6 +515,7 @@ function loadGameContext({
       showScreen(screenId) {
         screenCalls.push(screenId);
       },
+      hideAllOverlays() {},
       showMessage(message) {
         uiMessages.push(message);
       },
@@ -495,8 +523,16 @@ function loadGameContext({
       addLogEntry() {},
       showPhaseBanner() {},
       updateHUD() {},
+      hideResult() {},
+      showResult(playerWon, wave, earnedGold, breakdown = {}) {
+        resultCalls.push({ playerWon, wave, earnedGold, breakdown: plain(breakdown) });
+      },
       clearUnitDetail() {},
-      renderShop() {},
+      showUnitDetail() {},
+      switchTab() {},
+      renderShop(units, gold, onBuy) {
+        shopRenderCalls.push({ units: plain(units), gold, onBuy });
+      },
       updateUpgrades(upgradeLevels, gold, _onBuy, visibleUpgrades) {
         updateUpgradeCalls.push({
           upgradeLevels: plain(upgradeLevels || {}),
@@ -510,6 +546,10 @@ function loadGameContext({
       build() {},
       onClick: null,
       onRightClick: null,
+      clearSelection() {},
+      clearHighlights() {},
+      highlightTiles() {},
+      selectTile() {},
       getTileEl() {
         return null;
       },
@@ -600,6 +640,7 @@ function loadGameContext({
         stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
       },
     },
+    ACHIEVEMENTS: [],
     UPGRADES: [
       { id: 'field_medic', name: 'Field Medic', cost: 5, maxLevel: 3, effect: { type: 'healingRate', value: 0.15 } },
       { id: 'bargain_hunter', name: 'Hovs Handouts', cost: 4, maxLevel: 2, effect: { type: 'shopRefresh', value: -1 } },
@@ -677,6 +718,9 @@ function loadGameContext({
             battleEnd,
           ],
         };
+        if (autoResolveBattle) {
+          this.onBattleEnd?.(Boolean(battleEnd.playerWon));
+        }
       };
       this.getReplayLog = () => this._replayLog;
     },
@@ -736,6 +780,13 @@ function loadGameContext({
   return {
     Game: vm.runInContext('Game', context),
     document,
+    clickShop(index) {
+      const last = shopRenderCalls.at(-1);
+      last?.onBuy?.(index);
+    },
+    clickTile(row, col) {
+      context.Grid.onClick?.(row, col);
+    },
     dispatchWindowEvent(type, event = {}) {
       for (const handler of windowEvents.get(type) || []) {
         handler(event);
@@ -748,6 +799,7 @@ function loadGameContext({
       }
     },
     uiMessages,
+    resultCalls,
     timeouts,
     intervals,
     screenCalls,
@@ -1308,6 +1360,154 @@ await test('Multiplayer prep hides disabled upgrades and blocks buying them', ()
   assert.equal(Game.state.gold, goldBefore, 'Disabled multiplayer upgrades should not spend gold');
   assert.equal(Game.state.upgradeLevels.field_medic, undefined, 'Disabled multiplayer upgrades should not be applied');
   assert.equal(uiMessages.includes('This upgrade is disabled in multiplayer.'), true);
+});
+
+await test('Pending shop purchases recheck affordability before placement after later gold spend', () => {
+  const {
+    Game,
+    clickShop,
+    clickTile,
+    uiMessages,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  Game.state.shopUnits[0] = {
+    ...plain(Game.state.shopUnits[0]),
+    cost: 8,
+    stats: { ...Game.state.shopUnits[0].stats },
+  };
+
+  const goldBeforeUpgrade = Game.state.gold;
+  clickShop(0);
+
+  assert.equal(Game.state.selectedShopIdx, 0, 'Shop card should be pending after the first click');
+  assert.equal(Game.state.gold, goldBeforeUpgrade, 'Selecting a shop card should not spend gold before placement');
+
+  Game.buyUpgrade('field_medic');
+  assert.equal(Game.state.gold, goldBeforeUpgrade - 5, 'Upgrade purchase should spend gold while the shop card is still pending');
+
+  clickTile(3, 0);
+
+  assert.equal(Game.state.gold, goldBeforeUpgrade - 5, 'Placement should recheck affordability and avoid overspending');
+  assert.equal(Game.state.playerUnits.length, 0, 'Unaffordable pending purchase should not place a unit');
+  assert.equal(Game.state.shopUnits[0].cost, 8, 'Failed placement should leave the shop card available');
+  assert.equal(uiMessages.at(-1), 'Not enough gold!', 'Placement should surface the affordability failure to the player');
+});
+
+await test('War Chest interest applies to current gold before victory rewards are added', () => {
+  const {
+    Game,
+    resultCalls,
+  } = loadGameContext({
+    savedSession: null,
+    autoResolveBattle: true,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.gold = 10;
+  Game.state.upgradeLevels = { war_chest: 1 };
+  Game.state.playerUnits = [{
+    id: 'p-interest',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  Game.startBattle();
+
+  assert.equal(Game.state.phase, 'result', 'Auto-resolved battle should advance the game into the result phase');
+  assert.equal(Game.state.gold, 21, 'Interest should be based on pre-reward gold, not the gold total after victory rewards are added');
+  assert.equal(resultCalls.at(-1)?.earnedGold, 11, 'Result payload should report the documented gold reward total');
+  assert.equal(resultCalls.at(-1)?.breakdown?.interest, 1, 'War Chest should contribute 10 percent of the current pre-reward gold');
+});
+
+await test('Upgrades cannot be bought after prep phase has ended', () => {
+  const {
+    Game,
+    uiMessages,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const goldBefore = Game.state.gold;
+  Game.state.phase = 'battle';
+  Game.buyUpgrade('field_medic');
+
+  assert.equal(Game.state.gold, goldBefore, 'Upgrade purchases should not spend gold outside the prep phase');
+  assert.equal(Game.state.upgradeLevels.field_medic, undefined, 'Upgrade levels should not change outside the prep phase');
+  assert.equal(uiMessages.at(-1), 'Can only buy during the shop phase.', 'Players should be told why the upgrade purchase was blocked');
+});
+
+await test('Units cannot be repositioned after the prep phase has ended', () => {
+  const {
+    Game,
+    clickTile,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-grid',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+  Game.state.phase = 'result';
+
+  clickTile(3, 0);
+  clickTile(4, 1);
+
+  assert.equal(Game.state.playerUnits[0].row, 3, 'Units should stay in place once prep has ended');
+  assert.equal(Game.state.playerUnits[0].col, 0, 'Units should not be repositioned outside prep');
+  assert.equal(Game.state.selectedUnit, null, 'Result-phase clicks should not leave a movable unit selected');
 });
 
 await test('Multiplayer new prep round clears round-sensitive upgrades and restores base stats', () => {

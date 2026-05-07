@@ -458,7 +458,7 @@ class BattleSystem {
       // ---- TIER 1 ----
       case 'fire_imp':       // Ember Strike: 1.5× single + burn
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.5);
-        this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'burn', 3, 3);
+        this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'burn', 3, 5);
         break;
       case 'ice_slime':      // Frost Coat: slow all nearby enemies (range 2)
         { const nearby = aliveEnemies.filter(e => Math.abs(unit.row - e.row) <= 2);
@@ -479,7 +479,7 @@ class BattleSystem {
         break;
       case 'fire_scout':     // Fire Bolt: 1.4× + minor burn
         this._abilityDamage(unit, aliveEnemies.slice(0, 1), 1.4);
-        this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'burn', 2, 2);
+        this._applyStatusToTargets(aliveEnemies.slice(0, 1), 'burn', 2, 3);
         break;
       case 'frost_fairy':    // Healing Frost: heal lowest HP ally 25
         this._healAllies(unit, aliveAllies, ab.healAmount || 25, false);
@@ -544,7 +544,7 @@ class BattleSystem {
           } }
         break;
       case 'blood_knight':   // Crimson Cleave: 1.2× to up to 3 + 30% lifesteal
-        this._abilityDamage(unit, aliveEnemies.slice(0, 3), 1.2, true, 0.3);
+        this._abilityDamage(unit, aliveEnemies.slice(0, 3), 1.2, true, 0.3, true);
         break;
       case 'konji_shaman':   // Plague Cloud: 0.3× + poison ALL enemies
         this._abilityDamage(unit, aliveEnemies, 0.3);
@@ -647,22 +647,35 @@ class BattleSystem {
 
   // ── Ability helpers ───────────────────────────────────────────────────────
 
-  _abilityDamage(unit, targets, mult, lifesteal = false, lifestealPct = 0.4) {
+  _abilityDamage(unit, targets, mult, lifesteal = false, lifestealPct = 0.4, aggregateLifesteal = false) {
+    const shouldLifesteal = lifesteal || unit.definition.trait === 'vampire';
+    const lifestealRate = lifesteal ? lifestealPct : 0.4;
+    let totalLifestealDamage = 0;
     for (const target of targets) {
       if (target.hp <= 0) continue;
       const dmg = this._calcDamage(unit, target, mult);
       this._applyDamage(target, dmg);
       this._emitUnitHit(target, dmg, unit.definition.element, unit.id);
       this._log(`💥 ${this._n(target)} takes ${dmg} ability damage`, 'attack', this._side(unit));
-      if (lifesteal || unit.definition.trait === 'vampire') {
-        const pct = lifesteal ? lifestealPct : 0.4;
-        const raw = Math.floor(dmg * pct);
-        const heal = Math.floor(raw * this._healMod(unit));
-        unit.hp = Math.min(unit.maxHp, unit.hp + heal);
-        this._log(`🩸 ${this._n(unit)} heals ${heal} HP`, 'heal', this._side(unit));
-        this._emitUnitHit(unit, -heal, null, unit.id);
+      if (shouldLifesteal) {
+        if (aggregateLifesteal) {
+          totalLifestealDamage += dmg;
+        } else {
+          const raw = Math.floor(dmg * lifestealRate);
+          const heal = Math.floor(raw * this._healMod(unit));
+          unit.hp = Math.min(unit.maxHp, unit.hp + heal);
+          this._log(`🩸 ${this._n(unit)} heals ${heal} HP`, 'heal', this._side(unit));
+          this._emitUnitHit(unit, -heal, null, unit.id);
+        }
       }
       if (target.hp <= 0) this._killUnit(target, unit);
+    }
+    if (shouldLifesteal && aggregateLifesteal && totalLifestealDamage > 0) {
+      const raw = Math.floor(totalLifestealDamage * lifestealRate);
+      const heal = Math.floor(raw * this._healMod(unit));
+      unit.hp = Math.min(unit.maxHp, unit.hp + heal);
+      this._log(`🩸 ${this._n(unit)} heals ${heal} HP`, 'heal', this._side(unit));
+      this._emitUnitHit(unit, -heal, null, unit.id);
     }
   }
 
