@@ -63,9 +63,19 @@
     <p id="mp-player-name-display" class="mp-player-name"></p>
     <div id="mp-status" class="mp-status">Ready to search</div>
     <div id="mp-connection-badge" class="mp-connection-badge">🔴 Not connected</div>
+    <div class="mp-rules-card" aria-label="Multiplayer rules summary">
+      <h3>Quick Rules</h3>
+      <ul class="mp-rules-list">
+        <li><b>Best-of-5:</b> first to 3 round wins takes the set.</li>
+        <li><b>Round flow:</b> build, ready up, then both players watch the same battle replay.</li>
+        <li><b>Between rounds:</b> your roster persists, gold can carry up to 30, and battle damage, statuses, and cooldowns reset.</li>
+        <li><b>Reconnects:</b> guest reloads can resume if the host stays online; a confirmed host disconnect ends the match.</li>
+      </ul>
+      <p class="mp-rules-note">Multiplayer disables 💚 Field Medic, Hovs Handouts, 📈 War Chest, 🏆 Victory Bonus, and 🔭 Scout's Intel. ⬆️ Elite Training and ⚔️ Double Edge reset each new prep round.</p>
+    </div>
     <div class="mp-lobby-buttons">
       <button class="btn btn-lg btn-fire" id="btn-mp-find-match">🔍 Find Match</button>
-      <button class="btn btn-lg btn-secondary" id="btn-mp-cancel" style="display:none">✖ Cancel</button>
+      <button class="btn btn-lg btn-secondary mp-hidden" id="btn-mp-cancel">✖ Cancel</button>
     </div>
     <button class="btn btn-secondary btn-sm overlay-close" id="btn-mp-lobby-close">✕ Close</button>
   </div>
@@ -333,6 +343,33 @@
         <p>Clear 15 waves in Normal mode or survive the full 25-wave Void Campaign. Build an army of elemental units and use synergies, positioning, and upgrades to outlast each boss wave.</p>
       </div>
       <div class="help-section">
+        <h3>⚔️ Multiplayer Match Rules</h3>
+        <ul>
+          <li><b>Format:</b> multiplayer is a best-of-5 set. First to 3 round wins takes the match.</li>
+          <li><b>Round flow:</b> both players build, press Ready, then watch the same host-authoritative battle replay.</li>
+          <li><b>Shared shop:</b> both players get the same seeded shop each round, and rerolls stay synchronized.</li>
+          <li><b>Economy:</b> gold carries between rounds up to 30, with round rewards based on wins and surviving units.</li>
+        </ul>
+      </div>
+      <div class="help-section">
+        <h3>🔄 Multiplayer Carry &amp; Reset Rules</h3>
+        <ul>
+          <li><b>Roster:</b> the units you own persist between rounds. Winning or losing a battle does not delete your roster.</li>
+          <li><b>Battle cleanup:</b> each new prep phase clears battle damage, status effects, and cooldowns.</li>
+          <li><b>Persistent upgrades:</b> 🏰 Army Expansion, 🔄 Refresh Master, and 📜 Mercenary stay for the full match.</li>
+          <li><b>Round-only upgrades:</b> ⬆️ Elite Training and ⚔️ Double Edge reset at the start of each new prep round.</li>
+          <li><b>Disabled in multiplayer:</b> 💚 Field Medic, Hovs Handouts, 📈 War Chest, 🏆 Victory Bonus, and 🔭 Scout's Intel do not appear in multiplayer.</li>
+        </ul>
+      </div>
+      <div class="help-section">
+        <h3>📡 Reconnect Expectations</h3>
+        <ul>
+          <li><b>Guest reconnects:</b> if the host stays online, reloading or briefly disconnecting should return you to the live room and current round.</li>
+          <li><b>During battle:</b> wait for the room to catch you back up instead of starting a new queue.</li>
+          <li><b>Host disconnects:</b> a confirmed host disconnect ends the current multiplayer set.</li>
+        </ul>
+      </div>
+      <div class="help-section">
         <h3>🛒 Shop Phase</h3>
         <p><b>Buy units</b> from the shop, then <b>click a tile</b> in your zone (bottom 2 rows) to place them. <b>Refresh</b> the shop for new units. <b>Right-click</b> a placed unit to sell it, or use the <b>Sell Unit</b> button on mobile.</p>
       </div>
@@ -346,7 +383,53 @@
       </div>
       <div class="help-section">
         <h3>⬆️ Upgrades</h3>
-        <p>Use gold to buy upgrades in the Stats tab: Army Expansion (+slots), Field Medic (healing), War Chest (interest), and more.</p>
+        <p>Use gold to buy upgrades in the Stats tab. The reference below lists what each upgrade does, including the multiplayer-only restrictions.</p>
+      </div>
+      <div class="help-section">
+        <h3>📘 Upgrade Reference</h3>
+        <div class="upgrade-help-grid">
+          <div class="upgrade-help-card">
+            <h4>🏰 Army Expansion</h4>
+            <p>+1 max unit slot.</p>
+          </div>
+          <div class="upgrade-help-card">
+            <h4>💚 Field Medic</h4>
+            <p>+15% post-battle healing.</p>
+          </div>
+          <div class="upgrade-help-card">
+            <h4>Hovs Handouts</h4>
+            <p>-1 shop refresh cost per level.</p>
+          </div>
+          <div class="upgrade-help-card">
+            <h4>📈 War Chest</h4>
+            <p>+10% interest on saved gold per level.</p>
+          </div>
+          <div class="upgrade-help-card">
+            <h4>🏆 Victory Bonus</h4>
+            <p>+2 gold after each wave win per level.</p>
+          </div>
+          <div class="upgrade-help-card">
+            <h4>🔄 Refresh Master</h4>
+            <p>+1 refresh per round.</p>
+          </div>
+          <div class="upgrade-help-card">
+            <h4>🔭 Scout's Intel</h4>
+            <p>Previews the next wave's enemies, stats, and abilities.</p>
+          </div>
+          <div class="upgrade-help-card">
+            <h4>⬆️ Elite Training</h4>
+            <p>Raises attack and speed, then adds defense at level 3.</p>
+          </div>
+          <div class="upgrade-help-card">
+            <h4>📜 Mercenary</h4>
+            <p>+1 shop card per refresh.</p>
+          </div>
+          <div class="upgrade-help-card">
+            <h4>⚔️ Double Edge</h4>
+            <p>+20% attack and -20% defense for all units.</p>
+          </div>
+        </div>
+        <p class="help-note">Multiplayer only: 💚 Field Medic, Hovs Handouts, 📈 War Chest, 🏆 Victory Bonus, and 🔭 Scout's Intel are disabled. ⬆️ Elite Training and ⚔️ Double Edge reset each new prep round.</p>
       </div>
       <div class="help-section">
         <h3>🎮 Controls</h3>

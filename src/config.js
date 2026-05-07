@@ -1085,6 +1085,15 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.7',
+    date: 'May 7, 2026',
+    title: '📘 Multiplayer Clarity Update',
+    notes: [
+      '📘 Multiplayer rules, carry/reset behavior, reconnect expectations, and upgrade descriptions are now readable in-game from the queue and help overlays',
+      '🧪 A two-client live pass rechecked guest reload/rejoin behavior and confirmed reload/resync lifecycle reasons land in Supabase telemetry',
+    ],
+  },
+  {
     version: '1.0.6',
     date: 'May 7, 2026',
     title: '🛡️ Multiplayer Hardening Pass',

@@ -20,6 +20,8 @@ Purpose: this is the single source of truth for the active work order in `games/
 - A best-effort centralized multiplayer telemetry upload path is now live: the `mp_telemetry_events` schema is applied in Supabase and a browser-backed insert was verified end to end.
 - Multiplayer round-reset roster rules are now covered by focused multiplayer tests: owned units persist between rounds and reset to their prep-phase HP, positions, and cleared battle state.
 - Multiplayer-only upgrade rules are now enforced in the live prep flow: economy/scouting upgrades are hidden in multiplayer and round-sensitive buffs clear between prep rounds.
+- Player-facing multiplayer rules and reconnect expectations are now surfaced in the title help overlay and the multiplayer queue overlay, and mobile players can read upgrade details there without hover.
+- A two-client live pass on 2026-05-07 confirmed guest reload/resync reasons such as `reload_resume_authoritative_request` and `reload_resume_authoritative_applied` land in `mp_telemetry_events`, alongside live stale/recovery `room.lifecycle` transitions.
 - The current release target is stable host-authoritative multiplayer with strong transient reconnect recovery.
 - Host-loss survival remains an unresolved release-hardening gap.
 
@@ -51,7 +53,7 @@ Exit criteria:
 - no regressions to single-player economy, upgrades, or unit persistence
 
 ### 3. Player-Facing Multiplayer Clarity
-Status: next
+Status: completed 2026-05-07
 
 Focus:
 - explain reconnect/disconnect expectations without internal protocol language
@@ -91,6 +93,6 @@ Needed before public-release confidence:
 
 ## Immediate Next Actions
 
-1. Write the player-facing multiplayer rules and reconnect expectations now that the round-reset and upgrade rules are settled.
-2. Use the centralized telemetry path during the next reconnect/desync live pass to confirm fault events appear in `mp_telemetry_events`.
-3. Decide whether host-loss survival stays on the host-authority path or needs a stronger authoritative match service before wider public release.
+1. Decide whether host-loss survival stays on the host-authority path or needs a stronger authoritative match service before wider public release.
+2. Keep future live passes focused on host-loss and disconnect-confirmation cases now that guest reload/resync telemetry is centrally verified.
+3. Reopen audio/mobile polish only if the next live multiplayer pass shows a real regression.

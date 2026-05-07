@@ -83,6 +83,12 @@ Current implementation note:
 `shape_strikers_mp_telemetry_log` now stores a structured client-side ring buffer for room lifecycle,
 resync, saved-session rejection, and desync events, and unsent entries now best-effort upload to Supabase `mp_telemetry_events`. Broad production aggregation and dashboards are still pending.
 
+Current verification note:
+
+- `mp_telemetry_events` now contains real `room.lifecycle` rows for transitions such as `heartbeat_timeout`, `heartbeat_timeout_disconnect`, and `opponent_presence_lost_disconnect_confirmed`.
+- A two-client live pass on 2026-05-07 produced `reload_resume_authoritative_request`, `reload_resume_authoritative_applied`, `opponent_presence_lost`, and `state_sync_activity_recovered` rows for a real guest reload/rejoin flow.
+- A fresh browser-backed `telemetry.live_verify` insert was rechecked on 2026-05-07 from the local app build and arrived successfully in Supabase.
+
 ### Suggested Data To Persist Server-Side
 
 - active room metadata
@@ -270,6 +276,8 @@ Implementation note:
 
 ## Priority 2: Mobile Upgrade Description Discoverability
 
+Status: completed 2026-05-07
+
 ### Current Problem
 
 Upgrade details depend on mouse hover, which leaves mobile players without a reliable way to understand what upgrades do.
@@ -295,7 +303,14 @@ Add upgrade explanations to the help / glossary surface, similar to how synergie
 - desktop users still retain fast access to upgrade info.
 - help content stays consistent with the actual multiplayer upgrade pool.
 
+Implementation note:
+
+- `index.html` now includes an `Upgrade Reference` section inside the existing help overlay, with player-readable descriptions for every upgrade plus multiplayer-only restrictions.
+- `style.css` now formats those upgrade entries as a responsive card grid so the same content remains readable on mobile without hover.
+
 ## Priority 2: Clear Player-Facing Multiplayer Rules
+
+Status: completed 2026-05-07
 
 ### Current Problem
 
@@ -339,6 +354,11 @@ Document multiplayer rules in an existing player-facing surface instead of hidin
 - players can find the rules before queueing and during a match
 - the documented rules match the real multiplayer behavior
 - multiplayer-specific rules are clearly distinguished from single-player behavior
+
+Implementation note:
+
+- `index.html` now adds a multiplayer rules summary to the queue overlay and dedicated multiplayer sections inside the existing help overlay.
+- The surfaced copy now covers match format, round flow, carry/reset rules, reconnect expectations, and multiplayer-only upgrade differences in player-facing language.
 
 ## Existing Related Surfaces
 

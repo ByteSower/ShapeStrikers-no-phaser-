@@ -1137,8 +1137,44 @@ html, body {
 }
 .help-content { display: flex; flex-direction: column; gap: 14px; }
 .help-section h3 { font-size: 15px; margin-bottom: 4px; font-weight: 800; }
+.help-section h4 { font-size: 13px; margin: 0 0 4px; font-weight: 800; color: var(--text); }
 .help-section p  { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
 .help-section p b { color: var(--text); }
+.help-section ul {
+  margin: 8px 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.help-section li b { color: var(--text); }
+.help-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+
+.upgrade-help-grid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.upgrade-help-card {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg-mid);
+  border: 1px solid var(--border);
+}
+
+.upgrade-help-card p {
+  margin: 0;
+}
 
 /* ── Achievements Overlay ──────────────────────────────────────────────────── */
 .achievements-box {
@@ -2224,7 +2260,7 @@ html, body {
 .mp-lobby-box {
   border-color: rgba(20,140,220,0.4);
   box-shadow: 0 16px 48px rgba(20,140,220,0.15);
-  max-width: 420px;
+  max-width: 520px;
 }
 
 .mp-player-name {
@@ -2266,6 +2302,44 @@ html, body {
 
 .mp-connection-badge.connected {
   color: #55ee88;
+}
+
+.mp-rules-card {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(80,160,220,0.22);
+  background: rgba(10,24,40,0.72);
+  text-align: left;
+}
+
+.mp-rules-card h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #eef7ff;
+}
+
+.mp-rules-list {
+  margin: 8px 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #d8e8f4;
+}
+
+.mp-rules-list li b {
+  color: #ffffff;
+}
+
+.mp-rules-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #a8c8da;
 }
 
 .mp-lobby-buttons {
