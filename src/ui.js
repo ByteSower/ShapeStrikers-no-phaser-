@@ -87,11 +87,11 @@ const UI = (() => {
 
   // ── Upgrades ─────────────────────────────────────────────────────────────
 
-  function updateUpgrades(upgradeLevels, gold, onBuy) {
+  function updateUpgrades(upgradeLevels, gold, onBuy, visibleUpgrades = UPGRADES) {
     const container = document.getElementById('upgrade-list');
     container.innerHTML = '';
 
-    for (const upg of UPGRADES) {
+    for (const upg of visibleUpgrades) {
       const level = upgradeLevels[upg.id] || 0;
       const maxed = level >= upg.maxLevel;
       const cost  = upg.cost + level * 5;

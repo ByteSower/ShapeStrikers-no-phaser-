@@ -235,3 +235,29 @@ test('resume context persists latest round and checkpoint metadata for reload re
   assert.equal(saved.resumeContext.boardHash, 'hash-123');
   assert.equal(Number.isFinite(saved.resumeContext.updatedAt), true);
 });
+
+test('prep-state updates clear stale battle checkpoint metadata from resume context', () => {
+  const { Room, sessionStorage } = loadRoomContext();
+
+  Room.join('room-zeta', false, 'opp-12');
+  Room.applyState('playback_checkpoint', {
+    roundNumber: 3,
+    seq: 12,
+    turn: 4,
+    boardHash: 'hash-old',
+  }, 'opp-12');
+
+  Room.applyState('prep_state', {
+    roundNumber: 4,
+    shopSeed: 12345,
+    rerollIndex: 0,
+    at: Date.now(),
+  }, 'opp-12');
+
+  const saved = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY));
+  assert.equal(saved.resumeContext.roundNumber, 4);
+  assert.equal(saved.resumeContext.phase, 'prep');
+  assert.equal(saved.resumeContext.sourceKey, 'prep_state');
+  assert.equal(saved.resumeContext.checkpointSeq, 0, 'prep resume context should not retain the prior battle checkpoint');
+  assert.equal('boardHash' in saved.resumeContext, false, 'prep resume context should clear stale battle board hashes');
+});

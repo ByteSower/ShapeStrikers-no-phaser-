@@ -85,8 +85,9 @@ Shape Strikers stores settings, unlocks, and run-related progress in your browse
 
 ## Documentation
 
+- [docs/current-roadmap.md](docs/current-roadmap.md) — active source of truth for current priorities and sequencing
 - [GAME_DESIGN.md](GAME_DESIGN.md) — Full game design document (rules, stats, formulas, mechanics)
-- [PROGRESS.md](PROGRESS.md) — Development progress tracker and roadmap
+- [PROGRESS.md](PROGRESS.md) — Development progress tracker and shipped phase history
 - [AUDIT.md](AUDIT.md) — Codebase audit and architecture assessment
 
 ## License

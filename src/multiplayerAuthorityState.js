@@ -70,7 +70,12 @@ const MultiplayerAuthorityState = (() => {
 
   function getRequestModeForReason(reason = 'unknown') {
     const normalizedReason = String(reason || '').trim().toLowerCase();
-    if (normalizedReason === 'missing_battle_replay' || normalizedReason === 'replay_hash_mismatch') {
+    if (
+      normalizedReason === 'missing_battle_replay' ||
+      normalizedReason === 'replay_hash_mismatch' ||
+      normalizedReason === 'round_result_hash_mismatch' ||
+      normalizedReason === 'waiting_for_round_result'
+    ) {
       return REQUEST_MODES.BATTLE;
     }
     if (normalizedReason === 'reload_resume') {

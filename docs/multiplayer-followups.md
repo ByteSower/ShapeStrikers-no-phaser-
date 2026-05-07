@@ -3,6 +3,7 @@
 Notes captured from live multiplayer testing with real users on different devices and networks.
 
 Purpose: keep these issues documented for a later pass without diverting the current multiplayer slice.
+For current priority order, use `docs/current-roadmap.md`. This file is detailed backlog and acceptance-note material, not the source of truth for sequencing.
 
 ## Guardrails
 
@@ -80,7 +81,7 @@ At minimum, record these centrally instead of only in local browser storage:
 
 Current implementation note:
 `shape_strikers_mp_telemetry_log` now stores a structured client-side ring buffer for room lifecycle,
-resync, saved-session rejection, and desync events. Central upload / aggregation is still pending.
+resync, saved-session rejection, and desync events, and unsent entries now best-effort upload to Supabase `mp_telemetry_events`. Broad production aggregation and dashboards are still pending.
 
 ### Suggested Data To Persist Server-Side
 
@@ -108,7 +109,7 @@ If the target includes Steam / console readiness, assume we need at least full c
 - [x] add heartbeat / last-heard tracking so stale detection does not rely on presence events alone
 - [x] define reconnect identity and rejoin tokens for full reload recovery without trusting only transient tab state
 - [x] split partial replay resume from full authoritative resync with explicit policy per failure mode
-- [ ] capture reconnect, resync, disconnect, and desync telemetry centrally instead of only in browser logs
+- [x] add a best-effort centralized telemetry upload path plus `mp_telemetry_events` schema for reconnect, resync, disconnect, and desync events
 - [ ] decide whether release hardening continues on host authority + migration, or pivots to a dedicated authoritative match service
 
 ## Priority 1: Audio Audit And Mobile Mute Regression
@@ -168,6 +169,8 @@ Audio behavior is inconsistent in multiplayer and especially unreliable on mobil
 
 ## Priority 1: Multiplayer Round Reset Rules
 
+Status: completed 2026-05-06
+
 ### Current Bug
 
 At round end, the round winner keeps surviving units while the loser loses units. This snowballs the match too quickly and does not match the intended multiplayer rules.
@@ -206,7 +209,14 @@ At the start of the next multiplayer prep phase, all surviving owned units shoul
 - Losing a round does not delete the player's owned units.
 - Both players begin the next prep phase with the same roster they ended the prior prep phase with.
 
+Implementation note:
+
+- `src/game.js` now resets multiplayer-owned units to full HP, cleared statuses, cleared cooldowns, and restored prep positions instead of applying replay casualties back onto the owned roster.
+- Focused regression coverage lives in `tests/multiplayer/gameResumeBootstrap.test.js`.
+
 ## Priority 2: Multiplayer-Only Upgrade Rules Pass
+
+Status: completed 2026-05-07
 
 ### Goal
 
@@ -251,6 +261,12 @@ Do not let multiplayer upgrade restrictions or reset behavior affect single-play
 - multiplayer can use a curated upgrade pool without changing single-player.
 - temporary multiplayer-only upgrades expire with the round reset.
 - `Scout's Intel` is either fixed, replaced, or intentionally removed from multiplayer.
+
+Implementation note:
+
+- `src/game.js` now filters the multiplayer-visible upgrade pool, blocks disabled upgrade purchases, sanitizes multiplayer prep snapshots, and clears `Elite Training` / `Double Edge` at the start of each new prep round.
+- `src/ui.js` now renders a caller-provided upgrade subset so multiplayer can hide disabled options without affecting single-player.
+- Focused regression coverage lives in `tests/multiplayer/gameResumeBootstrap.test.js`.
 
 ## Priority 2: Mobile Upgrade Description Discoverability
 

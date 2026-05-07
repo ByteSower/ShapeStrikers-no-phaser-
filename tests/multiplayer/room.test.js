@@ -222,6 +222,19 @@ async function test(name, fn) {
     Room.destroy();
   });
 
+  await test('getState: nested payload mutation does not leak back into internal state', async () => {
+    joinRoom();
+    await Room.syncState('round_result', { hostWon: true, meta: { seq: 7 } });
+    const snap1 = Room.getState();
+    snap1.round_result.meta.seq = 99;
+    snap1.round_result.hostWon = false;
+
+    const snap2 = Room.getState();
+    assert.equal(snap2.round_result.hostWon, true, 'Nested object mutation should not change internal state');
+    assert.equal(snap2.round_result.meta.seq, 7, 'Nested payload mutation should not leak into Room state');
+    Room.destroy();
+  });
+
   await test('getState: returns all keys synced in order', async () => {
     joinRoom();
     await Room.syncState('key_a', 'val_a');
@@ -244,12 +257,38 @@ async function test(name, fn) {
     Room.destroy();
   });
 
+  await test('syncState: caller payload mutation after send does not leak into Room state', async () => {
+    joinRoom();
+    const payload = { roundNumber: 2, nested: { seq: 5 } };
+    await Room.syncState('round_result', payload);
+    payload.roundNumber = 9;
+    payload.nested.seq = 99;
+
+    const snap = Room.getState();
+    assert.equal(snap.round_result.roundNumber, 2, 'Room should store a snapshot of syncState payloads');
+    assert.equal(snap.round_result.nested.seq, 5, 'Nested caller mutations should not leak into Room state');
+    Room.destroy();
+  });
+
   await test('syncState: overwriting a key updates the local mirror', async () => {
     joinRoom();
     await Room.syncState('round', 1);
     await Room.syncState('round', 2);
     const snap = Room.getState();
     assert.equal(snap['round'], 2, 'Second syncState should overwrite first');
+    Room.destroy();
+  });
+
+  await test('applyState: caller payload mutation after apply does not leak into Room state', async () => {
+    joinRoom();
+    const payload = { boardHash: 'abc', meta: { checkpointSeq: 4 } };
+    Room.applyState('playback_checkpoint', payload, 'opp-xyz');
+    payload.boardHash = 'mutated';
+    payload.meta.checkpointSeq = 99;
+
+    const snap = Room.getState();
+    assert.equal(snap.playback_checkpoint.boardHash, 'abc', 'Room should snapshot applyState payloads');
+    assert.equal(snap.playback_checkpoint.meta.checkpointSeq, 4, 'Nested applyState payload mutation should not leak into Room state');
     Room.destroy();
   });
 

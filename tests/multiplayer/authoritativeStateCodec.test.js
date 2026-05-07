@@ -227,6 +227,8 @@ test('buildRequest normalizes hashes and optional seq', () => {
 test('getRequestModeForReason classifies replay/bootstrap reasons without guessing prep state', () => {
   assert.equal(MultiplayerAuthorityState.getRequestModeForReason('missing_battle_replay'), 'battle');
   assert.equal(MultiplayerAuthorityState.getRequestModeForReason('replay_hash_mismatch'), 'battle');
+  assert.equal(MultiplayerAuthorityState.getRequestModeForReason('round_result_hash_mismatch'), 'battle');
+  assert.equal(MultiplayerAuthorityState.getRequestModeForReason('waiting_for_round_result'), 'battle');
   assert.equal(MultiplayerAuthorityState.getRequestModeForReason('reload_resume'), 'auto');
   assert.equal(MultiplayerAuthorityState.getRequestModeForReason('manual-browser-test'), 'full');
 });

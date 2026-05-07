@@ -5,10 +5,9 @@
  *   1. Guest does NOT commit a round result before the host broadcasts.
  *   2. When the host broadcasts `round_result`, the guest applies it.
  *   3. If the host result doesn't arrive within HOST_RESULT_TIMEOUT_MS,
- *      the guest falls back to its local battle result.
+ *      the guest falls back to the replay-derived result.
  *   4. If playback is still live, the guest defers that fallback until a hard ceiling.
- *   4. If the guest's local result arrives BEFORE the host broadcasts,
- *      the guest waits (visual-only path).
+ *   4. If replay outcome data is incomplete, timeout fallback must not invent a guest win.
  *   5. roundNumber guard: stale results from previous rounds are ignored.
  *   6. Cached Room state fast-path: result already in snapshot is applied immediately.
  *   7. Host broadcast retry: mock syncState returning ok:false is retried up to 3×.
@@ -77,6 +76,7 @@ function createGuestRoundHandler({
   expectedRound = 1,
   deferTimeoutMs = timeoutMs,
   maxWaitMs = 60000,
+  replayHostWon = null,
 }) {
   let _roundResultHandled = false;
   let _hostResultTimer    = null;
@@ -131,7 +131,12 @@ function createGuestRoundHandler({
       (phaseEvent.roundNumber === undefined || phaseEvent.roundNumber === expectedRound);
   };
 
-  const _armHostResultTimer = (reason = 'timeout', delayMs = timeoutMs, localWon = false) => {
+  const _resolveTimeoutGuestWon = () => {
+    if (typeof replayHostWon === 'boolean') return !replayHostWon;
+    return false;
+  };
+
+  const _armHostResultTimer = (reason = 'timeout', delayMs = timeoutMs) => {
     if (_roundResultHandled) return;
     if (_hostResultTimer) {
       clearTimeout(_hostResultTimer);
@@ -143,11 +148,11 @@ function createGuestRoundHandler({
 
       const waitedMs = Date.now() - _hostResultWaitStartedAt;
       if ((reason === 'timeout' || reason === 'timeout-reconnect') && waitedMs < maxWaitMs && _shouldDeferHostResultFallback()) {
-        _armHostResultTimer(reason, deferTimeoutMs, localWon);
+        _armHostResultTimer(reason, deferTimeoutMs);
         return;
       }
 
-      _applyResult(localWon, reason);
+      _applyResult(_resolveTimeoutGuestWon(), reason);
     }, delayMs);
   };
 
@@ -169,8 +174,8 @@ function createGuestRoundHandler({
   };
   room.onStateChange(_roundResultFn);
 
-  // Mirrors battle.onBattleEnd for guest
-  const onBattleEnd = (localWon) => {
+  // Mirrors the guest replay-complete path arming the authoritative result timeout.
+  const onBattleEnd = (_ignoredLocalWon) => {
     if (_roundResultHandled) return;
 
     // Fast-path: check Room state snapshot (mirrors game.js)
@@ -181,7 +186,7 @@ function createGuestRoundHandler({
       return;
     }
 
-    _armHostResultTimer('timeout', timeoutMs, localWon);
+    _armHostResultTimer('timeout', timeoutMs);
   };
 
   return { onBattleEnd, isHandled: () => _roundResultHandled };
@@ -386,12 +391,12 @@ test('Room listener is removed after host result is applied', () => {
 });
 
 // 7. Timeout fallback
-testAsync('Timeout fallback applies local result after HOST_RESULT_TIMEOUT_MS', async () => {
+testAsync('Timeout fallback applies replay-derived result after HOST_RESULT_TIMEOUT_MS', async () => {
   const room = createMockRoom();
   const results = [];
-  const handler = createGuestRoundHandler({ room, onRoundEnd: (r) => results.push(r), timeoutMs: 50 });
+  const handler = createGuestRoundHandler({ room, onRoundEnd: (r) => results.push(r), timeoutMs: 50, replayHostWon: false });
 
-  handler.onBattleEnd(true);
+  handler.onBattleEnd();
   await new Promise(resolve => setTimeout(resolve, 100));
 
   assert.equal(results.length, 1);
@@ -403,9 +408,9 @@ testAsync('Timeout fallback applies local result after HOST_RESULT_TIMEOUT_MS', 
 testAsync('Host result after timeout fallback is ignored', async () => {
   const room = createMockRoom();
   const results = [];
-  const handler = createGuestRoundHandler({ room, onRoundEnd: (r) => results.push(r), timeoutMs: 50 });
+  const handler = createGuestRoundHandler({ room, onRoundEnd: (r) => results.push(r), timeoutMs: 50, replayHostWon: false });
 
-  handler.onBattleEnd(true);
+  handler.onBattleEnd();
   await new Promise(resolve => setTimeout(resolve, 100));
   room._emit('round_result', { hostWon: false, roundNumber: 1 });
 
@@ -422,9 +427,10 @@ testAsync('Timeout defers while playback_start is still live and host result can
     timeoutMs: 20,
     deferTimeoutMs: 20,
     maxWaitMs: 120,
+    replayHostWon: false,
   });
 
-  handler.onBattleEnd(true);
+  handler.onBattleEnd();
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal(results.length, 0, 'Guest should keep waiting while playback_start is still live');
 
@@ -445,13 +451,32 @@ testAsync('Timeout still falls back after the hard wait ceiling', async () => {
     timeoutMs: 20,
     deferTimeoutMs: 20,
     maxWaitMs: 55,
+    replayHostWon: false,
   });
 
-  handler.onBattleEnd(true);
+  handler.onBattleEnd();
   await new Promise(resolve => setTimeout(resolve, 110));
 
   assert.equal(results.length, 1);
   assert.equal(results[0].guestWon, true);
+  assert.equal(results[0].source, 'timeout');
+});
+
+testAsync('Timeout fallback does not invent a guest win when replay outcome is incomplete', async () => {
+  const room = createMockRoom();
+  const results = [];
+  const handler = createGuestRoundHandler({
+    room,
+    onRoundEnd: (r) => results.push(r),
+    timeoutMs: 50,
+    replayHostWon: null,
+  });
+
+  handler.onBattleEnd();
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].guestWon, false, 'Incomplete replay data must not resolve as a guest win');
   assert.equal(results[0].source, 'timeout');
 });
 

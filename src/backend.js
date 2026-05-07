@@ -40,6 +40,9 @@ const Backend = (() => {
       await _ensureAuth();
       _playerName = localStorage.getItem(PLAYER_NAME_KEY) || null;
       _ready = true;
+      if (typeof MultiplayerTelemetry !== 'undefined' && typeof MultiplayerTelemetry.notifyBackendReady === 'function') {
+        MultiplayerTelemetry.notifyBackendReady();
+      }
       console.log('[Backend] Ready. User:', _user?.id?.slice(0, 8));
       return true;
     } catch (e) {

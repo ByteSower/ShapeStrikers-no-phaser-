@@ -125,3 +125,37 @@ CREATE POLICY "mp_room_state_participants"
 CREATE INDEX IF NOT EXISTS idx_mp_room_state_room
   ON mp_room_state (room_id);
 
+-- ── Multiplayer Telemetry ───────────────────────────────────────────────────
+-- Best-effort client uploads for reconnect, resync, disconnect, and desync events.
+
+CREATE TABLE IF NOT EXISTS mp_telemetry_events (
+  id             UUID PRIMARY KEY,
+  player_id      UUID NOT NULL REFERENCES auth.users(id),
+  room_id        UUID,
+  event_type     TEXT NOT NULL,
+  level          TEXT NOT NULL DEFAULT 'info',
+  details        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  client_at      TIMESTAMPTZ NOT NULL,
+  session_id     TEXT,
+  client_version TEXT,
+  page_path      TEXT,
+  platform       TEXT,
+  user_agent     TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE mp_telemetry_events ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "mp_telemetry_insert_own"
+  ON mp_telemetry_events FOR INSERT
+  WITH CHECK (player_id = auth.uid());
+
+CREATE INDEX IF NOT EXISTS idx_mp_telemetry_events_created_at
+  ON mp_telemetry_events (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_mp_telemetry_events_room_id
+  ON mp_telemetry_events (room_id);
+
+CREATE INDEX IF NOT EXISTS idx_mp_telemetry_events_event_type
+  ON mp_telemetry_events (event_type, created_at DESC);
+

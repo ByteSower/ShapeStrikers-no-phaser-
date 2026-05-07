@@ -271,7 +271,16 @@ const Room = (() => {
     const next = _buildResumeContextForKey(key, value);
     if (!next) return false;
 
-    const merged = _normalizeResumeContext(Object.assign({}, _resumeContext || {}, next));
+    const mergedSource = Object.assign({}, _resumeContext || {}, next);
+    if (next.phase === 'prep') {
+      mergedSource.checkpointSeq = 0;
+      delete mergedSource.boardHash;
+      delete mergedSource.phaseEventType;
+    } else if (next.phase !== 'battle') {
+      delete mergedSource.phaseEventType;
+    }
+
+    const merged = _normalizeResumeContext(mergedSource);
     if (!merged) return false;
 
     const changed = JSON.stringify(_resumeContext || null) !== JSON.stringify(merged);
@@ -299,6 +308,16 @@ const Room = (() => {
   function _recordTelemetry(type, details = {}, level = 'info') {
     if (typeof MultiplayerTelemetry === 'undefined' || typeof MultiplayerTelemetry.record !== 'function') return null;
     return MultiplayerTelemetry.record(type, details, { level });
+  }
+
+  function _cloneSerializable(value) {
+    if (value === null || value === undefined) return value;
+    if (typeof value !== 'object') return value;
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch (_) {
+      return Object.assign({}, value);
+    }
   }
 
   function _clearSavedSession() {
@@ -373,6 +392,12 @@ const Room = (() => {
     _stateListeners.forEach(fn => {
       try { fn(key, value, from); } catch (e) { console.error('[Room] stateChange listener error:', e); }
     });
+  }
+
+  function _storeStateValue(key, value) {
+    const snapshot = _cloneSerializable(value);
+    _state[key] = snapshot;
+    return snapshot;
   }
 
   function _emitDisconnect() {
@@ -633,9 +658,9 @@ const Room = (() => {
         seatId: payload.seatId || null,
         sessionId: payload.sessionId || null,
       });
-      _state[key] = value;
-      _updateResumeContext(key, value);
-      _emitState(key, value, from || null);
+      const snapshot = _storeStateValue(key, value);
+      _updateResumeContext(key, snapshot);
+      _emitState(key, snapshot, from || null);
     });
 
     ch.on('broadcast', { event: 'room_heartbeat' }, ({ payload }) => {
@@ -768,8 +793,8 @@ const Room = (() => {
     if (typeof SupabaseClient === 'undefined') return { ok: false, error: 'SupabaseClient unavailable' };
 
     // Update local mirror immediately (optimistic).
-    _state[key] = value;
-    _updateResumeContext(key, value);
+    const snapshot = _storeStateValue(key, value);
+    _updateResumeContext(key, snapshot);
 
     return SupabaseClient.broadcast(_channelName, 'state_sync', {
       key,
@@ -783,9 +808,9 @@ const Room = (() => {
   /** Apply a state value locally and emit state listeners without broadcasting. */
   function applyState(key, value, from) {
     if (typeof key !== 'string' || key.length === 0) return;
-    _state[key] = value;
-    _updateResumeContext(key, value);
-    _emitState(key, value, from || null);
+    const snapshot = _storeStateValue(key, value);
+    _updateResumeContext(key, snapshot);
+    _emitState(key, snapshot, from || null);
   }
 
   /** Subscribe to state changes from the opponent. fn(key, value, fromPlayerId) */
@@ -828,8 +853,8 @@ const Room = (() => {
     _lifecycleListeners = _lifecycleListeners.filter(l => l !== fn);
   }
 
-  /** Returns a shallow copy of the current local state snapshot. */
-  function getState() { return Object.assign({}, _state); }
+  /** Returns a detached snapshot of the current local state. */
+  function getState() { return _cloneSerializable(_state) || {}; }
 
   /** Returns the tracked Realtime status for the active room channel. */
   function getConnectionState() {

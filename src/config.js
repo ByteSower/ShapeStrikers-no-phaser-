@@ -1085,6 +1085,17 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.6',
+    date: 'May 7, 2026',
+    title: '🛡️ Multiplayer Hardening Pass',
+    notes: [
+      '🔄 Reload and reconnect recovery now handles saved guest sessions, result-show resumes, and older unresolved rounds more safely',
+      '📡 Multiplayer telemetry now best-effort uploads reconnect, resync, disconnect, and desync events to Supabase `mp_telemetry_events`',
+      '🧼 Round resets now preserve your owned roster between multiplayer rounds while clearing battle-only damage, statuses, and cooldowns',
+      '⚖️ Multiplayer upgrades are now curated for the round-based format: economy/scouting upgrades are disabled and round-sensitive buffs reset each prep round',
+    ],
+  },
+  {
     version: '1.0.5',
     date: 'May 5, 2026',
     title: '🚑 Startup Hotfix',

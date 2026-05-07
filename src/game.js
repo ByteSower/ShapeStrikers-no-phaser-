@@ -79,6 +79,19 @@ const Game = (() => {
     RESULT_SHOW: 'result_show',
   });
 
+  const MP_DISABLED_UPGRADE_IDS = new Set([
+    'field_medic',
+    'bargain_hunter',
+    'war_chest',
+    'victory_bonus',
+    'scouts_intel',
+  ]);
+
+  const MP_ROUND_RESET_UPGRADE_IDS = new Set([
+    'elite_training',
+    'double_edge',
+  ]);
+
   function _freshState() {
     return {
       phase:          'prep',   // 'prep' | 'battle' | 'result' | 'gameover' | 'win'
@@ -117,6 +130,41 @@ const Game = (() => {
   function _mpOppSlot() {
     if (typeof Room === 'undefined') return null;
     return Room.isHost?.() ? 'p2' : 'p1';
+  }
+
+  function _getVisibleUpgrades() {
+    if (!_mpMode) return UPGRADES;
+    return UPGRADES.filter(upg => !MP_DISABLED_UPGRADE_IDS.has(upg.id));
+  }
+
+  function _sanitizeMultiplayerUpgradeLevels(upgradeLevels, options = {}) {
+    const { clearRoundSensitive = false } = options;
+    const source = (upgradeLevels && typeof upgradeLevels === 'object') ? upgradeLevels : {};
+    const next = {};
+
+    for (const [id, rawLevel] of Object.entries(source)) {
+      const level = Math.max(0, Number(rawLevel) || 0);
+      if (level <= 0) continue;
+      if (MP_DISABLED_UPGRADE_IDS.has(id)) continue;
+      if (clearRoundSensitive && MP_ROUND_RESET_UPGRADE_IDS.has(id)) continue;
+      next[id] = level;
+    }
+
+    return next;
+  }
+
+  function _applyMultiplayerUpgradePolicy(options = {}) {
+    if (!_mpMode) return false;
+
+    const nextUpgradeLevels = _sanitizeMultiplayerUpgradeLevels(state.upgradeLevels, options);
+    const changed = JSON.stringify(nextUpgradeLevels) !== JSON.stringify(state.upgradeLevels || {});
+    state.upgradeLevels = nextUpgradeLevels;
+    _applyUpgradeBuffsToAll();
+    return changed;
+  }
+
+  function _updateUpgradeList() {
+    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade, _getVisibleUpgrades());
   }
 
   function _mpOwnPrepStateKey() {
@@ -165,7 +213,7 @@ const Game = (() => {
     state.selectedUnit = null;
     UI.clearUnitDetail();
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
-    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
+    _updateUpgradeList();
     UI.updateSynergies(state.playerUnits);
     _refreshSynergyIcons();
     _updateRefreshBtn();
@@ -251,16 +299,44 @@ const Game = (() => {
     const localWave = Number(state?.wave || 0);
     const trackedRound = Number(_mpState?.round || 0);
     const liveRound = Number(_mpGetCurrentRoundNumber() || 0);
+    const savedResumeContext = _mpGetSavedResumeContext();
 
     if (typeof MultiplayerAuthorityState !== 'undefined' && typeof MultiplayerAuthorityState.resolveResumeTarget === 'function') {
-      return MultiplayerAuthorityState.resolveResumeTarget({
-        savedResumeContext: _mpGetSavedResumeContext(),
+      const resolvedTarget = MultiplayerAuthorityState.resolveResumeTarget({
+        savedResumeContext,
         roomState: source,
         snapshotRound,
         localWave,
         trackedRound,
         liveRound,
       });
+
+      const resolvedRound = Number(resolvedTarget?.roundNumber || 0);
+      const savedRound = Number(savedResumeContext?.roundNumber || 0);
+      const ownPrepKey = _mpOwnPrepStateKey();
+      const hasOwnPrepForResolvedRound = !!(ownPrepKey && _mpPayloadMatchesRound(source[ownPrepKey], resolvedRound));
+      const savedPhase = savedResumeContext?.phase;
+      const shouldPreferSavedBattleRound =
+        savedRound > 0 &&
+        resolvedRound > savedRound &&
+        (savedPhase === 'battle' || savedPhase === 'result') &&
+        !hasOwnPrepForResolvedRound &&
+        _mpPayloadMatchesRound(source.prep_state, resolvedRound) &&
+        !_mpPayloadMatchesRound(source.battle_replay, resolvedRound) &&
+        !_mpPayloadMatchesRound(source.round_result, resolvedRound) &&
+        !MultiplayerAuthorityState.matchesRound(source.authoritative_state, resolvedRound);
+
+      if (shouldPreferSavedBattleRound) {
+        return {
+          roundNumber: savedRound,
+          checkpointSeq: savedRound === Number(savedResumeContext?.roundNumber || 0)
+            ? Number(savedResumeContext?.checkpointSeq || 0)
+            : 0,
+          requestedMode: 'battle',
+        };
+      }
+
+      return resolvedTarget;
     }
 
     const roundNumber = Math.max(snapshotRound, _mpResolveRoomStateRoundNumber(source), localWave, trackedRound, liveRound, 0);
@@ -342,11 +418,25 @@ const Game = (() => {
     const roomState = Room.getState();
     const resumeTarget = _mpResolveResumeTarget(roomState);
     const roundNumber = Number(resumeTarget.roundNumber || 0);
+    const phaseEvent = roomState.phase_event;
+    const phaseMatchesRound = _mpPayloadMatchesRound(phaseEvent, roundNumber);
+    const roundResultMatches = _mpPayloadMatchesRound(roomState.round_result, roundNumber);
+    const authoritativeStateMatches = MultiplayerAuthorityState.matchesRound(roomState.authoritative_state, roundNumber);
+    const authoritativeEntries = authoritativeStateMatches
+      ? MultiplayerAuthorityState.getEntries(roomState.authoritative_state)
+      : [];
+    const hasAuthoritativeRoundState = authoritativeEntries.length > 0;
+    const hasDurablePhaseState = phaseMatchesRound && phaseEvent?.type !== MP_PHASE_EVENTS.RESULT_SHOW;
+    const hasResolvedResultWindow = phaseMatchesRound && phaseEvent?.type === MP_PHASE_EVENTS.RESULT_SHOW && (
+      roundResultMatches || hasAuthoritativeRoundState
+    );
     const hasRoundState =
       _mpPayloadMatchesRound(roomState.prep_state, roundNumber) ||
       _mpPayloadMatchesRound(roomState.battle_replay, roundNumber) ||
-      _mpPayloadMatchesRound(roomState.phase_event, roundNumber) ||
-      _mpPayloadMatchesRound(roomState.round_result, roundNumber);
+      roundResultMatches ||
+      hasDurablePhaseState ||
+      hasResolvedResultWindow ||
+      hasAuthoritativeRoundState;
 
     _mpPendingResumeAuthoritativeRequest = false;
     if (hasRoundState) {
@@ -449,7 +539,7 @@ const Game = (() => {
       revision: _mpOwnPrepRevision,
       gold: state.gold,
       refreshesLeft: state.refreshesLeft,
-      upgradeLevels: state.upgradeLevels,
+      upgradeLevels: _sanitizeMultiplayerUpgradeLevels(state.upgradeLevels),
       shopUnits: state.shopUnits,
       playerUnits: state.playerUnits,
     });
@@ -487,6 +577,7 @@ const Game = (() => {
     state.upgradeLevels = restored.upgradeLevels || {};
     state.shopUnits = Array.isArray(restored.shopUnits) && restored.shopUnits.length ? restored.shopUnits : state.shopUnits;
     state.playerUnits = Array.isArray(restored.playerUnits) ? restored.playerUnits : [];
+    _applyMultiplayerUpgradePolicy();
     _mpOwnPrepRevision = snapshotRevision;
     nextUnitId = Math.max(nextUnitId, state.playerUnits.reduce((maxId, unit) => Math.max(maxId, Number(unit.id) || 0), 0) + 1);
     _mpRenderPrepState();
@@ -730,13 +821,12 @@ const Game = (() => {
     if (_totalUpgradesBought >= 10) _unlockAchievement('big_spender');
   }
 
-  // ── Upgrade Stat Buffs (permanent for the run) ────────────────────────
+  // ── Upgrade Stat Buffs ────────────────────────────────────────────────
 
-  /** Apply elite_training + double_edge to a single unit (uses base stats) */
+  /** Apply elite_training + double_edge to a single unit (always from base stats). */
   function _applyUpgradeBuffsToUnit(u) {
     const eliteLevel = state.upgradeLevels['elite_training'] || 0;
     const deLevel = state.upgradeLevels['double_edge'] || 0;
-    if (eliteLevel === 0 && deLevel === 0) return;
 
     const eliteAtk = [0, 0.05, 0.15, 0.25][eliteLevel];
     const eliteDef = [0, 0, 0, 0.10][eliteLevel];
@@ -926,7 +1016,7 @@ const Game = (() => {
     state.selectedShopIdx = null;
     Grid.clearSelection();
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
-    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
+    _updateUpgradeList();
     _refreshHUD();
     _updateRefreshBtn();
     _checkSoftLock();
@@ -1009,7 +1099,7 @@ const Game = (() => {
     UI.updateSynergies(state.playerUnits);
     _refreshSynergyIcons();
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
-    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
+    _updateUpgradeList();
     _refreshHUD();
     _mpSyncOwnPrepState(true);
     _checkSoftLock();
@@ -1093,7 +1183,7 @@ const Game = (() => {
       Grid.selectTile(targetRow, col);
       Audio.play('place');
       UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
-      UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
+      _updateUpgradeList();
       UI.updateSynergies(state.playerUnits);
       UI.showUnitDetail(unit, state.upgradeLevels, _getActiveSynergiesForUnit(unit));
       UI.showMessage('');
@@ -1588,7 +1678,7 @@ const Game = (() => {
       _accumulateGameStats();
       // Check wave-end achievements
       _checkAchievementsOnWaveEnd(true);
-      UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
+      _updateUpgradeList();
       _refreshUpgradeIcons();
       _refreshSynergyIcons();
       _refreshHUD();
@@ -2043,9 +2133,39 @@ const Game = (() => {
     return forcedHash;
   }
 
+  function _mpGetRetainedAuthoritativeRoundState(roundNumber = 0) {
+    const targetRound = Number(roundNumber || 0);
+    if (targetRound <= 0) return null;
+
+    const retained = {};
+    if (_mpPayloadMatchesRound(_mpLastBattleReplayPayload, targetRound)) {
+      retained.battle_replay = _mpLastBattleReplayPayload;
+    }
+    if (_mpPayloadMatchesRound(_mpLastPlaybackCheckpoint, targetRound)) {
+      retained.playback_checkpoint = _mpLastPlaybackCheckpoint;
+    }
+    if (_mpPayloadMatchesRound(_mpLastPhaseEventPayload, targetRound)) {
+      retained.phase_event = _mpLastPhaseEventPayload;
+    }
+    if (_mpPayloadMatchesRound(_mpLastRoundResultPayload, targetRound)) {
+      retained.round_result = _mpLastRoundResultPayload;
+    }
+
+    return Object.keys(retained).length ? retained : null;
+  }
+
   function _mpSendAuthoritativeState(reason = 'resync', requestPayload = null) {
     if (typeof Room === 'undefined' || typeof MultiplayerAuthorityState === 'undefined') return null;
     const roomState = Room.getState();
+    const currentRound = _mpGetCurrentRoundNumber();
+    const requestedRound = Number(requestPayload?.roundNumber || 0);
+    const retainedRoundState = requestedRound > 0 && requestedRound !== currentRound
+      ? _mpGetRetainedAuthoritativeRoundState(requestedRound)
+      : null;
+    if (requestedRound > 0 && requestedRound !== currentRound && !retainedRoundState) return null;
+
+    const responseRound = retainedRoundState ? requestedRound : currentRound;
+    const responseRoomState = retainedRoundState || roomState;
     const currentScores = (typeof MultiplayerGame !== 'undefined' && typeof MultiplayerGame.getScores === 'function')
       ? MultiplayerGame.getScores()
       : { my: _mpState.myScore, opp: _mpState.oppScore };
@@ -2053,27 +2173,26 @@ const Game = (() => {
       my: Math.max(0, Number(currentScores.my) || 0),
       opp: Math.max(0, Number(currentScores.opp) || 0),
     };
-    const currentRound = _mpGetCurrentRoundNumber();
-    const currentResult = roomState.round_result;
-    if (_mpPayloadMatchesRound(currentResult, currentRound) && typeof currentResult?.hostWon === 'boolean') {
-      if (currentResult.hostWon) scoresBeforeResult.my = Math.max(0, scoresBeforeResult.my - 1);
+    const responseResult = responseRoomState.round_result;
+    if (_mpPayloadMatchesRound(responseResult, responseRound) && typeof responseResult?.hostWon === 'boolean') {
+      if (responseResult.hostWon) scoresBeforeResult.my = Math.max(0, scoresBeforeResult.my - 1);
       else scoresBeforeResult.opp = Math.max(0, scoresBeforeResult.opp - 1);
     }
     const responseMode = MultiplayerAuthorityState.resolveResponseMode({
       requestedMode: requestPayload?.mode,
       reason: requestPayload?.reason || reason,
-      roomState,
-      roundNumber: currentRound,
+      roomState: responseRoomState,
+      roundNumber: responseRound,
     });
     const payload = MultiplayerAuthorityState.buildPayload({
-      roundNumber: currentRound,
+      roundNumber: responseRound,
       mode: responseMode,
-      roomState,
+      roomState: responseRoomState,
       meta: {
         reason,
         request: requestPayload ? { ...requestPayload, responseMode } : null,
         matchState: {
-          roundNumber: currentRound,
+          roundNumber: responseRound,
           scores: currentScores,
           scoresBeforeResult,
           goldBySlot: {
@@ -2221,21 +2340,15 @@ const Game = (() => {
   function _mpApplyReplayOutcomeToState(replaySource) {
     const replayLog = _mpExtractReplayLog(replaySource);
     const endEvt = replayLog?.events?.find(evt => evt.type === 'battle_end');
-    if (!endEvt || typeof MultiplayerGame === 'undefined') return;
+    if (!endEvt) return;
 
-    const localSnapshots = MultiplayerGame.isHost()
-      ? (endEvt.playerUnits || [])
-      : (endEvt.enemyUnits || []);
-    const byId = new Map(localSnapshots.map(snapshot => [String(snapshot.id), snapshot]));
-
-    state.playerUnits = state.playerUnits.filter(unit => {
-      const snapshot = byId.get(String(unit.id));
-      if (!snapshot || snapshot.hp <= 0) return false;
-      unit.hp = Math.min(unit.maxHp, snapshot.hp);
+    // Multiplayer rounds keep the prep-phase roster intact regardless of the
+    // replay outcome; only battle-temporary state should be cleared here.
+    for (const unit of state.playerUnits) {
+      unit.hp = unit.maxHp;
       unit.statusEffects = [];
       unit.abilityCooldown = 0;
-      return true;
-    });
+    }
 
     state.enemyUnits = [];
   }
@@ -2422,6 +2535,10 @@ const Game = (() => {
   function buyUpgrade(id) {
     const upg   = UPGRADES.find(u => u.id === id);
     if (!upg) return;
+    if (_mpMode && MP_DISABLED_UPGRADE_IDS.has(id)) {
+      UI.showMessage('This upgrade is disabled in multiplayer.');
+      return;
+    }
     const level = state.upgradeLevels[id] || 0;
     if (level >= upg.maxLevel) { UI.showMessage('Already maxed!'); return; }
     const cost = upg.cost + level * 5;
@@ -2435,7 +2552,7 @@ const Game = (() => {
 
     UI.showMessage(`${upg.name} upgraded to level ${level + 1}!`);
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
-    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
+    _updateUpgradeList();
     _updateRefreshBtn();
     _refreshHUD();
     UI.updateSynergies(state.playerUnits);
@@ -2598,7 +2715,7 @@ const Game = (() => {
 
     refreshShop(true);
     UI.updateSynergies([]);
-    UI.updateUpgrades(state.upgradeLevels, state.gold, buyUpgrade);
+    _updateUpgradeList();
     _refreshHUD();
     if (_challengeMode === 'daily') {
       UI.showMessage(`📅 Daily Challenge — ${_getDailyKey()} — Same waves for everyone today!`);
@@ -3935,6 +4052,7 @@ const Game = (() => {
     state.refreshesLeft = 1; // one free refresh per round (rerolls via MP are separate)
     _mpOwnPrepRevision = 0;
     _mpLastResolvedRoundNumber = -1;
+    _applyMultiplayerUpgradePolicy({ clearRoundSensitive: true });
 
     // Sync scores from MultiplayerGame
     if (typeof MultiplayerGame !== 'undefined') {
@@ -4030,16 +4148,19 @@ const Game = (() => {
     const currentRoundNumber = (typeof MultiplayerGame !== 'undefined' && typeof MultiplayerGame.getRound === 'function')
       ? Number(MultiplayerGame.getRound() || 0)
       : Number(_mpState.round || state?.wave || 0);
+    const sessionRoundNumber = Number(_mpResolveResumeTarget(
+      (typeof Room !== 'undefined' && typeof Room.getState === 'function') ? Room.getState() : null
+    ).roundNumber || currentRoundNumber || 0);
 
-    if (currentRoundNumber > 0 && _mpGuestBattleSessionRound === currentRoundNumber &&
+    if (sessionRoundNumber > 0 && _mpGuestBattleSessionRound === sessionRoundNumber &&
         (state?.phase === 'battle' || state?.phase === 'result')) {
-      console.info(`[MP:R${currentRoundNumber}] Battle controller already active — skipping duplicate start.`);
+      console.info(`[MP:R${sessionRoundNumber}] Battle controller already active — skipping duplicate start.`);
       return;
     }
 
     if (_mpState.readyTimer) { clearInterval(_mpState.readyTimer); _mpState.readyTimer = null; }
     _clearMPResumeBattleWatcher();
-    _clearMPGuestBattleSession(`start-round-${currentRoundNumber || '?'}`);
+    _clearMPGuestBattleSession(`start-round-${sessionRoundNumber || currentRoundNumber || '?'}`);
 
     // Reset per-round reconnect helpers so stale data from last round cannot interfere.
     _mpLastRoundResultPayload = null;
@@ -4081,6 +4202,8 @@ const Game = (() => {
     const HOST_RESULT_TIMEOUT_MS = 9000;
     const AUTHORITATIVE_REQUEST_COOLDOWN_MS = 1000;
     const _expectedRound = () => {
+      const battleSessionRound = Number(_mpGuestBattleSessionRound || sessionRoundNumber || 0);
+      if (battleSessionRound > 0) return battleSessionRound;
       const roomRound = _mpResolveRoomStateRoundNumber((typeof Room !== 'undefined' && typeof Room.getState === 'function') ? Room.getState() : null);
       const liveRound = (typeof MultiplayerGame !== 'undefined' && typeof MultiplayerGame.getRound === 'function')
         ? Number(MultiplayerGame.getRound() || 0)
@@ -4103,7 +4226,7 @@ const Game = (() => {
       let _authoritativeStateSeq = -1;
       let _hostResultWaitStartedAt = 0;
 
-      _mpGuestBattleSessionRound = Math.max(currentRoundNumber, _expectedRound());
+      _mpGuestBattleSessionRound = sessionRoundNumber > 0 ? sessionRoundNumber : _expectedRound();
 
       const _matchesRound = (payload) => {
         if (!payload) return false;
@@ -4137,6 +4260,15 @@ const Game = (() => {
         UI.showMessage('⏳ Awaiting results…', 0);
       };
 
+      const _resolveGuestTimeoutFallbackWon = () => {
+        if (typeof _replayHostWon === 'boolean') {
+          return !_replayHostWon;
+        }
+
+        console.warn(`[MP:R${_expectedRound()}] Replay outcome unavailable at timeout — defaulting guest fallback to loss instead of inventing a win.`);
+        return false;
+      };
+
       const _shouldDeferHostResultFallback = () => {
         if (typeof Room === 'undefined') return false;
         const roomState = Room.getState();
@@ -4166,7 +4298,7 @@ const Game = (() => {
             return;
           }
 
-          _applyResult(!_replayHostWon, reason);
+          _applyResult(_resolveGuestTimeoutFallbackWon(), reason);
         }, timeoutMs);
       };
 
@@ -5117,10 +5249,11 @@ const Game = (() => {
     if (key === 'request_authoritative_state') {
       const roundNumber = Number(value.roundNumber || 0);
       const currentRound = _mpGetCurrentRoundNumber();
-      if (roundNumber > 0 && currentRound > 0 && roundNumber !== currentRound) return;
+      const hasRetainedRoundState = roundNumber > 0 && !!_mpGetRetainedAuthoritativeRoundState(roundNumber);
+      if (roundNumber > 0 && currentRound > 0 && roundNumber !== currentRound && !hasRetainedRoundState) return;
       const payload = _mpSendAuthoritativeState(value.reason || 'guest-request', value);
       if (payload) {
-        console.info(`[MP:R${currentRound}] Sent authoritative_state in response to ${value.reason || 'guest-request'}.`);
+        console.info(`[MP:R${payload.roundNumber || currentRound}] Sent authoritative_state in response to ${value.reason || 'guest-request'}.`);
       }
       return;
     }
@@ -5544,9 +5677,13 @@ const Game = (() => {
 
     UI.showScreen('screen-title');
 
-    // Show splash overlay — allow button, tap, or Enter/Space to dismiss on all devices
+    const resumedSavedRoomSession = _mpMaybeResumeSavedRoomSession();
+    _mpMaybeDiscardUnsupportedSavedHostSession();
+
+    // Show splash overlay only for a normal cold boot. Saved guest-session resume
+    // should go straight back into the live match without re-blocking the UI.
     const splashEl = document.getElementById('splash-overlay');
-    if (splashEl) {
+    if (splashEl && !resumedSavedRoomSession) {
       splashEl.classList.remove('hidden');
       splashEl.tabIndex = 0;
 
@@ -5575,10 +5712,9 @@ const Game = (() => {
       requestAnimationFrame(() => {
         document.getElementById('btn-splash-dismiss')?.focus({ preventScroll: true });
       });
+    } else if (splashEl && resumedSavedRoomSession) {
+      splashEl.remove();
     }
-
-    _mpMaybeResumeSavedRoomSession();
-    _mpMaybeDiscardUnsupportedSavedHostSession();
   }
 
   return {

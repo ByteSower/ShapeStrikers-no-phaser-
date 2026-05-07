@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: May 5, 2026
+> **Last Updated**: May 7, 2026
 
 ---
 
@@ -179,6 +179,10 @@
 - [x] Add replay checkpoints / resume support for reconnects mid-battle
 - [x] Add guest-side replay view transforms so both players see their own army on the near side
 - [x] Recover cached replay/result payloads when a guest room channel re-subscribes after a transient disconnect
+- [x] Resume hardening now covers saved guest sessions, result-show recovery, and retained older unresolved rounds after reload/reconnect
+- [x] Centralized multiplayer telemetry now best-effort uploads reconnect, resync, disconnect, and desync events to Supabase `mp_telemetry_events`
+- [x] Multiplayer round resets now preserve each player-owned roster while clearing temporary battle damage, statuses, and cooldowns
+- [x] Multiplayer-only upgrade rules now disable economy/scouting upgrades and reset round-sensitive buffs each prep round
 - [ ] Long-term option: move battle authority from host to backend if host disconnects become a recurring issue
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance
@@ -224,6 +228,9 @@
 ---
 
 ## 🗺️ Roadmap
+
+> Active execution order now lives in `docs/current-roadmap.md`.
+> This section is the long-tail backlog, not the current source of truth.
 
 ### Backlog — Feature Ideas (User Approved with Caveats)
 - [ ] Elemental reactions (Fire+Ice=Steam, etc.) — "only if clear visual feedback"
