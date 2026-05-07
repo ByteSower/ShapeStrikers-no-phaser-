@@ -86,8 +86,8 @@ resync, saved-session rejection, and desync events, and unsent entries now best-
 Current verification note:
 
 - `mp_telemetry_events` now contains real `room.lifecycle` rows for transitions such as `heartbeat_timeout`, `heartbeat_timeout_disconnect`, and `opponent_presence_lost_disconnect_confirmed`.
-- A two-client live pass on 2026-05-07 produced `reload_resume_authoritative_request`, `reload_resume_authoritative_applied`, `opponent_presence_lost`, and `state_sync_activity_recovered` rows for a real guest reload/rejoin flow.
-- A fresh browser-backed `telemetry.live_verify` insert was rechecked on 2026-05-07 from the local app build and arrived successfully in Supabase.
+- A two-client live pass on 2026-05-07 produced guest reload and recovery rows for a real reload/rejoin flow, including `reload_resume_authoritative_request`, `reload_resume_authoritative_applied`, `opponent_presence_lost`, and `state_sync_activity_recovered`.
+- A fresh browser-backed verification insert was rechecked on 2026-05-07 from the local app build and arrived successfully in Supabase.
 
 ### Suggested Data To Persist Server-Side
 

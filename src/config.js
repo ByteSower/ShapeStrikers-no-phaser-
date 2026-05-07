@@ -1090,7 +1090,7 @@ const PATCH_NOTES = [
     title: '📘 Multiplayer Clarity Update',
     notes: [
       '📘 Multiplayer rules, carry/reset behavior, reconnect expectations, and upgrade descriptions are now readable in-game from the queue and help overlays',
-      '🧪 A two-client live pass rechecked guest reload/rejoin behavior and confirmed reload/resync lifecycle reasons land in Supabase telemetry',
+      '🧪 A two-client live pass rechecked guest reload/rejoin behavior and confirmed the related connection recovery events reached the shared telemetry log',
     ],
   },
   {

@@ -184,7 +184,7 @@
 - [x] Multiplayer round resets now preserve each player-owned roster while clearing temporary battle damage, statuses, and cooldowns
 - [x] Multiplayer-only upgrade rules now disable economy/scouting upgrades and reset round-sensitive buffs each prep round
 - [x] Player-facing multiplayer rules, reconnect expectations, and mobile-readable upgrade descriptions are now surfaced in the queue overlay and help overlay
-- [x] Two-client live validation rechecked guest reload/rejoin telemetry and confirmed `reload_resume_authoritative_*` plus stale/recovery lifecycle reasons arrive in Supabase
+- [x] Two-client live validation rechecked guest reload/rejoin telemetry and confirmed reconnect and recovery events arrive in the shared telemetry log
 - [ ] Long-term option: move battle authority from host to backend if host disconnects become a recurring issue
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance

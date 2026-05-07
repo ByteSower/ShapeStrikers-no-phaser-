@@ -4,3 +4,6 @@ style_dark_backup.css
 dist/
 _MULTIPLAYER_ROADMAP.md
 _mp_test.html
+.agents/
+.vscode/mcp.json
+skills-lock.json

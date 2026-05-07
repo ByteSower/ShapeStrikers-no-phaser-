@@ -21,7 +21,7 @@ Purpose: this is the single source of truth for the active work order in `games/
 - Multiplayer round-reset roster rules are now covered by focused multiplayer tests: owned units persist between rounds and reset to their prep-phase HP, positions, and cleared battle state.
 - Multiplayer-only upgrade rules are now enforced in the live prep flow: economy/scouting upgrades are hidden in multiplayer and round-sensitive buffs clear between prep rounds.
 - Player-facing multiplayer rules and reconnect expectations are now surfaced in the title help overlay and the multiplayer queue overlay, and mobile players can read upgrade details there without hover.
-- A two-client live pass on 2026-05-07 confirmed guest reload/resync reasons such as `reload_resume_authoritative_request` and `reload_resume_authoritative_applied` land in `mp_telemetry_events`, alongside live stale/recovery `room.lifecycle` transitions.
+- A two-client live pass on 2026-05-07 confirmed guest reload and recovery events land in the shared telemetry log, alongside real disconnect and recovery transitions.
 - The current release target is stable host-authoritative multiplayer with strong transient reconnect recovery.
 - Host-loss survival remains an unresolved release-hardening gap.
 
@@ -94,5 +94,5 @@ Needed before public-release confidence:
 ## Immediate Next Actions
 
 1. Decide whether host-loss survival stays on the host-authority path or needs a stronger authoritative match service before wider public release.
-2. Keep future live passes focused on host-loss and disconnect-confirmation cases now that guest reload/resync telemetry is centrally verified.
+2. Keep future live passes focused on host-loss and confirmed disconnect cases now that guest reload recovery is verified in shared telemetry.
 3. Reopen audio/mobile polish only if the next live multiplayer pass shows a real regression.
