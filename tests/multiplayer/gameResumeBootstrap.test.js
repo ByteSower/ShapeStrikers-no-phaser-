@@ -886,6 +886,39 @@ await test('Host room-watch transition ends the match when the local host channe
   assert.deepEqual(musicCalls, ['ss_title_music_full.wav']);
 });
 
+await test('Host opponent-disconnect callback keeps the match reconnectable through the public room lifecycle path', () => {
+  const {
+    Game,
+    screenCalls,
+    roomEvents,
+    multiplayerEvents,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: ['mp-lobby-overlay', 'mp-disconnect-notice', 'mp-disconnect-msg', 'mp-disconnect-timer'],
+  });
+
+  Game.init();
+  assert.equal(typeof roomEvents.matchFoundHandler, 'function');
+
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-guest-drop',
+    opponentId: 'guest-drop-1',
+    isHost: true,
+  });
+
+  assert.equal(roomEvents.opponentDisconnectHandlers.length, 1);
+  const screenCallCountBeforeDisconnect = screenCalls.length;
+
+  roomEvents.opponentDisconnectHandlers[0]();
+
+  assert.equal(multiplayerEvents.forceMatchEndCalls.length, 0);
+  assert.equal(multiplayerEvents.destroyCalls, 0);
+  assert.equal(roomEvents.destroyCalls, 0);
+  assert.equal(screenCalls.length, screenCallCountBeforeDisconnect);
+});
+
 await test('Quit button ends the active match and clears the saved room session through the public flow', async () => {
   const {
     Game,

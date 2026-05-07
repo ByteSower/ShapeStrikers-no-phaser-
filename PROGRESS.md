@@ -185,6 +185,7 @@
 - [x] Multiplayer-only upgrade rules now disable economy/scouting upgrades and reset round-sensitive buffs each prep round
 - [x] Player-facing multiplayer rules, reconnect expectations, and mobile-readable upgrade descriptions are now surfaced in the queue overlay and help overlay
 - [x] Two-client live validation rechecked guest reload/rejoin telemetry and confirmed reconnect and recovery events arrive in the shared telemetry log
+- [x] Added game-level regression coverage to confirm host matches stay reconnectable on guest disconnect while confirmed host-loss paths still terminate immediately
 - [ ] Long-term option: move battle authority from host to backend if host disconnects become a recurring issue
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance

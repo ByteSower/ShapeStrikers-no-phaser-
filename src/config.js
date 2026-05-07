@@ -1085,6 +1085,15 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.8',
+    date: 'May 7, 2026',
+    title: '🧪 Multiplayer Disconnect Coverage',
+    notes: [
+      '🧪 Added game-level regression coverage to confirm a host keeps the match reconnectable when only the guest disconnects',
+      '🛡️ Confirmed host-loss handling stays terminal only for host disconnect paths, not ordinary guest dropouts',
+    ],
+  },
+  {
     version: '1.0.7',
     date: 'May 7, 2026',
     title: '📘 Multiplayer Clarity Update',
