@@ -86,6 +86,27 @@ test('ice slime uses frost coat on enemies at the documented 2-row ability range
   assert.equal(slime.abilityCooldown, UNIT_MAP.ice_slime.ability.cooldown, 'frost coat should consume the ability cooldown when cast');
 });
 
+test('earth golem casts stone skin without an enemy in attack range because it targets self', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const golem = mkUnit(UNIT_MAP.earth_golem, 4, 0, false);
+  const distantEnemy = mkUnit(UNIT_MAP.fire_imp, 0, 0, true);
+
+  battleSystem._playerUnits = [golem];
+  battleSystem._enemyUnits = [distantEnemy];
+  battleSystem._actionQueue = [golem];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  const shield = golem.statusEffects.find(effect => effect.type === 'shield');
+
+  assert.ok(shield, 'stone skin should cast on self even when no enemy is in attack range');
+  assert.equal(shield.duration, 2, 'stone skin shield should last 2 turns');
+  assert.equal(shield.value, 15, 'stone skin should grant the documented defense bonus');
+  assert.equal(golem.row, 4, 'earth golem should cast stone skin instead of moving when its self-buff is ready');
+  assert.equal(golem.abilityCooldown, UNIT_MAP.earth_golem.ability.cooldown, 'stone skin should consume the ability cooldown when cast');
+});
+
 test('blood knight ability honors its documented 30 percent lifesteal', () => {
   const battleSystem = makeIdleBattleSystem();
   const knight = mkUnit(UNIT_MAP.blood_knight, 2, 0, false);
@@ -340,6 +361,27 @@ test('ice guardian frozen wall slows enemies outside base attack range because i
   assert.equal(guardian.abilityCooldown, UNIT_MAP.ice_guardian.ability.cooldown, 'frozen wall should consume the ability cooldown when cast');
 });
 
+test('life guardian still casts guardian\'s blessing at full HP so barrier is applied', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const guardian = mkUnit(UNIT_MAP.life_guardian, 2, 0, false);
+  const ally = mkUnit(UNIT_MAP.earth_golem, 3, 1, false);
+  const enemy = mkUnit(UNIT_MAP.fire_imp, 2, 0, true);
+
+  battleSystem._playerUnits = [guardian, ally];
+  battleSystem._enemyUnits = [enemy];
+  battleSystem._actionQueue = [guardian];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  const guardianBarrier = guardian.statusEffects.find(effect => effect.type === 'barrier');
+  const allyBarrier = ally.statusEffects.find(effect => effect.type === 'barrier');
+
+  assert.ok(guardianBarrier && allyBarrier, 'guardian\'s blessing should still apply barrier to all allies even when no heal is needed');
+  assert.equal(guardian.abilityCooldown, UNIT_MAP.life_guardian.ability.cooldown, 'guardian\'s blessing should consume the ability cooldown when it casts for barrier');
+  assert.equal(enemy.hp, enemy.maxHp, 'life guardian should cast the support ability instead of basic attacking when barrier is the relevant effect');
+});
+
 test('arcane illusionist mirage hits and blinds enemies outside base attack range because it targets all enemies', () => {
   const battleSystem = makeIdleBattleSystem();
   const illusionist = mkUnit(UNIT_MAP.arcane_illusionist, 4, 2, false);
@@ -359,6 +401,32 @@ test('arcane illusionist mirage hits and blinds enemies outside base attack rang
   assert.ok(distantEnemy.hp < distantEnemy.maxHp, 'mirage should damage enemies outside base range because it targets all enemies');
   assert.equal(illusionist.row, 4, 'arcane illusionist should cast mirage instead of moving when only a distant enemy is alive');
   assert.equal(illusionist.abilityCooldown, UNIT_MAP.arcane_illusionist.ability.cooldown, 'mirage should consume the ability cooldown when cast');
+});
+
+test('blind lasts for two basic attacks as documented', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const blindedAttacker = mkUnit(UNIT_MAP.fire_imp, 2, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 2, 0, true);
+
+  blindedAttacker.abilityCooldown = 99;
+  battleSystem._rng = () => 0;
+  battleSystem._playerUnits = [blindedAttacker];
+  battleSystem._enemyUnits = [target];
+
+  battleSystem._addStatus(blindedAttacker, 'blind', 2);
+
+  battleSystem._actionQueue = [blindedAttacker];
+  battleSystem._actionIndex = 0;
+  battleSystem._processNextAction();
+
+  assert.equal(target.hp, target.maxHp, 'the first blinded basic attack should miss');
+
+  battleSystem._actionQueue = [blindedAttacker];
+  battleSystem._actionIndex = 0;
+  battleSystem._processNextAction();
+
+  assert.equal(target.hp, target.maxHp, 'the second blinded basic attack should also miss');
+  assert.equal(blindedAttacker.statusEffects.some(effect => effect.type === 'blind'), false, 'blind should wear off after the second missed attack');
 });
 
 test('lightning lord thunder storm hits enemies outside base attack range because it targets all enemies', () => {
@@ -417,6 +485,39 @@ test('void blighter cursed wound hits and wounds enemies outside base attack ran
   assert.ok(distantEnemy.hp < distantEnemy.maxHp, 'cursed wound should damage enemies outside base range because it targets all enemies');
   assert.equal(blighter.row, 4, 'void blighter should cast cursed wound instead of moving when only a distant enemy is alive');
   assert.equal(blighter.abilityCooldown, UNIT_MAP.void_blighter.ability.cooldown, 'cursed wound should consume the ability cooldown when cast');
+});
+
+test('absolute zero freeze skips two turns as documented', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const colossus = mkUnit(UNIT_MAP.boss_frost_colossus, 0, 0, true);
+  const target = mkUnit(UNIT_MAP.earth_golem, 4, 0, false);
+
+  battleSystem._playerUnits = [target];
+  battleSystem._enemyUnits = [colossus];
+
+  battleSystem._useAbility(colossus, [target], [colossus]);
+
+  let freeze = target.statusEffects.find(effect => effect.type === 'freeze');
+  assert.ok(freeze, 'absolute zero should apply freeze');
+  assert.equal(freeze.duration, 2, 'absolute zero should apply a 2-turn freeze');
+
+  battleSystem._actionQueue = [target];
+  battleSystem._actionIndex = 0;
+  battleSystem._processNextAction();
+
+  freeze = target.statusEffects.find(effect => effect.type === 'freeze');
+  assert.ok(freeze, 'the first skipped turn should not consume the full 2-turn freeze');
+
+  const rowAfterFirstSkip = target.row;
+  const colAfterFirstSkip = target.col;
+
+  battleSystem._actionQueue = [target];
+  battleSystem._actionIndex = 0;
+  battleSystem._processNextAction();
+
+  assert.equal(target.row, rowAfterFirstSkip, 'the second frozen turn should also skip movement');
+  assert.equal(target.col, colAfterFirstSkip, 'the second frozen turn should also skip action positioning changes');
+  assert.equal(target.statusEffects.some(effect => effect.type === 'freeze'), false, 'freeze should wear off after the second skipped turn');
 });
 
 test('blood imp frenzy bite hits twice and heals from total damage once at the end', () => {

@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: May 7, 2026
+> **Last Updated**: May 20, 2026
 
 ---
 
@@ -195,6 +195,8 @@
 - [x] Continued battle audit fixes now keep blocked units from sidestepping off the documented movement lanes, make Void Horror respect Weaken during Void Rupture, and teach Ice Guardian, Arcane Illusionist, Lightning Lord, Ice Empress, and Void Blighter to hit their full documented enemy roster
 - [x] Clarified Blood, Plague, and Void campaign boss ability rules are now implemented for Blood Imp, Crimson Mage, Blood Lord, Plague Rat, Blight Weaver, Plague Sovereign, Void Leviathan, and Void Architect with matching regression coverage
 - [x] Follow-up audit coverage now locks Ground Slam and Grapple Pull movement rules with focused regressions, and the player-facing unit-card/tutorial text has been cleaned up to match the current ability names and summaries
+- [x] Control-duration follow-up fixes now make Absolute Zero and other preexisting turn-based debuffs last their documented skipped turns and attacks instead of expiring early
+- [x] Support/self-buff audit fixes now let Life Guardian and Arcane Priest cast protection abilities based on missing barrier or shield coverage, and let Earth Golem cast Stone Skin without waiting for an in-range enemy
 - [ ] Revisit stronger multiplayer authority when ranked, spectate, or broader platform targets raise the reliability bar beyond transient reconnect recovery
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance

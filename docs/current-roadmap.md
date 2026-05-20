@@ -1,6 +1,6 @@
 # Shape Strikers — Current Roadmap
 
-Last updated: 2026-05-07
+Last updated: 2026-05-20
 
 Purpose: this is the single source of truth for the active work order in `games/shape_strikers_web/`.
 
@@ -82,6 +82,7 @@ Revisit triggers:
 - event-bus vs callback refactor in battle flow
 - `config.js` data splitting if content work resumes heavily
 - accessibility polish
+- focused mobile onboarding/layout audit for the small-browser tutorial panel underlapping the grid
 - larger content/system ideas from the backlog in `PROGRESS.md`
 
 ## Not Current Priorities

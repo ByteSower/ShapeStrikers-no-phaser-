@@ -343,6 +343,10 @@ class BattleSystem {
       return;
     }
 
+    const turnStatusRefs = new Set(
+      unit.statusEffects.filter(effect => effect.type !== 'burn' && effect.type !== 'poison' && effect.type !== 'freeze')
+    );
+
     // Evolve: buff stats every N turns survived
     const ec = unit.definition.evolveConfig;
     if (ec) {
@@ -360,14 +364,19 @@ class BattleSystem {
       }
     }
 
-    // Skip frozen units — consume 1 stack per skipped turn
+    // Skip frozen units — consume one remaining frozen turn.
+    // Freeze can come from duration-based effects (e.g. 2-turn boss freeze)
+    // or from stacked reapplications, so honor whichever leaves more turns.
     const frozen = unit.statusEffects.find(s => s.type === 'freeze');
     if (frozen) {
-      frozen.stacks--;
-      if (frozen.stacks <= 0) unit.statusEffects = unit.statusEffects.filter(s => s !== frozen);
+      const remainingFreezeTurns = Math.max(frozen.duration || 0, frozen.stacks || 0) - 1;
+      frozen.duration = remainingFreezeTurns;
+      frozen.stacks = Math.min(frozen.stacks || 0, remainingFreezeTurns);
+      if (remainingFreezeTurns <= 0) unit.statusEffects = unit.statusEffects.filter(s => s !== frozen);
       unit.abilityCooldown = Math.max(0, unit.abilityCooldown - 1);
-      this._log(`❄️ ${this._n(unit)} is frozen — turn skipped!${frozen.stacks > 0 ? ` (${frozen.stacks} left)` : ''}`, 'system');
+      this._log(`❄️ ${this._n(unit)} is frozen — turn skipped!${remainingFreezeTurns > 0 ? ` (${remainingFreezeTurns} left)` : ''}`, 'system');
       this._emitStatusChange(unit);
+      this._consumeTurnStatuses(unit, turnStatusRefs);
       this._turnTimer = this._scheduleFn(() => this._processNextAction(), this._actionDelay * 0.5);
       return;
     }
@@ -376,15 +385,16 @@ class BattleSystem {
     const targets = unit.isEnemy ? players : enemies;
     const hasTarget = this._pickTarget(unit, targets);
     const hasAbilityTarget = this._canUseAbility(unit, targets);
+    const supportAllies = unit.isEnemy ? enemies : players;
 
     // Healers should only use ability when an ally is actually damaged
     const isAllySupportAbility = unit.definition.ability?.healAmount > 0;
-    const allyNeedsHeal = isAllySupportAbility
-      ? (unit.isEnemy ? enemies : players).some(u => u.hp > 0 && u.hp < u.maxHp)
+    const allyNeedsSupport = isAllySupportAbility
+      ? this._allySupportAbilityNeedsCast(unit, supportAllies)
       : true;
 
-    if (((hasAbilityTarget || isAllySupportAbility) && unit.abilityCooldown <= 0 && allyNeedsHeal)) {
-      this._useAbility(unit, unit.isEnemy ? players : enemies, unit.isEnemy ? enemies : players);
+    if (((hasAbilityTarget || isAllySupportAbility) && unit.abilityCooldown <= 0 && allyNeedsSupport)) {
+      this._useAbility(unit, unit.isEnemy ? players : enemies, supportAllies);
       unit.abilityCooldown = unit.definition.ability.cooldown;
     } else if (hasTarget) {
       unit.abilityCooldown--;
@@ -394,6 +404,8 @@ class BattleSystem {
       unit.abilityCooldown = Math.max(0, unit.abilityCooldown - 1);
       this._moveTowardEnemy(unit, targets);
     }
+
+    this._consumeTurnStatuses(unit, turnStatusRefs);
 
     // Wait for attack/ability animation to finish before scheduling next action
     const proceed = () => {
@@ -869,6 +881,9 @@ class BattleSystem {
   }
 
   _canUseAbility(unit, targets) {
+    if (unit.definition.id === 'earth_golem') {
+      return true;
+    }
     if (unit.definition.id === 'konji_shaman') {
       return targets.some(target => target.hp > 0 && !target.statusEffects.find(s => s.type === 'untargetable'));
     }
@@ -908,6 +923,20 @@ class BattleSystem {
       });
     }
     return Boolean(this._pickTarget(unit, targets));
+  }
+
+  _allySupportAbilityNeedsCast(unit, allies) {
+    const aliveAllies = allies.filter(target => target.hp > 0);
+    if (aliveAllies.some(target => target.hp < target.maxHp)) return true;
+
+    switch (unit.definition.id) {
+      case 'life_guardian':
+        return aliveAllies.some(target => !target.statusEffects.find(effect => effect.type === 'barrier'));
+      case 'arcane_priest':
+        return aliveAllies.some(target => !target.statusEffects.find(effect => effect.type === 'shield'));
+      default:
+        return false;
+    }
   }
 
   _moveTowardEnemy(unit, targets) {
@@ -1005,6 +1034,7 @@ class BattleSystem {
   }
 
   _tickStatus(unit) {
+    let changed = false;
     for (const eff of unit.statusEffects.slice()) {
       if (eff.type === 'burn' || eff.type === 'poison') {
         const baseDmg = eff.value || 5;
@@ -1012,12 +1042,32 @@ class BattleSystem {
         unit.hp = Math.max(0, unit.hp - dmg);
         this._log(`${eff.type === 'burn' ? '🔥' : '☠️'} ${this._n(unit)} takes ${dmg} ${eff.type === 'burn' ? 'Burn' : 'Poison'} damage (×${eff.stacks})`, 'attack');
         this._emitUnitHit(unit, dmg, eff.type === 'burn' ? 'fire' : 'earth', null);
+        eff.duration--;
+        changed = true;
       }
-      // Freeze duration is managed in the freeze-skip block, not here
-      if (eff.type !== 'freeze') eff.duration--;
     }
-    unit.statusEffects = unit.statusEffects.filter(e => e.duration > 0);
-    this._emitStatusChange(unit);
+    const remainingEffects = unit.statusEffects.filter(e => e.duration > 0);
+    if (remainingEffects.length !== unit.statusEffects.length || changed) {
+      unit.statusEffects = remainingEffects;
+      this._emitStatusChange(unit);
+    }
+  }
+
+  _consumeTurnStatuses(unit, turnStatusRefs) {
+    if (!turnStatusRefs || turnStatusRefs.size === 0) return;
+
+    let changed = false;
+    for (const eff of unit.statusEffects.slice()) {
+      if (!turnStatusRefs.has(eff)) continue;
+      eff.duration--;
+      changed = true;
+    }
+
+    const remainingEffects = unit.statusEffects.filter(e => e.duration > 0);
+    if (remainingEffects.length !== unit.statusEffects.length || changed) {
+      unit.statusEffects = remainingEffects;
+      this._emitStatusChange(unit);
+    }
   }
 
   _killUnit(unit, killer = null) {

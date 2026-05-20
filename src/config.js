@@ -1085,6 +1085,16 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.16',
+    date: 'May 20, 2026',
+    title: '🧪 Status & Utility Audit Fixes',
+    notes: [
+      '❄️ Absolute Zero and other preexisting two-turn control effects now last for the documented number of skipped turns and attacks instead of expiring early',
+      '🛡️ Life Guardian and Arcane Priest now still cast their protection abilities when allies are at full HP but missing barrier or shield coverage',
+      '🪨 Earth Golem now uses Stone Skin as a true self-buff instead of waiting for an enemy to enter basic attack range',
+    ],
+  },
+  {
     version: '1.0.15',
     date: 'May 20, 2026',
     title: '🧪 Control & UI Text Audit Fixes',
