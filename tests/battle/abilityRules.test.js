@@ -382,6 +382,32 @@ test('life guardian still casts guardian\'s blessing at full HP so barrier is ap
   assert.equal(enemy.hp, enemy.maxHp, 'life guardian should cast the support ability instead of basic attacking when barrier is the relevant effect');
 });
 
+test('flame tyrant ability text mentions the burn applied by tyrant\'s wrath', () => {
+  assert.match(UNIT_MAP.boss_flame_tyrant.ability.description.toLowerCase(), /burn/, 'tyrant\'s wrath text should mention the burn effect applied in battle');
+});
+
+test('frost colossus ability text mentions the damage applied by absolute zero', () => {
+  assert.match(UNIT_MAP.boss_frost_colossus.ability.description.toLowerCase(), /damage/, 'absolute zero text should mention the AoE damage applied in battle');
+});
+
+test('void supreme ability text mentions the shielded enrage applied by void cataclysm', () => {
+  const description = UNIT_MAP.boss_chaos_overlord.ability.description.toLowerCase();
+  assert.match(description, /shield/, 'void cataclysm text should mention the shield granted at low HP');
+  assert.match(description, /all enemies/, 'void cataclysm text should mention its all-enemies AoE coverage');
+});
+
+test('void leviathan ability text mentions wound and weaken from abyssal devour', () => {
+  const description = UNIT_MAP.boss_void_leviathan.ability.description.toLowerCase();
+  assert.match(description, /wound/, 'abyssal devour text should mention the wound effect');
+  assert.match(description, /weaken/, 'abyssal devour text should mention the weaken effect');
+});
+
+test('void architect ability text mentions void damage to all enemies', () => {
+  const description = UNIT_MAP.boss_void_architect.ability.description.toLowerCase();
+  assert.match(description, /void damage/, 'reality tear text should mention the damage type');
+  assert.match(description, /all enemies/, 'reality tear text should mention its all-enemies coverage');
+});
+
 test('arcane illusionist mirage hits and blinds enemies outside base attack range because it targets all enemies', () => {
   const battleSystem = makeIdleBattleSystem();
   const illusionist = mkUnit(UNIT_MAP.arcane_illusionist, 4, 2, false);

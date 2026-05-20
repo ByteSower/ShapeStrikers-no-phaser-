@@ -337,7 +337,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_flame_tyrant', name: '🔥 SUN DRAGON SEL', element: 'fire', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'red', shape: 'squircle' },
     stats: { hp: 425, maxHp: 425, attack: 32, defense: 14, speed: 5, range: 4 },
-    ability: { name: "Tyrant's Wrath", description: 'AoE fire damage to all enemies', cooldown: 4 },
+    ability: { name: "Tyrant's Wrath", description: 'AoE fire damage to all enemies + burn', cooldown: 4 },
     bossPhases: [
       { hpThreshold: 1.0, name: 'Burning Fury',   statModifiers: {},                description: 'The Flame Tyrant burns with fury!' },
       { hpThreshold: 0.5, name: 'Inferno',         statModifiers: { attackMult: 1.4 }, description: 'ENRAGED! Attack increased by 40%!' },
@@ -347,7 +347,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_frost_colossus', name: '🧊 FROST GIANT ANVALOG', element: 'ice', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'blue', shape: 'circle' },
     stats: { hp: 675, maxHp: 675, attack: 30, defense: 22, speed: 3, range: 4 },
-    ability: { name: 'Absolute Zero', description: 'Freezes all enemies for 2 turns + self-heal 80 HP', cooldown: 5, freezeDuration: 2, healAmount: 80 },
+    ability: { name: 'Absolute Zero', description: 'AoE ice damage + freezes all enemies for 2 turns + self-heal 80 HP', cooldown: 5, freezeDuration: 2, healAmount: 80 },
     bossPhases: [
       { hpThreshold: 1.0, name: "Frozen Fortress",  statModifiers: {},                                    description: 'The Frost Colossus raises its icy defenses!' },
       { hpThreshold: 0.5, name: "Glacier's Wrath",  statModifiers: { defenseMult: 1.5, speedMult: 0.8 }, description: 'FORTIFIED! Defense increased by 50%!' },
@@ -357,7 +357,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_chaos_overlord', name: '🕳️ THE VOID SUPREME', element: 'void', cost: 0, tier: 5, isBoss: true,
     visual: { color: 'purple', shape: 'square' },
     stats: { hp: 600, maxHp: 600, attack: 45, defense: 20, speed: 7, range: 4 },
-    ability: { name: 'Void Cataclysm', description: 'Unleashes void energy + enrage at low HP', cooldown: 4 },
+    ability: { name: 'Void Cataclysm', description: 'AoE void damage to all enemies + gains shield when enraged at low HP', cooldown: 4 },
     bossPhases: [
       { hpThreshold: 1.0, phaseHp: 400, name: 'Awakening',   statModifiers: {},                                        description: 'The Void Supreme awakens!' },
       { hpThreshold: 0.66, phaseHp: 450, name: 'Corruption',  statModifiers: { attackMult: 1.3, speedMult: 1.2 },      description: 'Phase 2: CORRUPTION! (+30% ATK, +20% SPD)' },
@@ -370,7 +370,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_void_leviathan', name: '🕳️ VOID LEVIATHAN', element: 'void', cost: 0, tier: 4, isBoss: true, isVoid: true,
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 800, maxHp: 800, attack: 52, defense: 25, speed: 5, range: 4 },
-    ability: { name: 'Abyssal Devour', description: '15% max HP true damage + 20% wound/weaken + heal self 60 HP', cooldown: 4, healAmount: 60 },
+    ability: { name: 'Abyssal Devour', description: '15% target max HP true damage + wound + weaken + self-heal 60 HP', cooldown: 4, healAmount: 60 },
     bossPhases: [
       { hpThreshold: 1.0, phaseHp: 500, name: 'Emergence',   statModifiers: {},                                        description: 'The Void Leviathan emerges from the abyss!' },
       { hpThreshold: 0.5, phaseHp: 600, name: 'Deep Hunger', statModifiers: { attackMult: 1.4, speedMult: 1.3 },      description: 'Phase 2: DEEP HUNGER! (+40% ATK, +30% SPD)' },
@@ -380,7 +380,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_void_architect', name: '🕳️ THE VOID ARCHITECT', element: 'void', cost: 0, tier: 5, isBoss: true, isVoid: true,
     visual: { color: 'purple', shape: 'rhombus' },
     stats: { hp: 900, maxHp: 900, attack: 60, defense: 18, speed: 8, range: 4 },
-    ability: { name: 'Reality Tear', description: '1.0x to all enemies + blind + poison (3 turns, 5% max HP/tick)', cooldown: 5 },
+    ability: { name: 'Reality Tear', description: '1.0x void damage to all enemies + blind + poison (3 turns, 5% max HP/tick)', cooldown: 5 },
     bossPhases: [
       { hpThreshold: 1.0,  phaseHp: 600, name: 'Blueprint',      statModifiers: {},                                                            description: 'The Void Architect studies your formation!' },
       { hpThreshold: 0.66, phaseHp: 675, name: 'Reconstruction',  statModifiers: { attackMult: 1.3, defenseMult: 1.3 },                        description: 'Phase 2: RECONSTRUCTION! (+30% ATK & DEF)' },
@@ -1084,6 +1084,16 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '1.0.17',
+    date: 'May 20, 2026',
+    title: '🧪 Boss Text Sync Fixes',
+    notes: [
+      '🔥 Sun Dragon Sel now explicitly warns that Tyrant\'s Wrath burns all enemies in addition to its AoE damage',
+      '❄️ Frost Giant Anvalog and Void Supreme now describe the AoE damage and low-HP shield behavior their boss abilities already apply in battle',
+      '🕳️ Void Leviathan and Void Architect now name their wound, weaken, poison, and void-damage effects so boss tooltips match the clarified battle rules',
+    ],
+  },
   {
     version: '1.0.16',
     date: 'May 20, 2026',
