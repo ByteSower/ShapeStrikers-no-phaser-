@@ -611,3 +611,56 @@ test('void architect reality tear damages all enemies and applies blind plus pla
   assert.equal(poisonA.value, poisonTickFromMaxHp(targetA), 'reality tear poison should use the plague baseline damage');
   assert.equal(poisonB.value, poisonTickFromMaxHp(targetB), 'reality tear poison should use the plague baseline damage on each target');
 });
+
+test('earth enforcer ground slam knocks the target back one row toward its spawn side', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const enforcer = mkUnit(UNIT_MAP.earth_enforcer, 2, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 1, 0, true);
+
+  battleSystem._playerUnits = [enforcer];
+  battleSystem._enemyUnits = [target];
+
+  battleSystem._useAbility(enforcer, [target], [enforcer]);
+
+  assert.equal(target.row, 0, 'ground slam should push the enemy one row back toward its spawn side');
+});
+
+test('earth enforcer ground slam leaves the target in place when the knockback tile is occupied', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const enforcer = mkUnit(UNIT_MAP.earth_enforcer, 2, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 1, 0, true);
+  const blocker = mkUnit(UNIT_MAP.ice_guardian, 0, 0, true);
+
+  battleSystem._playerUnits = [enforcer];
+  battleSystem._enemyUnits = [target, blocker];
+
+  battleSystem._useAbility(enforcer, [target, blocker], [enforcer]);
+
+  assert.equal(target.row, 1, 'ground slam should not move the target into an occupied tile');
+});
+
+test('lightning hunter grapple pull drags the target one row toward the battle line', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const hunter = mkUnit(UNIT_MAP.lightning_hunter, 3, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 1, 0, true);
+
+  battleSystem._playerUnits = [hunter];
+  battleSystem._enemyUnits = [target];
+
+  battleSystem._useAbility(hunter, [target], [hunter]);
+
+  assert.equal(target.row, 2, 'grapple pull should drag an enemy one row closer without crossing the battle line');
+});
+
+test('lightning hunter grapple pull does not drag enemies past the battle line', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const hunter = mkUnit(UNIT_MAP.lightning_hunter, 4, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 2, 0, true);
+
+  battleSystem._playerUnits = [hunter];
+  battleSystem._enemyUnits = [target];
+
+  battleSystem._useAbility(hunter, [target], [hunter]);
+
+  assert.equal(target.row, 2, 'grapple pull should clamp at the battle line instead of pulling enemies into player territory');
+});

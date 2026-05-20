@@ -95,13 +95,13 @@ const UNIT_DEFINITIONS = [
     id: 'fire_imp', name: 'Flame Child Yun', element: 'fire', cost: 2, tier: 1, role: 'skirmisher',
     visual: { color: 'red', shape: 'circle' },
     stats: { hp: 80, maxHp: 80, attack: 15, defense: 5, speed: 8, range: 1 },
-    ability: { name: 'Ember', description: 'Deals fire damage and applies burn', cooldown: 2 },
+    ability: { name: 'Ember Strike', description: '1.5x fire damage + burn (3 turns, 5 dmg/tick)', cooldown: 2 },
   },
   {
     id: 'ice_slime', name: 'Frost Slime Yon', element: 'ice', cost: 2, tier: 1, role: 'tank',
     visual: { color: 'blue', shape: 'circle' },
     stats: { hp: 100, maxHp: 100, attack: 10, defense: 8, speed: 4, range: 1 },
-    ability: { name: 'Frost Blast', description: 'Slows nearby enemies', cooldown: 3 },
+    ability: { name: 'Frost Coat', description: 'Slows ALL enemies in range 2', cooldown: 3 },
   },
   {
     id: 'earth_golem', name: 'Shape Golem Bofu', element: 'earth', cost: 2, tier: 1, role: 'tank',
@@ -119,25 +119,25 @@ const UNIT_DEFINITIONS = [
     id: 'earth_archer', name: 'Scout Trooper Pebbles', element: 'earth', cost: 2, tier: 1, role: 'sniper',
     visual: { color: 'green', shape: 'rhombus' },
     stats: { hp: 90, maxHp: 90, attack: 14, defense: 10, speed: 5, range: 2 },
-    ability: { name: 'Boulder Shot', description: 'Freezes target for 1 turn', cooldown: 3 },
+    ability: { name: 'Boulder Toss', description: '1.4x shot + Freeze (1 turn)', cooldown: 3 },
   },
   {
     id: 'fire_scout', name: 'Flame Child Yunni', element: 'fire', cost: 2, tier: 1, role: 'skirmisher',
     visual: { color: 'red', shape: 'rhombus' },
     stats: { hp: 65, maxHp: 65, attack: 12, defense: 4, speed: 10, range: 2 },
-    ability: { name: 'Fire Blast', description: 'Quick ranged attack with minor burn', cooldown: 2 },
+    ability: { name: 'Fire Bolt', description: '1.4x ranged attack + minor burn (2 turns, 3 dmg)', cooldown: 2 },
   },
   {
     id: 'frost_fairy', name: 'Frost Fairy Yoko', element: 'ice', cost: 2, tier: 1, role: 'healer',
     visual: { color: 'blue', shape: 'square' },
     stats: { hp: 70, maxHp: 70, attack: 8, defense: 6, speed: 7, range: 2 },
-    ability: { name: 'Frost Blessing', description: 'Heals lowest HP ally for 25 HP', cooldown: 2, healAmount: 25 },
+    ability: { name: 'Healing Frost', description: 'Heals lowest HP ally 25 HP', cooldown: 2, healAmount: 25 },
   },
   {
     id: 'blood_sprite', name: 'Vamp Kid Yoi', element: 'blood', cost: 2, tier: 1, role: 'skirmisher', trait: 'vampire',
     visual: { color: 'pink', shape: 'circle' },
     stats: { hp: 75, maxHp: 75, attack: 14, defense: 5, speed: 7, range: 1 },
-    ability: { name: 'Drain Bite', description: 'Drains enemy HP, healing self for 40% of damage', cooldown: 2 },
+    ability: { name: 'Drain Touch', description: '1.4x strike + 40% lifesteal', cooldown: 2 },
   },
   {
     id: 'konji_scout', name: 'Plague Son Yav', element: 'plague', cost: 2, tier: 1, role: 'sniper',
@@ -149,7 +149,7 @@ const UNIT_DEFINITIONS = [
     id: 'void_shade', name: 'Void Embryo Shadi', element: 'void', cost: 2, tier: 1, isVoid: true, role: 'skirmisher',
     visual: { color: 'pink', shape: 'circle' },
     stats: { hp: 60, maxHp: 60, attack: 18, defense: 3, speed: 10, range: 1 },
-    ability: { name: 'Shadow Step', description: 'Becomes untargetable for 1 turn', cooldown: 3 },
+    ability: { name: 'Shadow Phase', description: '1.8x stealth strike + untargetable (1 turn)', cooldown: 3 },
   },  {
     id: 'arcane_pupil', name: 'Arcane Servant Qua', element: 'arcane', cost: 2, tier: 1, role: 'skirmisher',
     visual: { color: 'purple', shape: 'circle' },
@@ -162,7 +162,7 @@ const UNIT_DEFINITIONS = [
     id: 'fire_warrior', name: 'Flame Soldier Magna', element: 'fire', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'red', shape: 'squircle' },
     stats: { hp: 180, maxHp: 180, attack: 25, defense: 12, speed: 6, range: 1 },
-    ability: { name: 'Blazing Dash', description: 'Dash forward, damages all enemies in same column', cooldown: 3 },
+    ability: { name: 'Blazing Charge', description: '1.4x to ALL enemies in same column + burn', cooldown: 3 },
   },
   {
     id: 'ice_archer', name: 'Ice Archer ColdShot', element: 'ice', cost: 4, tier: 2, role: 'sniper',
@@ -174,19 +174,19 @@ const UNIT_DEFINITIONS = [
     id: 'arcane_mage', name: 'Arcane Descendant', element: 'arcane', cost: 4, tier: 2, role: 'caster',
     visual: { color: 'purple', shape: 'squircle' },
     stats: { hp: 100, maxHp: 100, attack: 30, defense: 5, speed: 7, range: 3 },
-    ability: { name: 'Arcane Bomb', description: 'High damage magic attack', cooldown: 2 },
+    ability: { name: 'Arcane Blast', description: '2.0x heavy single-target magic', cooldown: 2 },
   },
   {
     id: 'lightning_knight', name: 'Thundorian Soldier', element: 'lightning', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'yellow', shape: 'squircle' },
     stats: { hp: 160, maxHp: 160, attack: 20, defense: 14, speed: 8, range: 1 },
-    ability: { name: 'Thunder', description: 'Freezes target and deals bonus damage', cooldown: 3 },
+    ability: { name: 'Thunder Strike', description: '1.6x strike + Freeze (1 turn)', cooldown: 3 },
   },
   {
     id: 'ice_guardian', name: 'Frost Guardian IceBur', element: 'ice', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'blue', shape: 'squircle' },
     stats: { hp: 200, maxHp: 200, attack: 15, defense: 18, speed: 3, range: 1 },
-    ability: { name: 'Frozen Wall', description: 'Grants shield (bonus defense for 3 turns) and slows all enemies', cooldown: 4 },
+    ability: { name: 'Frozen Wall', description: 'Shield self (+15 DEF, 3 turns) + slow ALL enemies', cooldown: 4 },
   },
   {
     id: 'arcane_assassin', name: 'Arcane Shadow', element: 'arcane', cost: 4, tier: 2, role: 'skirmisher',
@@ -228,18 +228,18 @@ const UNIT_DEFINITIONS = [
     id: 'void_blighter', name: 'Void Curser Ukez', element: 'void', cost: 4, tier: 2, isVoid: true, role: 'caster',
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 160, maxHp: 160, attack: 25, defense: 8, speed: 6, range: 2 },
-    ability: { name: 'Cursed Wound', description: 'Applies Wound to enemies, reducing healing by 50%', cooldown: 3 },
+    ability: { name: 'Cursed Wound', description: '0.6x to ALL enemies + Wound (3 turns)', cooldown: 3 },
   },  {
     id: 'earth_enforcer', name: 'Shape Enforcer Ooglong', element: 'earth', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'green', shape: 'squircle' },
     stats: { hp: 160, maxHp: 160, attack: 22, defense: 14, speed: 5, range: 1 },
-    ability: { name: 'Ground Slam', description: 'Heavy hit that knocks target back 1 row', cooldown: 3 },
+    ability: { name: 'Ground Slam', description: '1.4x hit + Knockback (1 row)', cooldown: 3 },
   },
   {
     id: 'lightning_hunter', name: 'Thundorian Elite Danza', element: 'lightning', cost: 4, tier: 2, role: 'skirmisher',
     visual: { color: 'yellow', shape: 'rhombus' },
     stats: { hp: 110, maxHp: 110, attack: 24, defense: 6, speed: 10, range: 2 },
-    ability: { name: 'Grapple Pull', description: 'Pulls target 1 row forward into danger', cooldown: 3 },
+    ability: { name: 'Grapple Pull', description: '1.2x hit + Pull (1 row toward battle line)', cooldown: 3 },
   },
   {
     id: 'fire_ravager', name: 'Inferno Ravager Rye', element: 'fire', cost: 4, tier: 2, role: 'skirmisher',
@@ -1084,6 +1084,16 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '1.0.15',
+    date: 'May 20, 2026',
+    title: '🧪 Control & UI Text Audit Fixes',
+    notes: [
+      '🪨 Ground Slam and Grapple Pull now have focused battle regressions covering open movement, blocked movement, and battle-line clamping',
+      '📋 Unit cards, shop previews, and glossary text now use the current ability names and clearer rule summaries for the recently audited units',
+      '🧭 The onboarding tutorial grid and shop steps now use clean icons again instead of broken replacement glyphs',
+    ],
+  },
   {
     version: '1.0.14',
     date: 'May 7, 2026',

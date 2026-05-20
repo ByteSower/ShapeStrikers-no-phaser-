@@ -194,6 +194,7 @@
 - [x] Additional unit-action audit fixes now let Ice Slime cast at its documented 2-row ability range, keep Fire Warrior hits in the same column, let Konji Shaman poison the full enemy team, and align Earth Archer and Lightning Knight freeze wording with their implemented status effect
 - [x] Continued battle audit fixes now keep blocked units from sidestepping off the documented movement lanes, make Void Horror respect Weaken during Void Rupture, and teach Ice Guardian, Arcane Illusionist, Lightning Lord, Ice Empress, and Void Blighter to hit their full documented enemy roster
 - [x] Clarified Blood, Plague, and Void campaign boss ability rules are now implemented for Blood Imp, Crimson Mage, Blood Lord, Plague Rat, Blight Weaver, Plague Sovereign, Void Leviathan, and Void Architect with matching regression coverage
+- [x] Follow-up audit coverage now locks Ground Slam and Grapple Pull movement rules with focused regressions, and the player-facing unit-card/tutorial text has been cleaned up to match the current ability names and summaries
 - [ ] Revisit stronger multiplayer authority when ranked, spectate, or broader platform targets raise the reliability bar beyond transient reconnect recovery
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance
