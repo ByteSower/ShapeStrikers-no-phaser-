@@ -579,7 +579,15 @@ class BattleSystem {
         this._healAllies(unit, aliveAllies, ab.healAmount || 15, true);
         break;
       case 'arcane_priest':  // Arcane Restoration: heal lowest 25 HP + shield same target
-        { const healTarget = aliveAllies.filter(u => u.hp > 0).sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0];
+        {
+          const supportTargetOrder = (left, right) => {
+            const ratioDiff = (left.hp / left.maxHp) - (right.hp / right.maxHp);
+            if (ratioDiff !== 0) return ratioDiff;
+            return String(left.id) < String(right.id) ? -1 : String(left.id) > String(right.id) ? 1 : 0;
+          };
+          const injuredAllies = aliveAllies.filter(target => target.hp > 0 && target.hp < target.maxHp);
+          const unshieldedAllies = aliveAllies.filter(target => target.hp > 0 && !target.statusEffects.find(effect => effect.type === 'shield'));
+          const healTarget = (injuredAllies.length > 0 ? injuredAllies : unshieldedAllies).sort(supportTargetOrder)[0];
           if (healTarget) {
             this._healAllies(unit, [healTarget], ab.healAmount || 25, true);
             this._addStatus(healTarget, 'shield', 2, 10);

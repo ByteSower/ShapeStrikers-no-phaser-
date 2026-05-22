@@ -382,6 +382,30 @@ test('life guardian still casts guardian\'s blessing at full HP so barrier is ap
   assert.equal(enemy.hp, enemy.maxHp, 'life guardian should cast the support ability instead of basic attacking when barrier is the relevant effect');
 });
 
+test('arcane priest prefers the ally missing shield coverage when everyone is at full HP', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const priest = mkUnit(UNIT_MAP.arcane_priest, 4, 0, false);
+  const alreadyShieldedAlly = mkUnit(UNIT_MAP.earth_golem, 3, 1, false);
+  const unshieldedAlly = mkUnit(UNIT_MAP.fire_imp, 2, 1, false);
+  const distantEnemy = mkUnit(UNIT_MAP.earth_golem, 0, 0, true);
+
+  priest.statusEffects.push({ type: 'shield', duration: 2, value: 10 });
+  alreadyShieldedAlly.statusEffects.push({ type: 'shield', duration: 2, value: 10 });
+
+  battleSystem._playerUnits = [priest, alreadyShieldedAlly, unshieldedAlly];
+  battleSystem._enemyUnits = [distantEnemy];
+  battleSystem._actionQueue = [priest];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  const shieldEffects = unshieldedAlly.statusEffects.filter(effect => effect.type === 'shield');
+
+  assert.ok(shieldEffects.length > 0, 'arcane priest should shield the ally that is still missing shield coverage');
+  assert.equal(priest.abilityCooldown, UNIT_MAP.arcane_priest.ability.cooldown, 'arcane restoration should consume the ability cooldown when it casts for shield coverage');
+  assert.equal(distantEnemy.hp, distantEnemy.maxHp, 'arcane priest should use the support ability instead of basic attacking when shield coverage is the relevant effect');
+});
+
 test('flame tyrant ability text mentions the burn applied by tyrant\'s wrath', () => {
   assert.match(UNIT_MAP.boss_flame_tyrant.ability.description.toLowerCase(), /burn/, 'tyrant\'s wrath text should mention the burn effect applied in battle');
 });
@@ -406,6 +430,79 @@ test('void architect ability text mentions void damage to all enemies', () => {
   const description = UNIT_MAP.boss_void_architect.ability.description.toLowerCase();
   assert.match(description, /void damage/, 'reality tear text should mention the damage type');
   assert.match(description, /all enemies/, 'reality tear text should mention its all-enemies coverage');
+});
+
+test('tier 3 damage-caster text matches the clarified design summaries', () => {
+  assert.match(UNIT_MAP.fire_demon.ability.description.toLowerCase(), /burn/, 'hellfire text should mention its burn effect');
+  assert.match(UNIT_MAP.martial_master.ability.description.toLowerCase(), /0\.4x x4/, 'thousand fists text should mention the four rapid hits');
+  assert.match(UNIT_MAP.lightning_lord.ability.description.toLowerCase(), /0\.7x/, 'thunder storm text should mention its clarified damage multiplier');
+  assert.match(UNIT_MAP.ice_empress.ability.description.toLowerCase(), /freeze/, 'blizzard text should mention its freeze effect');
+  assert.match(UNIT_MAP.void_horror.ability.description.toLowerCase(), /ignores defense/, 'void rupture text should mention its defense-ignoring damage');
+  assert.match(UNIT_MAP.arcane_illusionist.ability.description.toLowerCase(), /2 turns/, 'mirage text should mention the documented blind duration');
+});
+
+test('fire ravager text mentions the clarified rampage targeting and kill-stack rules', () => {
+  const description = UNIT_MAP.fire_ravager.ability.description.toLowerCase();
+  assert.match(description, /1\.5x/, 'rampage text should mention its clarified damage multiplier');
+  assert.match(description, /up to 2 targets/, 'rampage text should mention its two-target cleave limit');
+  assert.match(description, /max \+50%/, 'rampage text should mention the kill-stack cap');
+});
+
+test('life guardian text makes the full-team barrier explicit', () => {
+  const description = UNIT_MAP.life_guardian.ability.description.toLowerCase();
+  assert.match(description, /all allies/, 'guardian\'s blessing text should keep the full-team heal wording');
+  assert.match(description, /barrier to all allies/, 'guardian\'s blessing text should make the barrier coverage explicit');
+});
+
+test('arcane pupil and arcane assassin text match the clarified arcane rules', () => {
+  const pupilDescription = UNIT_MAP.arcane_pupil.ability.description.toLowerCase();
+  assert.match(pupilDescription, /1\.3x/, 'arcane bolt text should mention its clarified damage multiplier');
+  assert.match(pupilDescription, /max 3 stacks/, 'arcane bolt text should mention the evolve stack cap');
+
+  const assassinDescription = UNIT_MAP.arcane_assassin.ability.description.toLowerCase();
+  assert.match(assassinDescription, /50% chance/, 'shadow strike text should mention the crit chance');
+  assert.match(assassinDescription, /2\.5x/, 'shadow strike text should mention the crit damage multiplier');
+});
+
+test('toxic dart, frost arrow, and corruption strike text match the clarified combat rules', () => {
+  const scoutDescription = UNIT_MAP.konji_scout.ability.description.toLowerCase();
+  assert.match(scoutDescription, /1\.4x/, 'toxic dart text should mention its clarified damage multiplier');
+  assert.match(scoutDescription, /8 dmg\/tick/, 'toxic dart text should mention its poison tick value');
+
+  const archerDescription = UNIT_MAP.ice_archer.ability.description.toLowerCase();
+  assert.match(archerDescription, /1\.2x/, 'frost arrow text should mention its clarified damage multiplier');
+  assert.match(archerDescription, /1 turn/, 'frost arrow text should mention the freeze duration');
+
+  const knightDescription = UNIT_MAP.void_knight.ability.description.toLowerCase();
+  assert.match(knightDescription, /1\.4x/, 'corruption strike text should mention its clarified damage multiplier');
+  assert.match(knightDescription, /2 turns/, 'corruption strike text should mention the weaken duration');
+});
+
+test('crimson cleave and plague cloud text match the clarified blood and plague rules', () => {
+  const knightDescription = UNIT_MAP.blood_knight.ability.description.toLowerCase();
+  assert.match(knightDescription, /1\.2x/, 'crimson cleave text should mention its clarified damage multiplier');
+  assert.match(knightDescription, /up to 3 enemies/, 'crimson cleave text should mention its target cap');
+
+  const shamanDescription = UNIT_MAP.konji_shaman.ability.description.toLowerCase();
+  assert.match(shamanDescription, /0\.3x/, 'plague cloud text should mention its clarified damage multiplier');
+  assert.match(shamanDescription, /8 dmg/, 'plague cloud text should mention its poison tick value');
+});
+
+test('chain lightning text matches the clarified lightning sprite rules', () => {
+  const description = UNIT_MAP.lightning_sprite.ability.description.toLowerCase();
+  assert.match(description, /1\.4x/, 'chain lightning text should mention its clarified damage multiplier');
+  assert.match(description, /3 targets/, 'chain lightning text should mention its total bounce coverage');
+});
+
+test('stone skin text matches the clarified earth golem shield rules', () => {
+  const description = UNIT_MAP.earth_golem.ability.description.toLowerCase();
+  assert.match(description, /\+15 def/, 'stone skin text should mention the documented shield value');
+  assert.match(description, /2 turns/, 'stone skin text should mention the shield duration');
+});
+
+test('crimson tide text makes the three-target cap explicit', () => {
+  const description = UNIT_MAP.blood_lord.ability.description.toLowerCase();
+  assert.match(description, /up to 3 enemies/, 'crimson tide text should mention the cleave target cap explicitly');
 });
 
 test('arcane illusionist mirage hits and blinds enemies outside base attack range because it targets all enemies', () => {

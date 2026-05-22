@@ -5,7 +5,6 @@
 
 // ─── Elements ────────────────────────────────────────────────────────────────
 const Element = Object.freeze({
-  FIRE:      'fire',
   ICE:       'ice',
   LIGHTNING: 'lightning',
   EARTH:     'earth',
@@ -23,7 +22,6 @@ const ELEMENT_EMOJI = {
 
 const ELEMENT_COLORS = {
   fire: '#ff4422', ice: '#44ccff', lightning: '#c8a000',
-  earth: '#88cc44', arcane: '#bb44ff', void: '#7744aa',
   blood: '#cc2244', plague: '#66aa22',
 };
 
@@ -107,13 +105,13 @@ const UNIT_DEFINITIONS = [
     id: 'earth_golem', name: 'Shape Golem Bofu', element: 'earth', cost: 2, tier: 1, role: 'tank',
     visual: { color: 'green', shape: 'square' },
     stats: { hp: 150, maxHp: 150, attack: 12, defense: 15, speed: 2, range: 1 },
-    ability: { name: 'Stone Skin', description: 'Grants shield (bonus defense for 2 turns)', cooldown: 4 },
+    ability: { name: 'Stone Skin', description: 'Self shield (+15 DEF, 2 turns)', cooldown: 4 },
   },
   {
     id: 'lightning_sprite', name: 'Thundorian Child', element: 'lightning', cost: 2, tier: 1, role: 'sniper',
     visual: { color: 'yellow', shape: 'circle' },
     stats: { hp: 60, maxHp: 60, attack: 18, defense: 3, speed: 12, range: 2 },
-    ability: { name: 'Chain Lightning', description: 'Bounces to 2 additional targets', cooldown: 3 },
+    ability: { name: 'Chain Lightning', description: '1.4x lightning hit that bounces to 3 targets', cooldown: 3 },
   },
   {
     id: 'earth_archer', name: 'Scout Trooper Pebbles', element: 'earth', cost: 2, tier: 1, role: 'sniper',
@@ -143,7 +141,7 @@ const UNIT_DEFINITIONS = [
     id: 'konji_scout', name: 'Plague Son Yav', element: 'plague', cost: 2, tier: 1, role: 'sniper',
     visual: { color: 'yellow', shape: 'square' },
     stats: { hp: 70, maxHp: 70, attack: 12, defense: 6, speed: 8, range: 2 },
-    ability: { name: 'Toxic Dart', description: 'Ranged attack that poisons target for 3 turns', cooldown: 2 },
+    ability: { name: 'Toxic Dart', description: '1.4x ranged hit + poison (3 turns, 8 dmg/tick)', cooldown: 2 },
   },
   {
     id: 'void_shade', name: 'Void Embryo Shadi', element: 'void', cost: 2, tier: 1, isVoid: true, role: 'skirmisher',
@@ -154,7 +152,7 @@ const UNIT_DEFINITIONS = [
     id: 'arcane_pupil', name: 'Arcane Servant Qua', element: 'arcane', cost: 2, tier: 1, role: 'skirmisher',
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 70, maxHp: 70, attack: 14, defense: 5, speed: 8, range: 1 },
-    ability: { name: 'Arcane Bolt', description: 'Quick arcane attack; evolves over time (+ATK/DEF)', cooldown: 1 },
+    ability: { name: 'Arcane Bolt', description: '1.3x arcane hit + Evolve passive (+10% ATK/DEF every 3 turns, max 3 stacks)', cooldown: 1 },
     evolveConfig: { interval: 3, statBonus: 0.1, maxStacks: 3 },
   },
   // ── TIER 2 ──────────────────────────────────────────────────────────────────
@@ -168,7 +166,7 @@ const UNIT_DEFINITIONS = [
     id: 'ice_archer', name: 'Ice Archer ColdShot', element: 'ice', cost: 4, tier: 2, role: 'sniper',
     visual: { color: 'blue', shape: 'squircle' },
     stats: { hp: 120, maxHp: 120, attack: 22, defense: 8, speed: 9, range: 3 },
-    ability: { name: 'Frost Arrow', description: 'Piercing shot that freezes target', cooldown: 2 },
+    ability: { name: 'Frost Arrow', description: '1.2x piercing shot + freeze (1 turn)', cooldown: 2 },
   },
   {
     id: 'arcane_mage', name: 'Arcane Descendant', element: 'arcane', cost: 4, tier: 2, role: 'caster',
@@ -192,7 +190,7 @@ const UNIT_DEFINITIONS = [
     id: 'arcane_assassin', name: 'Arcane Shadow', element: 'arcane', cost: 4, tier: 2, role: 'skirmisher',
     visual: { color: 'purple', shape: 'rhombus' },
     stats: { hp: 85, maxHp: 85, attack: 35, defense: 4, speed: 11, range: 2 },
-    ability: { name: 'Shadow Strike', description: 'Critical hit with bonus damage', cooldown: 2 },
+    ability: { name: 'Shadow Strike', description: '1.5x strike with a 50% chance to crit for 2.5x', cooldown: 2 },
   },
   {
     id: 'nature_spirit', name: 'Shape Spirit Runi', element: 'earth', cost: 4, tier: 2, role: 'healer',
@@ -210,19 +208,19 @@ const UNIT_DEFINITIONS = [
     id: 'blood_knight', name: 'Vamp General Parasect', element: 'blood', cost: 4, tier: 2, role: 'tank', trait: 'vampire',
     visual: { color: 'pink', shape: 'squircle' },
     stats: { hp: 170, maxHp: 170, attack: 24, defense: 10, speed: 6, range: 1 },
-    ability: { name: 'Crimson Cleave', description: 'Cleaves adjacent enemies, heals 30% of total damage', cooldown: 3, maxTargets: 3 },
+    ability: { name: 'Crimson Cleave', description: '1.2x cleave to up to 3 enemies + heals 30% of total damage', cooldown: 3, maxTargets: 3 },
   },
   {
     id: 'konji_shaman', name: 'Plague Caster Fuu', element: 'plague', cost: 4, tier: 2, role: 'caster',
     visual: { color: 'green', shape: 'circle' },
     stats: { hp: 130, maxHp: 130, attack: 18, defense: 9, speed: 5, range: 2 },
-    ability: { name: 'Plague Cloud', description: 'Poisons all enemies for 2 turns + minor damage', cooldown: 4 },
+    ability: { name: 'Plague Cloud', description: '0.3x to all enemies + poison (2 turns, 8 dmg)', cooldown: 4 },
   },
   {
     id: 'void_knight', name: 'Void Berserker Zeku', element: 'void', cost: 4, tier: 2, isVoid: true, role: 'tank',
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 180, maxHp: 180, attack: 28, defense: 10, speed: 6, range: 1 },
-    ability: { name: 'Corruption Strike', description: 'Deals bonus damage and weakens target', cooldown: 3 },
+    ability: { name: 'Corruption Strike', description: '1.4x strike + weaken (2 turns)', cooldown: 3 },
   },
   {
     id: 'void_blighter', name: 'Void Curser Ukez', element: 'void', cost: 4, tier: 2, isVoid: true, role: 'caster',
@@ -245,7 +243,7 @@ const UNIT_DEFINITIONS = [
     id: 'fire_ravager', name: 'Inferno Ravager Rye', element: 'fire', cost: 4, tier: 2, role: 'skirmisher',
     visual: { color: 'red', shape: 'rhombus' },
     stats: { hp: 130, maxHp: 130, attack: 26, defense: 7, speed: 8, range: 1 },
-    ability: { name: 'Rampage', description: 'Cleaves 2 targets; grows stronger with each kill', cooldown: 2 },
+    ability: { name: 'Rampage', description: '1.5x to up to 2 targets + kill-stack passive (+10% ATK per kill, max +50%)', cooldown: 2 },
     killStackBonus: { atkPerKill: 0.1, maxBonus: 0.5 },
   },
   // ── TIER 3 ──────────────────────────────────────────────────────────────────
@@ -253,43 +251,43 @@ const UNIT_DEFINITIONS = [
     id: 'fire_demon', name: 'Daemon The Incinerator', element: 'fire', cost: 6, tier: 3, role: 'caster',
     visual: { color: 'red', shape: 'square' },
     stats: { hp: 200, maxHp: 200, attack: 30, defense: 12, speed: 5, range: 2 },
-    ability: { name: 'Hellfire', description: 'Fire damage to up to 3 enemies in range', cooldown: 4, maxTargets: 3 },
+    ability: { name: 'Hellfire', description: '0.6x fire damage to up to 3 enemies + burn', cooldown: 4, maxTargets: 3 },
   },
   {
     id: 'martial_master', name: 'Shape Boxer Tysr', element: 'earth', cost: 6, tier: 3, role: 'tank',
     visual: { color: 'green', shape: 'rhombus' },
     stats: { hp: 280, maxHp: 280, attack: 35, defense: 20, speed: 8, range: 1 },
-    ability: { name: 'Thousand Fists', description: 'Multiple rapid strikes', cooldown: 3 },
+    ability: { name: 'Thousand Fists', description: '0.4x x4 rapid strikes (1.6x total)', cooldown: 3 },
   },
   {
     id: 'lightning_lord', name: 'Thundorian King Zesper', element: 'lightning', cost: 6, tier: 3, role: 'sniper',
     visual: { color: 'yellow', shape: 'rhombus' },
     stats: { hp: 180, maxHp: 180, attack: 45, defense: 10, speed: 10, range: 3 },
-    ability: { name: 'Thunder Storm', description: 'Hits all enemies with chain lightning', cooldown: 4 },
+    ability: { name: 'Thunder Storm', description: '0.7x lightning damage to all enemies', cooldown: 4 },
   },
   {
     id: 'ice_empress', name: 'Ice Queen Elaine', element: 'ice', cost: 6, tier: 3, role: 'caster',
     visual: { color: 'blue', shape: 'rhombus' },
     stats: { hp: 220, maxHp: 220, attack: 32, defense: 16, speed: 6, range: 3 },
-    ability: { name: 'Blizzard', description: 'Freezes and damages all enemies', cooldown: 5 },
+    ability: { name: 'Blizzard', description: '0.5x ice damage to all enemies + freeze', cooldown: 5 },
   },
   {
     id: 'life_guardian', name: 'Shape Guardian Ari', element: 'earth', cost: 6, tier: 3, role: 'healer',
     visual: { color: 'green', shape: 'squircle' },
     stats: { hp: 200, maxHp: 200, attack: 12, defense: 18, speed: 4, range: 2 },
-    ability: { name: "Guardian's Blessing", description: 'Heals all allies 30 HP + applies barrier', cooldown: 4, healAmount: 30 },
+    ability: { name: "Guardian's Blessing", description: 'Heals all allies 30 HP + barrier to all allies', cooldown: 4, healAmount: 30 },
   },
   {
     id: 'void_horror', name: 'Void Horror Yui', element: 'void', cost: 6, tier: 3, isVoid: true, role: 'caster',
     visual: { color: 'pink', shape: 'rhombus' },
     stats: { hp: 300, maxHp: 300, attack: 38, defense: 12, speed: 4, range: 2 },
-    ability: { name: 'Void Rupture', description: 'AoE dark damage that ignores defense', cooldown: 4 },
+    ability: { name: 'Void Rupture', description: '1.2x void AoE damage that ignores defense', cooldown: 4 },
   },
   {
     id: 'arcane_illusionist', name: 'Arcane Illusionist Shera', element: 'arcane', cost: 6, tier: 3, role: 'caster',
     visual: { color: 'purple', shape: 'square' },
     stats: { hp: 170, maxHp: 170, attack: 28, defense: 10, speed: 7, range: 3 },
-    ability: { name: 'Mirage', description: 'Damages and blinds all enemies (30% miss chance)', cooldown: 4 },
+    ability: { name: 'Mirage', description: '0.3x arcane damage to all enemies + blind (30% miss, 2 turns)', cooldown: 4 },
   },
 
   // ── BLOOD FACTION (new units) ───────────────────────────────────────────────
@@ -309,7 +307,7 @@ const UNIT_DEFINITIONS = [
     id: 'blood_lord', name: 'Blood Lord Draven', element: 'blood', cost: 6, tier: 3, role: 'tank', trait: 'vampire',
     visual: { color: 'red', shape: 'star' },
     stats: { hp: 260, maxHp: 260, attack: 32, defense: 16, speed: 5, range: 1 },
-    ability: { name: 'Crimson Tide', description: '0.9x cleave to 3 enemies, heals 25% of total damage', cooldown: 4, maxTargets: 3 },
+    ability: { name: 'Crimson Tide', description: '0.9x cleave to up to 3 enemies, heals 25% of total damage', cooldown: 4, maxTargets: 3 },
   },
 
   // ── PLAGUE FACTION (new units) ──────────────────────────────────────────────
@@ -1084,6 +1082,16 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '1.0.18',
+    date: 'May 22, 2026',
+    title: '🧪 Unit Text Sync & Support Targeting Fixes',
+    notes: [
+      '📋 More unit cards now match the clarified battle rules, including Chain Lightning, Stone Skin, Arcane Bolt, Shadow Strike, Rampage, Toxic Dart, Frost Arrow, Corruption Strike, Crimson Cleave, Plague Cloud, and Crimson Tide',
+      '🛡️ Guardian\'s Blessing and several other support/utility descriptions now make their team-wide coverage, durations, and target caps explicit instead of relying on older shorthand',
+      '✨ Arcane Priest now shields the ally still missing shield coverage when everyone is already at full HP instead of wasting the cast on a unit that was already protected',
+    ],
+  },
   {
     version: '1.0.17',
     date: 'May 20, 2026',
