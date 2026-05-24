@@ -107,6 +107,27 @@ test('earth golem casts stone skin without an enemy in attack range because it t
   assert.equal(golem.abilityCooldown, UNIT_MAP.earth_golem.ability.cooldown, 'stone skin should consume the ability cooldown when cast');
 });
 
+test('void shade stays untargetable through the enemy targeting step after shadow phase', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const shade = mkUnit(UNIT_MAP.void_shade, 2, 0, false);
+  const ally = mkUnit(UNIT_MAP.earth_golem, 2, 1, false);
+  const enemy = mkUnit(UNIT_MAP.fire_imp, 2, 0, true);
+
+  battleSystem._playerUnits = [shade, ally];
+  battleSystem._enemyUnits = [enemy];
+  battleSystem._actionQueue = [shade];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  const untargetable = shade.statusEffects.find(effect => effect.type === 'untargetable');
+  const chosenTarget = battleSystem._pickTarget(enemy, [shade, ally]);
+
+  assert.ok(untargetable, 'shadow phase should make the caster untargetable');
+  assert.equal(untargetable.duration, 1, 'shadow phase untargetable should remain active after the cast turn');
+  assert.equal(chosenTarget, ally, 'enemy targeting should skip the untargetable shade while the effect is active');
+});
+
 test('blood knight ability honors its documented 30 percent lifesteal', () => {
   const battleSystem = makeIdleBattleSystem();
   const knight = mkUnit(UNIT_MAP.blood_knight, 2, 0, false);
@@ -681,6 +702,26 @@ test('void blighter cursed wound hits and wounds enemies outside base attack ran
   assert.equal(blighter.abilityCooldown, UNIT_MAP.void_blighter.ability.cooldown, 'cursed wound should consume the ability cooldown when cast');
 });
 
+test('void blighter cursed wound applies the default 50 percent wound and documents it', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const blighter = mkUnit(UNIT_MAP.void_blighter, 2, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 2, 0, true);
+
+  battleSystem._playerUnits = [blighter];
+  battleSystem._enemyUnits = [target];
+
+  battleSystem._useAbility(blighter, [target], [blighter]);
+
+  const wound = target.statusEffects.find(effect => effect.type === 'wound');
+  const description = UNIT_MAP.void_blighter.ability.description.toLowerCase();
+
+  assert.ok(wound, 'cursed wound should apply wound');
+  assert.equal(wound.duration, 3, 'cursed wound should last 3 turns');
+  assert.equal(battleSystem._healMod(target), 0.5, 'cursed wound should use the default 50 percent healing reduction');
+  assert.match(description, /50% wound/, 'cursed wound text should mention the implemented wound strength');
+  assert.match(description, /3 turns/, 'cursed wound text should mention the wound duration');
+});
+
 test('absolute zero freeze skips two turns as documented', () => {
   const battleSystem = makeIdleBattleSystem();
   const colossus = mkUnit(UNIT_MAP.boss_frost_colossus, 0, 0, true);
@@ -828,6 +869,26 @@ test('blight weaver miasma hits the 2 closest enemies in range and applies custo
   assert.equal(midPoison.value, poisonTickFromMaxHp(midEnemy), 'miasma poison should use the plague baseline damage on each target');
   assert.equal(nearWeaken.duration, 2, 'miasma weaken should last 2 turns');
   assert.equal(battleSystem._calcAttackPower(nearEnemy), nearEnemy.stats.attack * 0.8, 'miasma weaken should reduce damage output by 20 percent');
+});
+
+test('void knight corruption strike applies the default 8 percent weaken and documents it', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const knight = mkUnit(UNIT_MAP.void_knight, 2, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 2, 0, true);
+
+  battleSystem._playerUnits = [knight];
+  battleSystem._enemyUnits = [target];
+
+  battleSystem._useAbility(knight, [target], [knight]);
+
+  const weaken = target.statusEffects.find(effect => effect.type === 'weaken');
+  const description = UNIT_MAP.void_knight.ability.description.toLowerCase();
+
+  assert.ok(weaken, 'corruption strike should apply weaken');
+  assert.equal(weaken.duration, 2, 'corruption strike weaken should last 2 turns');
+  assert.equal(battleSystem._calcAttackPower(target), target.stats.attack * 0.92, 'corruption strike should use the default 8 percent weaken strength');
+  assert.match(description, /8% weaken/, 'corruption strike text should mention the implemented weaken strength');
+  assert.match(description, /2 turns/, 'corruption strike text should mention the weaken duration');
 });
 
 test('plague sovereign pandemic hits the full enemy roster and applies plague baseline poison', () => {

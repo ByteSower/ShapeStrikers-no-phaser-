@@ -220,13 +220,13 @@ const UNIT_DEFINITIONS = [
     id: 'void_knight', name: 'Void Berserker Zeku', element: 'void', cost: 4, tier: 2, isVoid: true, role: 'tank',
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 180, maxHp: 180, attack: 28, defense: 10, speed: 6, range: 1 },
-    ability: { name: 'Corruption Strike', description: '1.4x strike + weaken (2 turns)', cooldown: 3 },
+    ability: { name: 'Corruption Strike', description: '1.4x strike + 8% weaken (2 turns)', cooldown: 3 },
   },
   {
     id: 'void_blighter', name: 'Void Curser Ukez', element: 'void', cost: 4, tier: 2, isVoid: true, role: 'caster',
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 160, maxHp: 160, attack: 25, defense: 8, speed: 6, range: 2 },
-    ability: { name: 'Cursed Wound', description: '0.6x to ALL enemies + Wound (3 turns)', cooldown: 3 },
+    ability: { name: 'Cursed Wound', description: '0.6x to ALL enemies + 50% wound (3 turns)', cooldown: 3 },
   },  {
     id: 'earth_enforcer', name: 'Shape Enforcer Ooglong', element: 'earth', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'green', shape: 'squircle' },
@@ -1082,6 +1082,16 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '1.0.21',
+    date: 'May 24, 2026',
+    title: '🧪 Audit Coverage & Void Debuff Text Sync',
+    notes: [
+      '🧪 Multiplayer audit coverage now mirrors the guest\'s deferred authoritative-state request path and locks `Room` saved-session resume cleanup plus deep snapshot isolation so reconnect/reload regressions stay caught in tests',
+      '🕳️ Void Knight and Void Blighter ability text now spell out their implemented 8% weaken and 50% wound values instead of leaving those debuff strengths implicit on the unit cards',
+      '👻 Focused battle regressions now lock Shadow Phase untargetable targeting behavior plus the clarified Void debuff values so the latest faction audit findings stay covered',
+    ],
+  },
   {
     version: '1.0.20',
     date: 'May 24, 2026',

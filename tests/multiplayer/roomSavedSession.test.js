@@ -261,3 +261,59 @@ test('prep-state updates clear stale battle checkpoint metadata from resume cont
   assert.equal(saved.resumeContext.checkpointSeq, 0, 'prep resume context should not retain the prior battle checkpoint');
   assert.equal('boardHash' in saved.resumeContext, false, 'prep resume context should clear stale battle board hashes');
 });
+
+test('prep-state updates clear stale phase-event metadata from resume context', () => {
+  const { Room, sessionStorage } = loadRoomContext();
+
+  Room.join('room-eta', false, 'opp-13');
+  Room.applyState('phase_event', {
+    roundNumber: 3,
+    type: 'result_show',
+    checkpointSeq: 14,
+    boardHash: 'hash-phase-old',
+  }, 'opp-13');
+
+  Room.applyState('prep_state', {
+    roundNumber: 4,
+    shopSeed: 67890,
+    rerollIndex: 1,
+    at: Date.now(),
+  }, 'opp-13');
+
+  const saved = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY));
+  assert.equal(saved.resumeContext.roundNumber, 4);
+  assert.equal(saved.resumeContext.phase, 'prep');
+  assert.equal(saved.resumeContext.sourceKey, 'prep_state');
+  assert.equal('phaseEventType' in saved.resumeContext, false, 'prep resume context should clear stale phase event metadata');
+  assert.equal('boardHash' in saved.resumeContext, false, 'prep resume context should clear stale battle hashes carried by phase events');
+});
+
+test('applyState and getState keep nested room payloads detached', () => {
+  const { Room } = loadRoomContext();
+
+  Room.join('room-theta', false, 'opp-14');
+
+  const originalPayload = {
+    roundNumber: 5,
+    shopSeed: 123,
+    nested: {
+      boardHash: 'hash-nested',
+      meta: { checkpointSeq: 9 },
+    },
+  };
+
+  Room.applyState('prep_state', originalPayload, 'opp-14');
+  originalPayload.nested.boardHash = 'mutated-after-apply';
+  originalPayload.nested.meta.checkpointSeq = 77;
+
+  const firstSnapshot = Room.getState();
+  assert.equal(firstSnapshot.prep_state.nested.boardHash, 'hash-nested', 'Room should clone inbound payloads instead of retaining caller-owned nested references');
+  assert.equal(firstSnapshot.prep_state.nested.meta.checkpointSeq, 9, 'Nested payload data should survive inbound caller mutation');
+
+  firstSnapshot.prep_state.nested.boardHash = 'mutated-from-snapshot';
+  firstSnapshot.prep_state.nested.meta.checkpointSeq = 88;
+
+  const secondSnapshot = Room.getState();
+  assert.equal(secondSnapshot.prep_state.nested.boardHash, 'hash-nested', 'getState should return a detached deep snapshot instead of exposing internal nested references');
+  assert.equal(secondSnapshot.prep_state.nested.meta.checkpointSeq, 9, 'Mutating a returned snapshot should not leak back into the room cache');
+});

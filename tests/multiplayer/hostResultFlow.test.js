@@ -83,7 +83,30 @@ function createGuestRoundHandler({
   let _lastHandledResultPayload = null;
   let _lastAckSeq = -1;
   let _lastReadySeq = -1;
+  let _lastAuthoritativeRequestAt = 0;
   let _hostResultWaitStartedAt = 0;
+
+  const _matchesRound = (payload) => {
+    if (!payload) return false;
+    return payload.roundNumber === undefined || Number(payload.roundNumber) === expectedRound;
+  };
+
+  const _getCachedState = (key) => {
+    const value = room.getState()[key];
+    return _matchesRound(value) ? value : null;
+  };
+
+  const _resolveReplayStartSeq = () => {
+    const checkpoint = _getCachedState('playback_checkpoint');
+    if (checkpoint && Number.isFinite(Number(checkpoint.seq))) {
+      return Math.max(0, Number(checkpoint.seq) || 0);
+    }
+    const phaseEvent = _getCachedState('phase_event');
+    if (phaseEvent && Number.isFinite(Number(phaseEvent.checkpointSeq))) {
+      return Math.max(0, Number(phaseEvent.checkpointSeq) || 0);
+    }
+    return 0;
+  };
 
   const _buildResultSyncPayload = (resultPayload) => {
     if (!resultPayload) return null;
@@ -136,6 +159,24 @@ function createGuestRoundHandler({
     return false;
   };
 
+  const _requestAuthoritativeState = (reason, extra = {}) => {
+    const requestedAt = Date.now();
+    if (_lastAuthoritativeRequestAt > 0 && (requestedAt - _lastAuthoritativeRequestAt) < 1000) {
+      return false;
+    }
+    _lastAuthoritativeRequestAt = requestedAt;
+    room.syncState('request_authoritative_state', {
+      roundNumber: expectedRound,
+      reason,
+      seq: Number(extra.seq || 0),
+      checkpointSeq: _resolveReplayStartSeq(),
+      guestBoardHash: extra.guestBoardHash ?? null,
+      hostBoardHash: extra.hostBoardHash ?? null,
+      at: requestedAt,
+    });
+    return true;
+  };
+
   const _armHostResultTimer = (reason = 'timeout', delayMs = timeoutMs) => {
     if (_roundResultHandled) return;
     if (_hostResultTimer) {
@@ -148,6 +189,10 @@ function createGuestRoundHandler({
 
       const waitedMs = Date.now() - _hostResultWaitStartedAt;
       if ((reason === 'timeout' || reason === 'timeout-reconnect') && waitedMs < maxWaitMs && _shouldDeferHostResultFallback()) {
+        _requestAuthoritativeState('waiting_for_round_result', {
+          seq: Number(_getCachedState('playback_checkpoint')?.seq || 0),
+          hostBoardHash: _getCachedState('playback_checkpoint')?.boardHash ?? _getCachedState('phase_event')?.boardHash ?? null,
+        });
         _armHostResultTimer(reason, deferTimeoutMs);
         return;
       }
@@ -433,6 +478,9 @@ testAsync('Timeout defers while playback_start is still live and host result can
   handler.onBattleEnd();
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal(results.length, 0, 'Guest should keep waiting while playback_start is still live');
+
+  const resyncRequestsBeforeHostResult = room.getSyncs().filter((entry) => entry.key === 'request_authoritative_state');
+  assert.equal(resyncRequestsBeforeHostResult.length > 0, true, 'Deferred timeout path should request authoritative_state while still waiting on the host result');
 
   room._emit('round_result', { hostWon: true, roundNumber: 1, seq: 9, boardHash: null });
   await new Promise(resolve => setTimeout(resolve, 10));
