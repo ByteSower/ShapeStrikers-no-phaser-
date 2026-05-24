@@ -185,6 +185,11 @@ function loadGameContext({
   const resultCalls = [];
   const screenCalls = [];
   const shopRenderCalls = [];
+  const gridCalls = {
+    clearSelection: 0,
+    clearHighlights: 0,
+    highlightTiles: [],
+  };
   const stopMusicCalls = [];
   const gameplayMusicCalls = [];
   const musicCalls = [];
@@ -546,9 +551,15 @@ function loadGameContext({
       build() {},
       onClick: null,
       onRightClick: null,
-      clearSelection() {},
-      clearHighlights() {},
-      highlightTiles() {},
+      clearSelection() {
+        gridCalls.clearSelection += 1;
+      },
+      clearHighlights() {
+        gridCalls.clearHighlights += 1;
+      },
+      highlightTiles(tiles, cssClass) {
+        gridCalls.highlightTiles.push({ tiles: plain(tiles), cssClass });
+      },
       selectTile() {},
       getTileEl() {
         return null;
@@ -812,6 +823,7 @@ function loadGameContext({
     supabaseEvents,
     updateUpgradeCalls,
     replayControls,
+    gridCalls,
     getSavedSession() {
       return currentSavedSession;
     },
@@ -1367,7 +1379,7 @@ await test('Pending shop purchases recheck affordability before placement after 
     Game,
     clickShop,
     clickTile,
-    uiMessages,
+    gridCalls,
   } = loadGameContext({
     savedSession: null,
     domElementIds: [
@@ -1388,19 +1400,107 @@ await test('Pending shop purchases recheck affordability before placement after 
 
   const goldBeforeUpgrade = Game.state.gold;
   clickShop(0);
+  const clearHighlightsBeforeUpgrade = gridCalls.clearHighlights;
 
   assert.equal(Game.state.selectedShopIdx, 0, 'Shop card should be pending after the first click');
   assert.equal(Game.state.gold, goldBeforeUpgrade, 'Selecting a shop card should not spend gold before placement');
 
   Game.buyUpgrade('field_medic');
   assert.equal(Game.state.gold, goldBeforeUpgrade - 5, 'Upgrade purchase should spend gold while the shop card is still pending');
+  assert.equal(Game.state.selectedShopIdx, null, 'Upgrade purchases should cancel any pending shop placement that was armed before the gold changed');
+  assert.equal(gridCalls.clearHighlights, clearHighlightsBeforeUpgrade + 1, 'Upgrade purchases should clear the stale placement highlights when they cancel the pending shop card');
 
   clickTile(3, 0);
 
   assert.equal(Game.state.gold, goldBeforeUpgrade - 5, 'Placement should recheck affordability and avoid overspending');
   assert.equal(Game.state.playerUnits.length, 0, 'Unaffordable pending purchase should not place a unit');
   assert.equal(Game.state.shopUnits[0].cost, 8, 'Failed placement should leave the shop card available');
-  assert.equal(uiMessages.at(-1), 'Not enough gold!', 'Placement should surface the affordability failure to the player');
+});
+
+await test('Refreshing the shop clears any armed pending placement highlights', () => {
+  const {
+    Game,
+    clickShop,
+    clickTile,
+    gridCalls,
+    uiMessages,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  clickShop(0);
+  const clearHighlightsBeforeRefresh = gridCalls.clearHighlights;
+
+  assert.equal(Game.state.selectedShopIdx, 0, 'Shop card should be pending before the refresh');
+
+  Game.refreshShop(false);
+
+  assert.equal(Game.state.selectedShopIdx, null, 'Refreshing the shop should cancel the pending placement selection');
+  assert.equal(gridCalls.clearHighlights, clearHighlightsBeforeRefresh + 1, 'Refreshing the shop should clear stale placement highlights');
+  assert.equal(uiMessages.at(-1), '', 'Refreshing the shop should clear the stale placement prompt');
+
+  clickTile(3, 0);
+
+  assert.equal(Game.state.playerUnits.length, 0, 'Clicking a tile after the refresh should not place the previously selected shop unit');
+});
+
+await test('Refreshing the shop clears any selected unit move state', () => {
+  const {
+    Game,
+    clickTile,
+    gridCalls,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-refresh-move',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickTile(3, 0);
+
+  const clearSelectionBeforeRefresh = gridCalls.clearSelection;
+  const clearHighlightsBeforeRefresh = gridCalls.clearHighlights;
+
+  assert.equal(Game.state.selectedUnit?.id, 'p-refresh-move', 'Clicking the unit should select it before the refresh');
+
+  Game.refreshShop(false);
+
+  assert.equal(Game.state.selectedUnit, null, 'Refreshing the shop should cancel any hidden selected-unit move state');
+  assert.equal(gridCalls.clearSelection, clearSelectionBeforeRefresh + 1, 'Refreshing the shop should clear the stale tile selection for a selected unit');
+  assert.equal(gridCalls.clearHighlights, clearHighlightsBeforeRefresh + 1, 'Refreshing the shop should clear the stale move highlights for a selected unit');
+
+  clickTile(4, 1);
+
+  assert.equal(Game.state.playerUnits[0].row, 3, 'Clicking after the refresh should not move the previously selected unit');
+  assert.equal(Game.state.playerUnits[0].col, 0, 'Refreshing the shop should leave the unit in place instead of keeping a hidden move selection');
 });
 
 await test('War Chest interest applies to current gold before victory rewards are added', () => {
@@ -1508,6 +1608,55 @@ await test('Units cannot be repositioned after the prep phase has ended', () => 
   assert.equal(Game.state.playerUnits[0].row, 3, 'Units should stay in place once prep has ended');
   assert.equal(Game.state.playerUnits[0].col, 0, 'Units should not be repositioned outside prep');
   assert.equal(Game.state.selectedUnit, null, 'Result-phase clicks should not leave a movable unit selected');
+});
+
+await test('Selling a selected unit clears move selection highlights and selection state', () => {
+  const {
+    Game,
+    clickTile,
+    document,
+    gridCalls,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'btn-sell-unit',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-sell',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickTile(3, 0);
+
+  const clearSelectionBeforeSell = gridCalls.clearSelection;
+  const clearHighlightsBeforeSell = gridCalls.clearHighlights;
+
+  assert.equal(Game.state.selectedUnit?.id, 'p-sell', 'Clicking the unit should select it before selling');
+
+  document.getElementById('btn-sell-unit')?.click();
+
+  assert.equal(Game.state.playerUnits.length, 0, 'Selling the selected unit should remove it from the board');
+  assert.equal(Game.state.selectedUnit, null, 'Selling the selected unit should clear the selection state');
+  assert.equal(gridCalls.clearSelection, clearSelectionBeforeSell + 1, 'Selling the selected unit should clear the stale tile selection');
+  assert.equal(gridCalls.clearHighlights, clearHighlightsBeforeSell + 1, 'Selling the selected unit should clear the stale move highlights');
 });
 
 await test('Multiplayer new prep round clears round-sensitive upgrades and restores base stats', () => {

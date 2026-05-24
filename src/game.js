@@ -983,6 +983,21 @@ const Game = (() => {
     return pool;
   }
 
+  function _clearPendingShopPlacement() {
+    if (state.selectedShopIdx === null) return;
+    state.selectedShopIdx = null;
+    Grid.clearHighlights();
+    UI.showMessage('');
+  }
+
+  function _clearSelectedUnitMoveState() {
+    if (!state.selectedUnit) return;
+    state.selectedUnit = null;
+    Grid.clearHighlights();
+    UI.showMessage('');
+    UI.clearUnitDetail();
+  }
+
   function refreshShop(free = false) {
     if (!free) {
       if (state.refreshesLeft <= 0) { UI.showMessage('No refreshes left this round!'); return; }
@@ -1013,7 +1028,8 @@ const Game = (() => {
       const pick = tierPool.length > 0 ? tierPool : pool;
       return pick[Math.floor(Math.random() * pick.length)];
     });
-    state.selectedShopIdx = null;
+    _clearPendingShopPlacement();
+    _clearSelectedUnitMoveState();
     Grid.clearSelection();
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
     _updateUpgradeList();
@@ -1092,6 +1108,8 @@ const Game = (() => {
     state.gold += sellValue;
     state.playerUnits = state.playerUnits.filter(u => u !== unit);
     Grid.removeUnitFromTile(unit.row, unit.col);
+    Grid.clearSelection();
+    Grid.clearHighlights();
     Audio.play('sell');
     UI.showMessage(`Sold ${unit.definition.name} for ${sellValue}g`);
     UI.clearUnitDetail();
@@ -2551,6 +2569,7 @@ const Game = (() => {
     if (level >= upg.maxLevel) { UI.showMessage('Already maxed!'); return; }
     const cost = upg.cost + level * 5;
     if (state.gold < cost)  { UI.showMessage('Not enough gold!'); return; }
+    _clearPendingShopPlacement();
     state.gold -= cost;
     state.upgradeLevels[id] = level + 1;
     _totalUpgradesBought++;

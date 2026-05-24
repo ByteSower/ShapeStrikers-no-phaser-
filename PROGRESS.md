@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: May 22, 2026
+> **Last Updated**: May 24, 2026
 
 ---
 
@@ -199,6 +199,7 @@
 - [x] Support/self-buff audit fixes now let Life Guardian and Arcane Priest cast protection abilities based on missing barrier or shield coverage, and let Earth Golem cast Stone Skin without waiting for an in-range enemy
 - [x] Boss-facing audit text now keeps Sun Dragon Sel, Frost Giant Anvalog, Void Supreme, Void Leviathan, and Void Architect ability descriptions aligned with their implemented burn, AoE, wound, weaken, poison, and shield effects
 - [x] Continued unit-card audit text now syncs Lightning Sprite, Earth Golem, Arcane Pupil, Arcane Assassin, Fire Ravager, Life Guardian, Blood Knight, Blood Lord, Konji Scout, Konji Shaman, Ice Archer, and Void Knight with their clarified battle rules, and Arcane Priest now targets allies still missing shield coverage when everyone is at full HP
+- [x] Continued prep/grid cleanup now clears stale pending shop purchases and hidden move-selection state when rerolling, buying upgrades, or selling selected units, while the latest audit text sync also makes Frozen Wall, Hellfire, Blizzard, Arcane Restoration, Miasma, Tyrant's Wrath, Absolute Zero, Void Cataclysm, Abyssal Devour, Reality Tear, and the economy upgrades spell out their implemented caps, floors, durations, and values
 - [ ] Revisit stronger multiplayer authority when ranked, spectate, or broader platform targets raise the reliability bar beyond transient reconnect recovery
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance

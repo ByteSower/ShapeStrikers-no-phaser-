@@ -406,30 +406,45 @@ test('arcane priest prefers the ally missing shield coverage when everyone is at
   assert.equal(distantEnemy.hp, distantEnemy.maxHp, 'arcane priest should use the support ability instead of basic attacking when shield coverage is the relevant effect');
 });
 
-test('flame tyrant ability text mentions the burn applied by tyrant\'s wrath', () => {
-  assert.match(UNIT_MAP.boss_flame_tyrant.ability.description.toLowerCase(), /burn/, 'tyrant\'s wrath text should mention the burn effect applied in battle');
+test('flame tyrant ability text matches the clarified burn rules', () => {
+  const description = UNIT_MAP.boss_flame_tyrant.ability.description.toLowerCase();
+  assert.match(description, /0\.6x/, 'tyrant\'s wrath text should mention its clarified damage multiplier');
+  assert.match(description, /all enemies/, 'tyrant\'s wrath text should keep its full-team coverage explicit');
+  assert.match(description, /3 turns/, 'tyrant\'s wrath text should mention the documented burn duration');
+  assert.match(description, /5 dmg/, 'tyrant\'s wrath text should mention the documented burn tick value');
 });
 
 test('frost colossus ability text mentions the damage applied by absolute zero', () => {
-  assert.match(UNIT_MAP.boss_frost_colossus.ability.description.toLowerCase(), /damage/, 'absolute zero text should mention the AoE damage applied in battle');
+  const description = UNIT_MAP.boss_frost_colossus.ability.description.toLowerCase();
+  assert.match(description, /0\.3x/, 'absolute zero text should mention its clarified damage multiplier');
+  assert.match(description, /2 turns/, 'absolute zero text should mention the freeze duration');
+  assert.match(description, /80 hp/, 'absolute zero text should mention the self-heal value');
 });
 
 test('void supreme ability text mentions the shielded enrage applied by void cataclysm', () => {
   const description = UNIT_MAP.boss_chaos_overlord.ability.description.toLowerCase();
+  assert.match(description, /0\.4x/, 'void cataclysm text should mention its clarified damage multiplier');
   assert.match(description, /shield/, 'void cataclysm text should mention the shield granted at low HP');
+  assert.match(description, /\+20 def/, 'void cataclysm text should mention the shield value');
+  assert.match(description, /1 turn/, 'void cataclysm text should mention the shield duration');
   assert.match(description, /all enemies/, 'void cataclysm text should mention its all-enemies AoE coverage');
 });
 
 test('void leviathan ability text mentions wound and weaken from abyssal devour', () => {
   const description = UNIT_MAP.boss_void_leviathan.ability.description.toLowerCase();
+  assert.match(description, /15% target max hp/, 'abyssal devour text should mention its clarified true-damage rule');
   assert.match(description, /wound/, 'abyssal devour text should mention the wound effect');
+  assert.match(description, /20%/, 'abyssal devour text should mention the wound and weaken strength');
+  assert.match(description, /2 turns/, 'abyssal devour text should mention the debuff duration');
   assert.match(description, /weaken/, 'abyssal devour text should mention the weaken effect');
+  assert.match(description, /60 hp/, 'abyssal devour text should mention the self-heal value');
 });
 
 test('void architect ability text mentions void damage to all enemies', () => {
   const description = UNIT_MAP.boss_void_architect.ability.description.toLowerCase();
   assert.match(description, /void damage/, 'reality tear text should mention the damage type');
   assert.match(description, /all enemies/, 'reality tear text should mention its all-enemies coverage');
+  assert.match(description, /2 turns/, 'reality tear text should mention the blind duration');
 });
 
 test('tier 3 damage-caster text matches the clarified design summaries', () => {
@@ -452,6 +467,22 @@ test('life guardian text makes the full-team barrier explicit', () => {
   const description = UNIT_MAP.life_guardian.ability.description.toLowerCase();
   assert.match(description, /all allies/, 'guardian\'s blessing text should keep the full-team heal wording');
   assert.match(description, /barrier to all allies/, 'guardian\'s blessing text should make the barrier coverage explicit');
+});
+
+test('arcane restoration and miasma text match the clarified support and plague rules', () => {
+  const priestDescription = UNIT_MAP.arcane_priest.ability.description.toLowerCase();
+  assert.match(priestDescription, /25 hp/, 'arcane restoration text should mention its heal value');
+  assert.match(priestDescription, /shield/, 'arcane restoration text should mention its shield effect');
+  assert.match(priestDescription, /\+10 def/, 'arcane restoration text should mention the shield value');
+  assert.match(priestDescription, /2 turns/, 'arcane restoration text should mention the shield duration');
+
+  const miasmaDescription = UNIT_MAP.blight_weaver.ability.description.toLowerCase();
+  assert.match(miasmaDescription, /0\.7x/, 'miasma text should mention its clarified damage multiplier');
+  assert.match(miasmaDescription, /2 closest/, 'miasma text should keep its target cap explicit');
+  assert.match(miasmaDescription, /3 turns/, 'miasma text should mention the documented poison duration');
+  assert.match(miasmaDescription, /5% max hp\/tick/, 'miasma text should mention the documented poison tick rule');
+  assert.match(miasmaDescription, /20% weaken/, 'miasma text should mention the weaken amount');
+  assert.match(miasmaDescription, /2 turns/, 'miasma text should mention the weaken duration');
 });
 
 test('arcane pupil and arcane assassin text match the clarified arcane rules', () => {
@@ -498,6 +529,46 @@ test('stone skin text matches the clarified earth golem shield rules', () => {
   const description = UNIT_MAP.earth_golem.ability.description.toLowerCase();
   assert.match(description, /\+15 def/, 'stone skin text should mention the documented shield value');
   assert.match(description, /2 turns/, 'stone skin text should mention the shield duration');
+});
+
+test('economy upgrade text makes the implemented caps and floors explicit', () => {
+  const bargainHunterDescription = UPGRADES.find(upgrade => upgrade.id === 'bargain_hunter')?.description.toLowerCase() || '';
+  assert.match(bargainHunterDescription, /-1/, 'hovs handouts text should mention the per-level refresh discount');
+  assert.match(bargainHunterDescription, /min 0g/, 'hovs handouts text should mention the documented free-refresh floor');
+
+  const warChestDescription = UPGRADES.find(upgrade => upgrade.id === 'war_chest')?.description.toLowerCase() || '';
+  assert.match(warChestDescription, /10%/, 'war chest text should mention the per-level interest rate');
+  assert.match(warChestDescription, /max 5g/, 'war chest text should mention the documented interest cap');
+
+  const fieldMedicDescription = UPGRADES.find(upgrade => upgrade.id === 'field_medic')?.description.toLowerCase() || '';
+  assert.match(fieldMedicDescription, /15%/, 'field medic text should mention the per-level healing increase');
+  assert.match(fieldMedicDescription, /base 25%/, 'field medic text should mention the documented base post-battle healing');
+
+  const refreshMasterDescription = UPGRADES.find(upgrade => upgrade.id === 'refresh_master')?.description.toLowerCase() || '';
+  assert.match(refreshMasterDescription, /\+1 refresh/, 'refresh master text should mention the per-level refresh gain');
+  assert.match(refreshMasterDescription, /base 1/, 'refresh master text should mention the documented base refresh count');
+  assert.match(refreshMasterDescription, /max 3/, 'refresh master text should mention the documented total refresh cap');
+});
+
+test('remaining status-heavy unit text keeps clarified durations and values explicit', () => {
+  const blazingChargeDescription = UNIT_MAP.fire_warrior.ability.description.toLowerCase();
+  assert.match(blazingChargeDescription, /same column/, 'blazing charge text should keep its column-only targeting explicit');
+  assert.match(blazingChargeDescription, /3 turns/, 'blazing charge text should mention the documented burn duration');
+  assert.match(blazingChargeDescription, /3 dmg/, 'blazing charge text should mention the documented burn tick value');
+
+  const frozenWallDescription = UNIT_MAP.ice_guardian.ability.description.toLowerCase();
+  assert.match(frozenWallDescription, /\+15 def/, 'frozen wall text should mention its shield value');
+  assert.match(frozenWallDescription, /3 turns/, 'frozen wall text should mention the self-shield duration');
+  assert.match(frozenWallDescription, /2 turns/, 'frozen wall text should mention the slow duration');
+
+  const hellfireDescription = UNIT_MAP.fire_demon.ability.description.toLowerCase();
+  assert.match(hellfireDescription, /up to 3 enemies/, 'hellfire text should keep its target cap explicit');
+  assert.match(hellfireDescription, /3 turns/, 'hellfire text should mention the documented burn duration');
+  assert.match(hellfireDescription, /3 dmg/, 'hellfire text should mention the documented burn tick value');
+
+  const blizzardDescription = UNIT_MAP.ice_empress.ability.description.toLowerCase();
+  assert.match(blizzardDescription, /all enemies/, 'blizzard text should keep its full-team coverage explicit');
+  assert.match(blizzardDescription, /1 turn/, 'blizzard text should mention the freeze duration');
 });
 
 test('crimson tide text makes the three-target cap explicit', () => {

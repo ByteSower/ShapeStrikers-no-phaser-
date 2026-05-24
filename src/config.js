@@ -48,11 +48,11 @@ const ELEMENT_SYNERGIES = [
 // ─── Upgrades ─────────────────────────────────────────────────────────────────
 const UPGRADES = [
   { id: 'army_expansion', name: '🏰 Army Expansion', description: '+1 max unit slot',          cost: 8, maxLevel: 5, effect: { type: 'maxUnits',         value: 1    } },
-  { id: 'field_medic',    name: '💚 Field Medic',    description: '+15% post-battle healing',  cost: 5, maxLevel: 3, effect: { type: 'healingRate',       value: 0.15 } },
-  { id: 'bargain_hunter', name: 'Hovs Handouts',     description: '-1 shop refresh cost (stackable)',     cost: 4, maxLevel: 2, effect: { type: 'shopRefresh',       value: -1   } },
-  { id: 'war_chest',      name: '📈 War Chest',      description: '+10% interest on gold (stackable)',    cost: 6, maxLevel: 3, effect: { type: 'interestRate',      value: 0.1  } },
-  { id: 'victory_bonus',  name: '🏆 Victory Bonus',  description: '+2 gold per wave won',      cost: 5, maxLevel: 3, effect: { type: 'goldPerWave',       value: 2    } },
-  { id: 'refresh_master', name: '🔄 Refresh Master', description: '+1 refresh per round (max 3)',        cost: 6, maxLevel: 2, effect: { type: 'refreshesPerRound', value: 1    } },
+  { id: 'field_medic',    name: '💚 Field Medic',    description: '+15% post-battle healing per level (base 25%)',  cost: 5, maxLevel: 3, effect: { type: 'healingRate',       value: 0.15 } },
+  { id: 'bargain_hunter', name: 'Hovs Handouts',     description: '-1 shop refresh cost per level (min 0g)',     cost: 4, maxLevel: 2, effect: { type: 'shopRefresh',       value: -1   } },
+  { id: 'war_chest',      name: '📈 War Chest',      description: '+10% interest per level on current gold (max 5g)',    cost: 6, maxLevel: 3, effect: { type: 'interestRate',      value: 0.1  } },
+  { id: 'victory_bonus',  name: '🏆 Victory Bonus',  description: '+2 gold per wave won per level',      cost: 5, maxLevel: 3, effect: { type: 'goldPerWave',       value: 2    } },
+  { id: 'refresh_master', name: '🔄 Refresh Master', description: '+1 refresh per round per level (base 1, max 3 total)',        cost: 6, maxLevel: 2, effect: { type: 'refreshesPerRound', value: 1    } },
   { id: 'scouts_intel',   name: '🔭 Scout\'s Intel', description: 'Preview next wave enemies, stats & abilities', cost: 25, maxLevel: 1, effect: { type: 'scoutLevel',        value: 1    } },
   { id: 'elite_training', name: '⬆️ Elite Training', description: 'Lv1: +5% ATK/SPD, Lv2: +10% ATK/+5% SPD, Lv3: +10% ATK/DEF/+5% SPD', cost: 7, maxLevel: 3, effect: { type: 'eliteTraining', value: 1 } },
   { id: 'mercenary',      name: '📜 Mercenary',      description: '+1 shop card per refresh',          cost: 6, maxLevel: 2, effect: { type: 'shopCards',          value: 1    } },
@@ -160,7 +160,7 @@ const UNIT_DEFINITIONS = [
     id: 'fire_warrior', name: 'Flame Soldier Magna', element: 'fire', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'red', shape: 'squircle' },
     stats: { hp: 180, maxHp: 180, attack: 25, defense: 12, speed: 6, range: 1 },
-    ability: { name: 'Blazing Charge', description: '1.4x to ALL enemies in same column + burn', cooldown: 3 },
+    ability: { name: 'Blazing Charge', description: '1.4x to all enemies in same column + burn (3 turns, 3 dmg)', cooldown: 3 },
   },
   {
     id: 'ice_archer', name: 'Ice Archer ColdShot', element: 'ice', cost: 4, tier: 2, role: 'sniper',
@@ -184,7 +184,7 @@ const UNIT_DEFINITIONS = [
     id: 'ice_guardian', name: 'Frost Guardian IceBur', element: 'ice', cost: 4, tier: 2, role: 'tank',
     visual: { color: 'blue', shape: 'squircle' },
     stats: { hp: 200, maxHp: 200, attack: 15, defense: 18, speed: 3, range: 1 },
-    ability: { name: 'Frozen Wall', description: 'Shield self (+15 DEF, 3 turns) + slow ALL enemies', cooldown: 4 },
+    ability: { name: 'Frozen Wall', description: 'Self shield (+15 DEF, 3 turns) + slow all enemies (2 turns)', cooldown: 4 },
   },
   {
     id: 'arcane_assassin', name: 'Arcane Shadow', element: 'arcane', cost: 4, tier: 2, role: 'skirmisher',
@@ -202,7 +202,7 @@ const UNIT_DEFINITIONS = [
     id: 'arcane_priest', name: 'Arcane Sorcerer', element: 'arcane', cost: 4, tier: 2, role: 'healer',
     visual: { color: 'pink', shape: 'square' },
     stats: { hp: 100, maxHp: 100, attack: 15, defense: 8, speed: 6, range: 3 },
-    ability: { name: 'Arcane Restoration', description: 'Heals lowest HP ally for 25 HP + grants shield', cooldown: 2, healAmount: 25 },
+    ability: { name: 'Arcane Restoration', description: 'Heals an ally 25 HP + shield (+10 DEF, 2 turns)', cooldown: 2, healAmount: 25 },
   },
   {
     id: 'blood_knight', name: 'Vamp General Parasect', element: 'blood', cost: 4, tier: 2, role: 'tank', trait: 'vampire',
@@ -251,7 +251,7 @@ const UNIT_DEFINITIONS = [
     id: 'fire_demon', name: 'Daemon The Incinerator', element: 'fire', cost: 6, tier: 3, role: 'caster',
     visual: { color: 'red', shape: 'square' },
     stats: { hp: 200, maxHp: 200, attack: 30, defense: 12, speed: 5, range: 2 },
-    ability: { name: 'Hellfire', description: '0.6x fire damage to up to 3 enemies + burn', cooldown: 4, maxTargets: 3 },
+    ability: { name: 'Hellfire', description: '0.6x fire damage to up to 3 enemies + burn (3 turns, 3 dmg)', cooldown: 4, maxTargets: 3 },
   },
   {
     id: 'martial_master', name: 'Shape Boxer Tysr', element: 'earth', cost: 6, tier: 3, role: 'tank',
@@ -269,7 +269,7 @@ const UNIT_DEFINITIONS = [
     id: 'ice_empress', name: 'Ice Queen Elaine', element: 'ice', cost: 6, tier: 3, role: 'caster',
     visual: { color: 'blue', shape: 'rhombus' },
     stats: { hp: 220, maxHp: 220, attack: 32, defense: 16, speed: 6, range: 3 },
-    ability: { name: 'Blizzard', description: '0.5x ice damage to all enemies + freeze', cooldown: 5 },
+    ability: { name: 'Blizzard', description: '0.5x ice damage to all enemies + freeze (1 turn)', cooldown: 5 },
   },
   {
     id: 'life_guardian', name: 'Shape Guardian Ari', element: 'earth', cost: 6, tier: 3, role: 'healer',
@@ -321,7 +321,7 @@ const UNIT_DEFINITIONS = [
     id: 'blight_weaver', name: 'Blight Weaver Morra', element: 'plague', cost: 4, tier: 2, role: 'caster',
     visual: { color: 'green', shape: 'oval' },
     stats: { hp: 120, maxHp: 120, attack: 20, defense: 7, speed: 5, range: 3 },
-    ability: { name: 'Miasma', description: '0.7x to 2 closest in range + poison + 20% weaken', cooldown: 3, maxTargets: 2 },
+    ability: { name: 'Miasma', description: '0.7x to 2 closest in range + poison (3 turns, 5% max HP/tick) + 20% weaken (2 turns)', cooldown: 3, maxTargets: 2 },
   },
   {
     id: 'plague_sovereign', name: 'Plague Sovereign Vex', element: 'plague', cost: 6, tier: 3, role: 'caster',
@@ -335,7 +335,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_flame_tyrant', name: '🔥 SUN DRAGON SEL', element: 'fire', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'red', shape: 'squircle' },
     stats: { hp: 425, maxHp: 425, attack: 32, defense: 14, speed: 5, range: 4 },
-    ability: { name: "Tyrant's Wrath", description: 'AoE fire damage to all enemies + burn', cooldown: 4 },
+    ability: { name: "Tyrant's Wrath", description: '0.6x fire damage to all enemies + burn (3 turns, 5 dmg)', cooldown: 4 },
     bossPhases: [
       { hpThreshold: 1.0, name: 'Burning Fury',   statModifiers: {},                description: 'The Flame Tyrant burns with fury!' },
       { hpThreshold: 0.5, name: 'Inferno',         statModifiers: { attackMult: 1.4 }, description: 'ENRAGED! Attack increased by 40%!' },
@@ -345,7 +345,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_frost_colossus', name: '🧊 FROST GIANT ANVALOG', element: 'ice', cost: 0, tier: 4, isBoss: true,
     visual: { color: 'blue', shape: 'circle' },
     stats: { hp: 675, maxHp: 675, attack: 30, defense: 22, speed: 3, range: 4 },
-    ability: { name: 'Absolute Zero', description: 'AoE ice damage + freezes all enemies for 2 turns + self-heal 80 HP', cooldown: 5, freezeDuration: 2, healAmount: 80 },
+    ability: { name: 'Absolute Zero', description: '0.3x ice damage to all enemies + freeze (2 turns) + self-heal 80 HP', cooldown: 5, freezeDuration: 2, healAmount: 80 },
     bossPhases: [
       { hpThreshold: 1.0, name: "Frozen Fortress",  statModifiers: {},                                    description: 'The Frost Colossus raises its icy defenses!' },
       { hpThreshold: 0.5, name: "Glacier's Wrath",  statModifiers: { defenseMult: 1.5, speedMult: 0.8 }, description: 'FORTIFIED! Defense increased by 50%!' },
@@ -355,7 +355,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_chaos_overlord', name: '🕳️ THE VOID SUPREME', element: 'void', cost: 0, tier: 5, isBoss: true,
     visual: { color: 'purple', shape: 'square' },
     stats: { hp: 600, maxHp: 600, attack: 45, defense: 20, speed: 7, range: 4 },
-    ability: { name: 'Void Cataclysm', description: 'AoE void damage to all enemies + gains shield when enraged at low HP', cooldown: 4 },
+    ability: { name: 'Void Cataclysm', description: '0.4x void damage to all enemies + shield (+20 DEF, 1 turn) when enraged below 30% HP', cooldown: 4 },
     bossPhases: [
       { hpThreshold: 1.0, phaseHp: 400, name: 'Awakening',   statModifiers: {},                                        description: 'The Void Supreme awakens!' },
       { hpThreshold: 0.66, phaseHp: 450, name: 'Corruption',  statModifiers: { attackMult: 1.3, speedMult: 1.2 },      description: 'Phase 2: CORRUPTION! (+30% ATK, +20% SPD)' },
@@ -368,7 +368,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_void_leviathan', name: '🕳️ VOID LEVIATHAN', element: 'void', cost: 0, tier: 4, isBoss: true, isVoid: true,
     visual: { color: 'purple', shape: 'circle' },
     stats: { hp: 800, maxHp: 800, attack: 52, defense: 25, speed: 5, range: 4 },
-    ability: { name: 'Abyssal Devour', description: '15% target max HP true damage + wound + weaken + self-heal 60 HP', cooldown: 4, healAmount: 60 },
+    ability: { name: 'Abyssal Devour', description: '15% target max HP true damage + wound (2 turns, 20%) + weaken (2 turns, 20%) + self-heal 60 HP', cooldown: 4, healAmount: 60 },
     bossPhases: [
       { hpThreshold: 1.0, phaseHp: 500, name: 'Emergence',   statModifiers: {},                                        description: 'The Void Leviathan emerges from the abyss!' },
       { hpThreshold: 0.5, phaseHp: 600, name: 'Deep Hunger', statModifiers: { attackMult: 1.4, speedMult: 1.3 },      description: 'Phase 2: DEEP HUNGER! (+40% ATK, +30% SPD)' },
@@ -378,7 +378,7 @@ const UNIT_DEFINITIONS = [
     id: 'boss_void_architect', name: '🕳️ THE VOID ARCHITECT', element: 'void', cost: 0, tier: 5, isBoss: true, isVoid: true,
     visual: { color: 'purple', shape: 'rhombus' },
     stats: { hp: 900, maxHp: 900, attack: 60, defense: 18, speed: 8, range: 4 },
-    ability: { name: 'Reality Tear', description: '1.0x void damage to all enemies + blind + poison (3 turns, 5% max HP/tick)', cooldown: 5 },
+    ability: { name: 'Reality Tear', description: '1.0x void damage to all enemies + blind (2 turns) + poison (3 turns, 5% max HP/tick)', cooldown: 5 },
     bossPhases: [
       { hpThreshold: 1.0,  phaseHp: 600, name: 'Blueprint',      statModifiers: {},                                                            description: 'The Void Architect studies your formation!' },
       { hpThreshold: 0.66, phaseHp: 675, name: 'Reconstruction',  statModifiers: { attackMult: 1.3, defenseMult: 1.3 },                        description: 'Phase 2: RECONSTRUCTION! (+30% ATK & DEF)' },
@@ -1082,6 +1082,16 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '1.0.19',
+    date: 'May 24, 2026',
+    title: '🧪 Prep Cleanup & Economy Text Sync',
+    notes: [
+      '🧹 Shop rerolls, prep upgrades, and selling a selected unit now all clear stale pending placements, move highlights, and hidden selection state instead of leaving the grid in an armed prep state',
+      '📋 More boss, support, status, and upgrade descriptions now match the implemented rules, including Frozen Wall, Hellfire, Blizzard, Arcane Restoration, Miasma, Tyrant\'s Wrath, Absolute Zero, Void Cataclysm, Abyssal Devour, Reality Tear, Hovs Handouts, War Chest, Field Medic, Victory Bonus, and Refresh Master',
+      '🧪 Focused regressions now lock the prep cleanup paths and the clarified economy caps, floors, durations, and damage values so these audit fixes stay covered',
+    ],
+  },
   {
     version: '1.0.18',
     date: 'May 22, 2026',
