@@ -1083,6 +1083,16 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.20',
+    date: 'May 24, 2026',
+    title: '🧪 Prep Interaction Cleanup Follow-Up',
+    notes: [
+      '🧹 Blocked shop clicks, invalid placement cancels, right-click sell confirms, battle start, move completion, upgrade buys, and multiplayer rerolls now all clear stale prep selections, detail panels, and hidden pending purchases instead of leaving the UI armed behind the scenes',
+      '🛒 Shop-card selection now invalidates older pending purchases before affordability checks run, while the shared prep cleanup helper also clears the canceled shop-card detail panel so visible prep state stays in sync with the underlying selection state',
+      '🧪 Expanded multiplayer bootstrap regressions now cover sell-confirm flows, stale prep detail cleanup, blocked shop clicks, invalid placement cancels, and multiplayer reroll refresh behavior so these prep audit fixes stay locked in',
+    ],
+  },
+  {
     version: '1.0.19',
     date: 'May 24, 2026',
     title: '🧪 Prep Cleanup & Economy Text Sync',

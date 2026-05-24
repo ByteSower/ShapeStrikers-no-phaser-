@@ -200,6 +200,7 @@
 - [x] Boss-facing audit text now keeps Sun Dragon Sel, Frost Giant Anvalog, Void Supreme, Void Leviathan, and Void Architect ability descriptions aligned with their implemented burn, AoE, wound, weaken, poison, and shield effects
 - [x] Continued unit-card audit text now syncs Lightning Sprite, Earth Golem, Arcane Pupil, Arcane Assassin, Fire Ravager, Life Guardian, Blood Knight, Blood Lord, Konji Scout, Konji Shaman, Ice Archer, and Void Knight with their clarified battle rules, and Arcane Priest now targets allies still missing shield coverage when everyone is at full HP
 - [x] Continued prep/grid cleanup now clears stale pending shop purchases and hidden move-selection state when rerolling, buying upgrades, or selling selected units, while the latest audit text sync also makes Frozen Wall, Hellfire, Blizzard, Arcane Restoration, Miasma, Tyrant's Wrath, Absolute Zero, Void Cataclysm, Abyssal Devour, Reality Tear, and the economy upgrades spell out their implemented caps, floors, durations, and values
+- [x] Follow-up prep/shop cleanup now cancels armed purchases on blocked shop clicks, invalid placement clicks, and right-click sell confirms, clears stale prep detail panels on battle start and move completion, and keeps multiplayer rerolls plus other prep invalidation points in sync with the visible detail and upgrade UI
 - [ ] Revisit stronger multiplayer authority when ranked, spectate, or broader platform targets raise the reliability bar beyond transient reconnect recovery
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance

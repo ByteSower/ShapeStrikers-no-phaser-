@@ -988,6 +988,7 @@ const Game = (() => {
     state.selectedShopIdx = null;
     Grid.clearHighlights();
     UI.showMessage('');
+    UI.clearUnitDetail();
   }
 
   function _clearSelectedUnitMoveState() {
@@ -1065,25 +1066,26 @@ const Game = (() => {
     const def = state.shopUnits[index];
     if (!def) return;
 
+    _clearSelectedUnitMoveState();
+    Grid.clearSelection();
+
+    // Clicking the same armed card again should cancel it even if affordability changed.
+    if (state.selectedShopIdx === index) {
+      _clearPendingShopPlacement();
+      return;
+    }
+
+    // Clicking any different shop card invalidates the previous pending purchase first.
+    if (state.selectedShopIdx !== null) {
+      _clearPendingShopPlacement();
+    }
+
     // Always show unit detail when clicking a shop card (even if can't buy)
     UI.showUnitDetail({ definition: def, hp: def.stats.hp, maxHp: def.stats.hp, stats: { ...def.stats }, statusEffects: [] });
 
     if (state.phase !== 'prep') { UI.showMessage('Can only buy during the shop phase.'); return; }
     if (state.playerUnits.length >= _maxUnits()) { UI.showMessage('Army is full! Upgrade Army Expansion.'); return; }
     if (state.gold < def.cost) { UI.showMessage('Not enough gold!'); return; }
-
-    // Clicking the same shop card again cancels the pending purchase
-    if (state.selectedShopIdx === index) {
-      state.selectedShopIdx = null;
-      Grid.clearHighlights();
-      UI.showMessage('');
-      return;
-    }
-
-    // Cancel any previous pending purchase
-    if (state.selectedShopIdx !== null) {
-      Grid.clearHighlights();
-    }
 
     // Mark slot as selected (gold deducted only on placement)
     state.selectedShopIdx = index;
@@ -1105,6 +1107,7 @@ const Game = (() => {
   function _sellUnit(unit) {
     if (state.phase !== 'prep') { UI.showMessage('Can only sell during the shop phase.'); return; }
     const sellValue = Math.max(GAME_CONFIG.minSellValue || 1, Math.floor(unit.definition.cost * (GAME_CONFIG.sellRefundPercent || 0.5)));
+    _clearPendingShopPlacement();
     state.gold += sellValue;
     state.playerUnits = state.playerUnits.filter(u => u !== unit);
     Grid.removeUnitFromTile(unit.row, unit.col);
@@ -1181,9 +1184,7 @@ const Game = (() => {
       const targetRow = row;
       if (targetRow <= GRID_CONFIG.battleLineRow || clickedUnit) {
         // Cancel shop selection and fall through to select/deselect logic
-        state.selectedShopIdx = null;
-        Grid.clearHighlights();
-        UI.showMessage('');
+        _clearPendingShopPlacement();
         // If they clicked an existing unit, select it (fall through to C)
         if (!clickedUnit) return;
       } else {
@@ -1235,6 +1236,7 @@ const Game = (() => {
       Grid.clearHighlights();
       _refreshSynergyIcons();
       state.selectedUnit = null;
+      UI.clearUnitDetail();
       UI.showMessage('');
       _mpSyncOwnPrepState(true);
       return;
@@ -1403,6 +1405,7 @@ const Game = (() => {
     _checkAchievementsOnPrep();
     Grid.clearSelection();
     Grid.clearHighlights();
+    UI.clearUnitDetail();
     UI.clearLog();
     UI.showMessage('⚔️ Battle started!', 0);
     _refreshHUD();
@@ -2570,6 +2573,8 @@ const Game = (() => {
     const cost = upg.cost + level * 5;
     if (state.gold < cost)  { UI.showMessage('Not enough gold!'); return; }
     _clearPendingShopPlacement();
+    _clearSelectedUnitMoveState();
+    Grid.clearSelection();
     state.gold -= cost;
     state.upgradeLevels[id] = level + 1;
     _totalUpgradesBought++;
@@ -3224,10 +3229,13 @@ const Game = (() => {
         const pool = _mpBuildPool();
         const units = MultiplayerGame.doReroll(pool, 5);
         if (units) {
-          state.shopUnits = units;
-          state.selectedShopIdx = null;
+          _clearPendingShopPlacement();
+          _clearSelectedUnitMoveState();
           Grid.clearSelection();
+          state.shopUnits = units;
           UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
+          _updateUpgradeList();
+          _updateRefreshBtn();
           _refreshHUD();
           _mpSyncOwnPrepState(true);
         }

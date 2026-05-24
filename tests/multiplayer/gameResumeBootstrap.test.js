@@ -37,9 +37,30 @@ function createStorage() {
   };
 }
 
-function createElementStub() {
+function createElementStub(registry = null) {
   const classes = new Set();
   const listeners = new Map();
+  let rawClassName = '';
+  let rawInnerHTML = '';
+
+  const syncClassNameFromSet = () => {
+    rawClassName = Array.from(classes).join(' ');
+  };
+
+  const hasClass = (node, className) => String(node?.className || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .includes(className);
+
+  const findByClass = (nodes, className) => {
+    for (const node of nodes || []) {
+      if (!node || node.removed) continue;
+      if (hasClass(node, className)) return node;
+      const nested = findByClass(node.children, className);
+      if (nested) return nested;
+    }
+    return null;
+  };
 
   const addListener = (type, handler, options = {}) => {
     if (typeof handler !== 'function') return;
@@ -56,6 +77,8 @@ function createElementStub() {
     const entries = [...(listeners.get(type) || [])];
     event.target = event.target || stub;
     event.currentTarget = stub;
+    event.stopPropagation = event.stopPropagation || (() => {});
+    event.preventDefault = event.preventDefault || (() => {});
     for (const entry of entries) {
       entry.handler(event);
       if (entry.once) removeListener(type, entry.handler);
@@ -65,7 +88,6 @@ function createElementStub() {
   const stub = {
     removed: false,
     textContent: '',
-    className: '',
     dataset: {},
     style: {},
     disabled: false,
@@ -74,9 +96,11 @@ function createElementStub() {
     classList: {
       add(...names) {
         names.forEach((name) => classes.add(name));
+        syncClassNameFromSet();
       },
       remove(...names) {
         names.forEach((name) => classes.delete(name));
+        syncClassNameFromSet();
       },
       contains(name) {
         return classes.has(name);
@@ -84,17 +108,21 @@ function createElementStub() {
       toggle(name, force) {
         if (force === true) {
           classes.add(name);
+          syncClassNameFromSet();
           return true;
         }
         if (force === false) {
           classes.delete(name);
+          syncClassNameFromSet();
           return false;
         }
         if (classes.has(name)) {
           classes.delete(name);
+          syncClassNameFromSet();
           return false;
         }
         classes.add(name);
+        syncClassNameFromSet();
         return true;
       },
     },
@@ -117,8 +145,31 @@ function createElementStub() {
       this.children = this.children.filter((entry) => entry !== child);
       return child;
     },
-    querySelectorAll() {
-      return [];
+    querySelector(selector) {
+      if (!selector.startsWith('.')) return null;
+      const className = selector.slice(1);
+      const existing = findByClass(this.children, className);
+      if (existing) return existing;
+      if (!rawInnerHTML.includes(`class="${className}"`) && !rawInnerHTML.includes(`class='${className}'`)) return null;
+      const syntheticChild = createElementStub(registry);
+      syntheticChild.className = className;
+      this.children.push(syntheticChild);
+      return syntheticChild;
+    },
+    querySelectorAll(selector) {
+      if (!selector.startsWith('.')) return [];
+      const className = selector.slice(1);
+      this.querySelector(selector);
+      const matches = [];
+      const collect = (nodes) => {
+        for (const node of nodes || []) {
+          if (!node || node.removed) continue;
+          if (hasClass(node, className)) matches.push(node);
+          collect(node.children);
+        }
+      };
+      collect(this.children);
+      return matches;
     },
     focus() {},
     remove() {
@@ -130,11 +181,34 @@ function createElementStub() {
     },
   };
 
+  Object.defineProperty(stub, 'className', {
+    get() {
+      return rawClassName;
+    },
+    set(value) {
+      rawClassName = String(value || '');
+      classes.clear();
+      rawClassName.split(/\s+/).filter(Boolean).forEach((name) => classes.add(name));
+    },
+  });
+
+  Object.defineProperty(stub, 'innerHTML', {
+    get() {
+      return rawInnerHTML;
+    },
+    set(value) {
+      rawInnerHTML = String(value || '');
+    },
+  });
+
+  registry?.push(stub);
+
   return stub;
 }
 
 function createDocumentStub(elementIds = []) {
-  const elements = new Map(elementIds.map((id) => [id, createElementStub()]));
+  const registry = [];
+  const elements = new Map(elementIds.map((id) => [id, createElementStub(registry)]));
 
   return {
     readyState: 'loading',
@@ -149,13 +223,17 @@ function createDocumentStub(elementIds = []) {
     },
     querySelector(selector) {
       if (selector.startsWith('#')) return elements.get(selector.slice(1)) || null;
+      if (selector.startsWith('.')) {
+        const className = selector.slice(1);
+        return registry.find((element) => !element.removed && String(element.className || '').split(/\s+/).includes(className)) || null;
+      }
       return null;
     },
     querySelectorAll() {
       return [];
     },
     createElement() {
-      return createElementStub();
+      return createElementStub(registry);
     },
     elements,
   };
@@ -190,6 +268,11 @@ function loadGameContext({
     clearHighlights: 0,
     highlightTiles: [],
   };
+  const unitDetailCalls = {
+    clear: 0,
+    show: [],
+  };
+  let currentUnitDetail = null;
   const stopMusicCalls = [];
   const gameplayMusicCalls = [];
   const musicCalls = [];
@@ -225,6 +308,7 @@ function loadGameContext({
     destroyCalls: 0,
     forceMatchEndCalls: [],
   };
+  const tileElements = new Map();
 
   let multiplayerActive = false;
   let multiplayerCallbacks = {};
@@ -532,8 +616,18 @@ function loadGameContext({
       showResult(playerWon, wave, earnedGold, breakdown = {}) {
         resultCalls.push({ playerWon, wave, earnedGold, breakdown: plain(breakdown) });
       },
-      clearUnitDetail() {},
-      showUnitDetail() {},
+      clearUnitDetail() {
+        currentUnitDetail = null;
+        unitDetailCalls.clear += 1;
+      },
+      showUnitDetail(unit, upgradeLevels, synergies) {
+        currentUnitDetail = {
+          unit: plain(unit),
+          upgradeLevels: plain(upgradeLevels || {}),
+          synergies: plain(synergies || null),
+        };
+        unitDetailCalls.show.push(currentUnitDetail);
+      },
       switchTab() {},
       renderShop(units, gold, onBuy) {
         shopRenderCalls.push({ units: plain(units), gold, onBuy });
@@ -561,8 +655,10 @@ function loadGameContext({
         gridCalls.highlightTiles.push({ tiles: plain(tiles), cssClass });
       },
       selectTile() {},
-      getTileEl() {
-        return null;
+      getTileEl(row, col) {
+        const key = `${row},${col}`;
+        if (!tileElements.has(key)) tileElements.set(key, document.createElement('div'));
+        return tileElements.get(key);
       },
       removeUnitFromTile() {},
       placeUnit() {},
@@ -614,6 +710,9 @@ function loadGameContext({
         return 123456;
       },
       generateShopUnits(pool, count = 5) {
+        return pool.slice(0, count);
+      },
+      doReroll(pool, count = 5) {
         return pool.slice(0, count);
       },
       getRoundGoldBonus(playerWon, survivingCount) {
@@ -798,6 +897,12 @@ function loadGameContext({
     clickTile(row, col) {
       context.Grid.onClick?.(row, col);
     },
+    clickTileRight(row, col) {
+      context.Grid.onRightClick?.(row, col);
+    },
+    clickSellConfirmYes() {
+      document.querySelector('.sell-confirm')?.querySelector('.sell-yes')?.click();
+    },
     dispatchWindowEvent(type, event = {}) {
       for (const handler of windowEvents.get(type) || []) {
         handler(event);
@@ -824,6 +929,10 @@ function loadGameContext({
     updateUpgradeCalls,
     replayControls,
     gridCalls,
+    unitDetailCalls,
+    getCurrentUnitDetail() {
+      return plain(currentUnitDetail);
+    },
     getSavedSession() {
       return currentSavedSession;
     },
@@ -1417,6 +1526,51 @@ await test('Pending shop purchases recheck affordability before placement after 
   assert.equal(Game.state.shopUnits[0].cost, 8, 'Failed placement should leave the shop card available');
 });
 
+await test('Clicking an unaffordable different shop card cancels the previously armed purchase', () => {
+  const {
+    Game,
+    clickShop,
+    clickTile,
+    gridCalls,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  Game.state.shopUnits[0] = {
+    ...plain(Game.state.shopUnits[0]),
+    cost: 1,
+    stats: { ...Game.state.shopUnits[0].stats },
+  };
+  Game.state.shopUnits[1] = {
+    ...plain(Game.state.shopUnits[0]),
+    cost: 99,
+    stats: { ...Game.state.shopUnits[0].stats },
+  };
+
+  clickShop(0);
+  const clearHighlightsBeforeBlockedShopClick = gridCalls.clearHighlights;
+
+  assert.equal(Game.state.selectedShopIdx, 0, 'Affordable shop card should be pending before the blocked shop click');
+
+  clickShop(1);
+
+  assert.equal(Game.state.selectedShopIdx, null, 'Clicking a different unaffordable shop card should cancel the previously armed purchase instead of leaving it hidden');
+  assert.equal(gridCalls.clearHighlights, clearHighlightsBeforeBlockedShopClick + 1, 'Blocked shop clicks should clear stale placement highlights from the canceled purchase');
+
+  clickTile(4, 1);
+
+  assert.equal(Game.state.playerUnits.length, 0, 'Clicking a tile after the blocked shop click should not place the previously armed unit');
+  assert.equal(Game.state.shopUnits[0].cost, 1, 'Canceling the hidden pending purchase should leave the original shop card available');
+});
+
 await test('Refreshing the shop clears any armed pending placement highlights', () => {
   const {
     Game,
@@ -1450,6 +1604,226 @@ await test('Refreshing the shop clears any armed pending placement highlights', 
   clickTile(3, 0);
 
   assert.equal(Game.state.playerUnits.length, 0, 'Clicking a tile after the refresh should not place the previously selected shop unit');
+});
+
+await test('Clicking an invalid placement tile clears the canceled shop detail panel state', () => {
+  const {
+    Game,
+    clickShop,
+    clickTile,
+    unitDetailCalls,
+    getCurrentUnitDetail,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  clickShop(0);
+
+  const clearDetailBeforeInvalidClick = unitDetailCalls.clear;
+
+  assert.equal(Game.state.selectedShopIdx, 0, 'Shop card should be pending before the invalid tile click');
+  assert.notEqual(getCurrentUnitDetail(), null, 'Selecting a shop card should populate detail before the invalid tile click');
+
+  clickTile(1, 0);
+
+  assert.equal(Game.state.selectedShopIdx, null, 'Invalid placement click should still cancel the pending shop purchase');
+  assert.equal(getCurrentUnitDetail(), null, 'Invalid placement click should clear stale detail from the canceled shop card');
+  assert.equal(unitDetailCalls.clear, clearDetailBeforeInvalidClick + 1, 'Invalid placement cancel should explicitly clear the shop-card detail panel');
+});
+
+await test('Refreshing the shop clears any stale pending shop detail panel state', () => {
+  const {
+    Game,
+    clickShop,
+    unitDetailCalls,
+    getCurrentUnitDetail,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  clickShop(0);
+
+  const clearDetailBeforeRefresh = unitDetailCalls.clear;
+
+  assert.notEqual(getCurrentUnitDetail(), null, 'Selecting a shop card should populate the shop detail panel before the refresh');
+
+  Game.refreshShop(false);
+
+  assert.equal(getCurrentUnitDetail(), null, 'Refreshing the shop should clear stale detail from the canceled pending shop card');
+  assert.equal(unitDetailCalls.clear, clearDetailBeforeRefresh + 1, 'Refreshing the shop should explicitly clear the canceled shop-card detail panel');
+});
+
+await test('Buying an upgrade clears any selected unit move state', () => {
+  const {
+    Game,
+    clickTile,
+    gridCalls,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-upgrade-move',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickTile(3, 0);
+
+  const goldBeforeUpgrade = Game.state.gold;
+  const clearSelectionBeforeUpgrade = gridCalls.clearSelection;
+  const clearHighlightsBeforeUpgrade = gridCalls.clearHighlights;
+
+  assert.equal(Game.state.selectedUnit?.id, 'p-upgrade-move', 'Clicking the unit should select it before the upgrade purchase');
+
+  Game.buyUpgrade('field_medic');
+
+  assert.equal(Game.state.gold, goldBeforeUpgrade - 5, 'Upgrade purchase should still spend gold normally');
+  assert.equal(Game.state.upgradeLevels.field_medic, 1, 'Upgrade purchase should still apply the upgrade effect');
+  assert.equal(Game.state.selectedUnit, null, 'Upgrade purchases should cancel any hidden selected-unit move state');
+  assert.equal(gridCalls.clearSelection, clearSelectionBeforeUpgrade + 1, 'Upgrade purchases should clear the stale tile selection for a selected unit');
+  assert.equal(gridCalls.clearHighlights, clearHighlightsBeforeUpgrade + 1, 'Upgrade purchases should clear the stale move highlights for a selected unit');
+
+  clickTile(4, 1);
+
+  assert.equal(Game.state.playerUnits[0].row, 3, 'Clicking after the upgrade purchase should not move the previously selected unit');
+  assert.equal(Game.state.playerUnits[0].col, 0, 'Upgrade purchases should leave the unit in place instead of keeping a hidden move selection');
+});
+
+await test('Multiplayer reroll clears any selected unit move state', () => {
+  const {
+    Game,
+    clickTile,
+    document,
+    roomEvents,
+    fireMultiplayerCallback,
+    gridCalls,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-refresh',
+      'btn-mp-ready',
+      'mp-ready-opp-status',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-reroll-clear',
+    opponentId: 'guest-reroll-clear',
+    isHost: true,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 25);
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-mp-reroll-move',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickTile(3, 0);
+
+  const clearSelectionBeforeReroll = gridCalls.clearSelection;
+  const clearHighlightsBeforeReroll = gridCalls.clearHighlights;
+
+  assert.equal(Game.state.selectedUnit?.id, 'p-mp-reroll-move', 'Clicking the unit should select it before the multiplayer reroll');
+
+  document.getElementById('btn-refresh')?.click();
+
+  assert.equal(Game.state.selectedUnit, null, 'Multiplayer rerolls should cancel any hidden selected-unit move state');
+  assert.equal(gridCalls.clearSelection, clearSelectionBeforeReroll + 1, 'Multiplayer rerolls should clear the stale tile selection for a selected unit');
+  assert.equal(gridCalls.clearHighlights, clearHighlightsBeforeReroll + 1, 'Multiplayer rerolls should clear the stale move highlights for a selected unit');
+
+  clickTile(4, 1);
+
+  assert.equal(Game.state.playerUnits[0].row, 3, 'Clicking after the multiplayer reroll should not move the previously selected unit');
+  assert.equal(Game.state.playerUnits[0].col, 0, 'Multiplayer rerolls should leave the unit in place instead of keeping a hidden move selection');
+});
+
+await test('Multiplayer reroll rerenders the upgrade list after spending gold', () => {
+  const {
+    Game,
+    document,
+    roomEvents,
+    fireMultiplayerCallback,
+    updateUpgradeCalls,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-refresh',
+      'btn-mp-ready',
+      'mp-ready-opp-status',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-reroll-upgrades',
+    opponentId: 'guest-reroll-upgrades',
+    isHost: true,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 25);
+
+  const goldBeforeReroll = Game.state.gold;
+  const upgradeRenderCountBeforeReroll = updateUpgradeCalls.length;
+
+  document.getElementById('btn-refresh')?.click();
+
+  assert.equal(Game.state.gold, goldBeforeReroll - 2, 'Multiplayer reroll should still deduct the reroll gold cost');
+  assert.equal(updateUpgradeCalls.length, upgradeRenderCountBeforeReroll + 1, 'Multiplayer rerolls should rerender the upgrade list after the gold total changes');
+  assert.equal(updateUpgradeCalls.at(-1)?.gold, Game.state.gold, 'Upgrade rerender after multiplayer reroll should use the updated gold total');
 });
 
 await test('Refreshing the shop clears any selected unit move state', () => {
@@ -1503,6 +1877,60 @@ await test('Refreshing the shop clears any selected unit move state', () => {
   assert.equal(Game.state.playerUnits[0].col, 0, 'Refreshing the shop should leave the unit in place instead of keeping a hidden move selection');
 });
 
+await test('Selecting a shop card clears any previously selected board unit state', () => {
+  const {
+    Game,
+    clickTile,
+    clickShop,
+    document,
+    gridCalls,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'btn-sell-unit',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-shop-clear',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickTile(3, 0);
+
+  const clearSelectionBeforeShopClick = gridCalls.clearSelection;
+  const clearHighlightsBeforeShopClick = gridCalls.clearHighlights;
+
+  assert.equal(Game.state.selectedUnit?.id, 'p-shop-clear', 'Clicking the board unit should select it before choosing a shop card');
+
+  clickShop(0);
+
+  assert.equal(Game.state.selectedShopIdx, 0, 'Shop card should still become the pending purchase');
+  assert.equal(Game.state.selectedUnit, null, 'Choosing a shop card should clear the previously selected board unit state');
+  assert.equal(gridCalls.clearSelection, clearSelectionBeforeShopClick + 1, 'Choosing a shop card should clear the stale tile selection from the board unit');
+  assert.equal(gridCalls.clearHighlights, clearHighlightsBeforeShopClick + 1, 'Choosing a shop card should clear the board-unit move highlights before showing placement tiles');
+
+  document.getElementById('btn-sell-unit')?.click();
+
+  assert.equal(Game.state.playerUnits.length, 1, 'Shop-card selection should not leave a hidden selected unit that can still be sold from the detail panel');
+});
+
 await test('War Chest interest applies to current gold before victory rewards are added', () => {
   const {
     Game,
@@ -1543,6 +1971,98 @@ await test('War Chest interest applies to current gold before victory rewards ar
   assert.equal(Game.state.gold, 21, 'Interest should be based on pre-reward gold, not the gold total after victory rewards are added');
   assert.equal(resultCalls.at(-1)?.earnedGold, 11, 'Result payload should report the documented gold reward total');
   assert.equal(resultCalls.at(-1)?.breakdown?.interest, 1, 'War Chest should contribute 10 percent of the current pre-reward gold');
+});
+
+await test('Starting battle clears any stale prep unit detail panel state', () => {
+  const {
+    Game,
+    clickTile,
+    unitDetailCalls,
+    getCurrentUnitDetail,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-battle-detail',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickTile(3, 0);
+
+  const clearDetailBeforeBattle = unitDetailCalls.clear;
+
+  assert.notEqual(getCurrentUnitDetail(), null, 'Selecting a unit in prep should populate the detail panel before battle starts');
+
+  Game.startBattle();
+
+  assert.equal(Game.state.phase, 'battle', 'Starting battle should still advance into the battle phase');
+  assert.equal(getCurrentUnitDetail(), null, 'Starting battle should clear stale prep unit detail instead of leaving a non-selected unit card visible');
+  assert.equal(unitDetailCalls.clear, clearDetailBeforeBattle + 1, 'Starting battle should explicitly clear the prep detail panel');
+});
+
+await test('Moving a selected unit clears the stale prep unit detail panel state', () => {
+  const {
+    Game,
+    clickTile,
+    unitDetailCalls,
+    getCurrentUnitDetail,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-move-detail',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickTile(3, 0);
+
+  const clearDetailBeforeMove = unitDetailCalls.clear;
+
+  assert.notEqual(getCurrentUnitDetail(), null, 'Selecting a unit should populate the detail panel before moving it');
+
+  clickTile(4, 1);
+
+  assert.equal(Game.state.selectedUnit, null, 'Moving a unit should still end the move-selection state');
+  assert.equal(getCurrentUnitDetail(), null, 'Moving a unit should clear the detail panel once the selection is consumed');
+  assert.equal(unitDetailCalls.clear, clearDetailBeforeMove + 1, 'Moving a unit should explicitly clear the stale prep detail panel');
 });
 
 await test('Upgrades cannot be bought after prep phase has ended', () => {
@@ -1657,6 +2177,56 @@ await test('Selling a selected unit clears move selection highlights and selecti
   assert.equal(Game.state.selectedUnit, null, 'Selling the selected unit should clear the selection state');
   assert.equal(gridCalls.clearSelection, clearSelectionBeforeSell + 1, 'Selling the selected unit should clear the stale tile selection');
   assert.equal(gridCalls.clearHighlights, clearHighlightsBeforeSell + 1, 'Selling the selected unit should clear the stale move highlights');
+});
+
+await test('Right-click sell cancels any armed pending shop purchase', () => {
+  const {
+    Game,
+    clickShop,
+    clickTile,
+    clickTileRight,
+    clickSellConfirmYes,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-right-click-sell',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickShop(0);
+
+  assert.equal(Game.state.selectedShopIdx, 0, 'Shop card should be pending before the right-click sell flow');
+
+  clickTileRight(3, 0);
+  clickSellConfirmYes();
+
+  assert.equal(Game.state.playerUnits.length, 0, 'Right-click sell confirm should still sell the unit');
+  assert.equal(Game.state.selectedShopIdx, null, 'Selling through the confirm popup should cancel any pending shop placement');
+
+  clickTile(4, 1);
+
+  assert.equal(Game.state.playerUnits.length, 0, 'Clicking after the sell confirm should not place the previously armed shop unit');
+  assert.notEqual(Game.state.shopUnits[0], null, 'Canceling the pending purchase during sell should leave the shop card available');
 });
 
 await test('Multiplayer new prep round clears round-sensitive upgrades and restores base stats', () => {
