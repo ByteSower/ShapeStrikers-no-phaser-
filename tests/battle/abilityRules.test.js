@@ -67,6 +67,27 @@ test('support healers cast even when no enemy is in range', () => {
   assert.equal(healer.abilityCooldown, UNIT_MAP.frost_fairy.ability.cooldown, 'support cast should consume ability cooldown');
 });
 
+test('frost fairy heals the ally with the lowest absolute HP, not the lowest HP ratio', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const healer = mkUnit(UNIT_MAP.frost_fairy, 4, 0, false);
+  const lowAbsoluteHpAlly = mkUnit(UNIT_MAP.frost_fairy, 4, 1, false);
+  const lowRatioAlly = mkUnit(UNIT_MAP.earth_golem, 4, 2, false);
+  const enemy = mkUnit(UNIT_MAP.fire_imp, 0, 0, true);
+
+  lowAbsoluteHpAlly.hp = 60;
+  lowRatioAlly.hp = 80;
+
+  battleSystem._playerUnits = [healer, lowAbsoluteHpAlly, lowRatioAlly];
+  battleSystem._enemyUnits = [enemy];
+  battleSystem._actionQueue = [healer];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  assert.equal(lowAbsoluteHpAlly.hp, 70, 'healing frost should target the ally with the lowest current HP total');
+  assert.equal(lowRatioAlly.hp, 80, 'healing frost should not redirect to a bulkier ally just because its HP ratio is lower');
+});
+
 test('ice slime uses frost coat on enemies at the documented 2-row ability range', () => {
   const battleSystem = makeIdleBattleSystem();
   const slime = mkUnit(UNIT_MAP.ice_slime, 3, 0, false);
@@ -107,6 +128,31 @@ test('earth golem casts stone skin without an enemy in attack range because it t
   assert.equal(golem.abilityCooldown, UNIT_MAP.earth_golem.ability.cooldown, 'stone skin should consume the ability cooldown when cast');
 });
 
+test('lightning sprite chain lightning damages up to 3 enemies', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const sprite = mkUnit(UNIT_MAP.lightning_sprite, 2, 0, false);
+  const targets = [
+    mkUnit(UNIT_MAP.earth_golem, 2, 0, true),
+    mkUnit(UNIT_MAP.earth_golem, 2, 1, true),
+    mkUnit(UNIT_MAP.earth_golem, 1, 2, true),
+    mkUnit(UNIT_MAP.earth_golem, 3, 3, true),
+  ];
+
+  battleSystem._playerUnits = [sprite];
+  battleSystem._enemyUnits = targets;
+
+  const expectedDamage = battleSystem._calcDamage(sprite, targets[0], 1.4);
+
+  battleSystem._useAbility(sprite, targets, [sprite]);
+
+  const damagedTargets = targets.filter(target => target.hp < target.maxHp);
+  const untouchedTargets = targets.filter(target => target.hp === target.maxHp);
+
+  assert.equal(damagedTargets.length, 3, 'chain lightning should only damage up to 3 targets');
+  assert.equal(untouchedTargets.length, 1, 'chain lightning should leave one enemy untouched when more than 3 are available');
+  assert.ok(damagedTargets.every(target => target.hp === target.maxHp - expectedDamage), 'each chained target should take the documented 1.4x lightning hit');
+});
+
 test('void shade stays untargetable through the enemy targeting step after shadow phase', () => {
   const battleSystem = makeIdleBattleSystem();
   const shade = mkUnit(UNIT_MAP.void_shade, 2, 0, false);
@@ -126,6 +172,105 @@ test('void shade stays untargetable through the enemy targeting step after shado
   assert.ok(untargetable, 'shadow phase should make the caster untargetable');
   assert.equal(untargetable.duration, 1, 'shadow phase untargetable should remain active after the cast turn');
   assert.equal(chosenTarget, ally, 'enemy targeting should skip the untargetable shade while the effect is active');
+});
+
+test('blood sprite drain touch heals for the documented 40 percent lifesteal', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const sprite = mkUnit(UNIT_MAP.blood_sprite, 2, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 2, 0, true);
+
+  sprite.hp = 40;
+  battleSystem._playerUnits = [sprite];
+  battleSystem._enemyUnits = [target];
+
+  const expectedDamage = battleSystem._calcDamage(sprite, target, 1.4);
+  const expectedHeal = Math.floor(Math.floor(expectedDamage * 0.4) * battleSystem._healMod(sprite));
+
+  battleSystem._useAbility(sprite, [target], [sprite]);
+
+  assert.equal(sprite.hp, 40 + expectedHeal, 'drain touch should heal for 40 percent of dealt damage');
+});
+
+test('arcane pupil evolve buffs base attack and defense every 3 turns up to 3 stacks', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const pupil = mkUnit(UNIT_MAP.arcane_pupil, 4, 0, false);
+  const enemy = mkUnit(UNIT_MAP.fire_imp, 0, 0, true);
+  const baseAttack = pupil.stats.attack;
+  const baseDefense = pupil.stats.defense;
+
+  battleSystem._playerUnits = [pupil];
+  battleSystem._enemyUnits = [enemy];
+
+  for (let turn = 1; turn <= 10; turn++) {
+    battleSystem._actionQueue = [pupil];
+    battleSystem._actionIndex = 0;
+    battleSystem._processNextAction();
+
+    if (turn === 2) {
+      assert.equal(pupil._evolveStacks || 0, 0, 'evolve should not trigger before the third survived turn');
+      assert.equal(pupil.stats.attack, baseAttack, 'attack should stay at base before evolve triggers');
+      assert.equal(pupil.stats.defense, baseDefense, 'defense should stay at base before evolve triggers');
+    }
+    if (turn === 3) {
+      assert.equal(pupil._evolveStacks, 1, 'evolve should gain the first stack on turn 3');
+      assert.equal(pupil.stats.attack, Math.floor(baseAttack * 1.1), 'the first evolve stack should grant 10 percent attack');
+      assert.equal(pupil.stats.defense, Math.floor(baseDefense * 1.1), 'the first evolve stack should grant 10 percent defense');
+    }
+    if (turn === 6) {
+      assert.equal(pupil._evolveStacks, 2, 'evolve should gain the second stack on turn 6');
+      assert.equal(pupil.stats.attack, Math.floor(baseAttack * 1.2), 'the second evolve stack should total 20 percent attack');
+      assert.equal(pupil.stats.defense, Math.floor(baseDefense * 1.2), 'the second evolve stack should total 20 percent defense');
+    }
+    if (turn === 9) {
+      assert.equal(pupil._evolveStacks, 3, 'evolve should gain the third stack on turn 9');
+      assert.equal(pupil.stats.attack, Math.floor(baseAttack * 1.3), 'the third evolve stack should total 30 percent attack');
+      assert.equal(pupil.stats.defense, Math.floor(baseDefense * 1.3), 'the third evolve stack should total 30 percent defense');
+    }
+  }
+
+  assert.equal(pupil._evolveStacks, 3, 'evolve should stop at the configured 3-stack cap');
+  assert.equal(pupil.stats.attack, Math.floor(baseAttack * 1.3), 'attack should stay pinned to the capped evolve bonus');
+  assert.equal(pupil.stats.defense, Math.floor(baseDefense * 1.3), 'defense should stay pinned to the capped evolve bonus');
+});
+
+test('arcane assassin shadow strike uses the 2.5x crit branch and emits the crit callback when RNG is below 0.5', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const assassin = mkUnit(UNIT_MAP.arcane_assassin, 2, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 2, 0, true);
+  const critHits = [];
+
+  battleSystem._playerUnits = [assassin];
+  battleSystem._enemyUnits = [target];
+  battleSystem._rng = () => 0.1;
+  battleSystem.onCriticalHit = (attacker, victim) => critHits.push({ attacker, victim });
+
+  const expectedDamage = battleSystem._calcDamage(assassin, target, 2.5);
+
+  battleSystem._useAbility(assassin, [target], [assassin]);
+
+  assert.equal(target.hp, target.maxHp - expectedDamage, 'shadow strike should use the documented 2.5x crit multiplier when RNG is below 0.5');
+  assert.equal(critHits.length, 1, 'shadow strike should emit the crit callback when the crit branch triggers');
+  assert.equal(critHits[0].attacker, assassin, 'the crit callback should identify the assassin as the attacker');
+  assert.equal(critHits[0].victim, target, 'the crit callback should identify the struck target');
+});
+
+test('arcane assassin shadow strike uses the 1.5x non-crit branch and skips the crit callback when RNG is 0.5 or higher', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const assassin = mkUnit(UNIT_MAP.arcane_assassin, 2, 0, false);
+  const target = mkUnit(UNIT_MAP.earth_golem, 2, 0, true);
+  let critCount = 0;
+
+  battleSystem._playerUnits = [assassin];
+  battleSystem._enemyUnits = [target];
+  battleSystem._rng = () => 0.9;
+  battleSystem.onCriticalHit = () => { critCount++; };
+
+  const expectedDamage = battleSystem._calcDamage(assassin, target, 1.5);
+
+  battleSystem._useAbility(assassin, [target], [assassin]);
+
+  assert.equal(target.hp, target.maxHp - expectedDamage, 'shadow strike should use the documented 1.5x non-crit multiplier when RNG is 0.5 or higher');
+  assert.equal(critCount, 0, 'shadow strike should not emit the crit callback on the non-crit branch');
 });
 
 test('blood knight ability honors its documented 30 percent lifesteal', () => {
@@ -265,6 +410,28 @@ test('fire warrior blazing charge does not hit off-column enemies', () => {
   );
 });
 
+test('fire warrior blazing charge reaches distant enemies in the same column', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const caster = mkUnit(UNIT_MAP.fire_warrior, 4, 0, false);
+  const distantColumnTarget = mkUnit(UNIT_MAP.earth_golem, 0, 0, true);
+
+  battleSystem._playerUnits = [caster];
+  battleSystem._enemyUnits = [distantColumnTarget];
+  battleSystem._actionQueue = [caster];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  const burn = distantColumnTarget.statusEffects.find(effect => effect.type === 'burn');
+
+  assert.ok(burn, 'blazing charge should burn same-column enemies even when they start outside base attack range');
+  assert.equal(burn.duration, 3, 'blazing charge burn should last 3 turns');
+  assert.equal(burn.value, 3, 'blazing charge burn should tick for 3 damage');
+  assert.ok(distantColumnTarget.hp < distantColumnTarget.maxHp, 'blazing charge should damage same-column enemies across the lane');
+  assert.equal(caster.row, 4, 'fire warrior should cast blazing charge instead of moving when a same-column enemy is alive farther up the lane');
+  assert.equal(caster.abilityCooldown, UNIT_MAP.fire_warrior.ability.cooldown, 'blazing charge should consume the ability cooldown when it casts across the lane');
+});
+
 test('konji shaman plague cloud reaches enemies outside base range because it targets all enemies', () => {
   const battleSystem = makeIdleBattleSystem();
   const shaman = mkUnit(UNIT_MAP.konji_shaman, 3, 0, false);
@@ -283,6 +450,47 @@ test('konji shaman plague cloud reaches enemies outside base range because it ta
   assert.equal(poison.value, 8, 'plague cloud poison should tick for 8 damage');
   assert.equal(shaman.row, 3, 'konji shaman should cast plague cloud instead of moving when only a distant enemy is alive');
   assert.equal(shaman.abilityCooldown, UNIT_MAP.konji_shaman.ability.cooldown, 'plague cloud should consume the ability cooldown when cast');
+});
+
+test('nature spirit rejuvenate heals all living allies for the documented amount', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const spirit = mkUnit(UNIT_MAP.nature_spirit, 4, 0, false);
+  const allyA = mkUnit(UNIT_MAP.earth_golem, 4, 1, false);
+  const allyB = mkUnit(UNIT_MAP.fire_warrior, 3, 0, false);
+  const fallenAlly = mkUnit(UNIT_MAP.fire_imp, 3, 1, false);
+
+  spirit.hp = 90;
+  allyA.hp = 100;
+  allyB.hp = 150;
+  fallenAlly.hp = 0;
+  battleSystem._playerUnits = [spirit, allyA, allyB, fallenAlly];
+  battleSystem._enemyUnits = [mkUnit(UNIT_MAP.fire_imp, 0, 0, true)];
+
+  battleSystem._useAbility(spirit, battleSystem._enemyUnits, battleSystem._playerUnits);
+
+  assert.equal(spirit.hp, 105, 'rejuvenate should also heal the caster when it is injured');
+  assert.equal(allyA.hp, 115, 'rejuvenate should heal each living ally for 15 HP');
+  assert.equal(allyB.hp, 165, 'rejuvenate should heal every living ally in the team-wide pulse');
+  assert.equal(fallenAlly.hp, 0, 'rejuvenate should not revive defeated allies');
+});
+
+test('single-target abilities still respect same-column targeting priority even when enemy order is scrambled', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const mage = mkUnit(UNIT_MAP.arcane_mage, 3, 0, false);
+  const offColumnLowHpEnemy = mkUnit(UNIT_MAP.fire_imp, 2, 1, true);
+  const sameColumnEnemy = mkUnit(UNIT_MAP.earth_golem, 2, 0, true);
+
+  offColumnLowHpEnemy.hp = 20;
+  sameColumnEnemy.hp = 140;
+  battleSystem._playerUnits = [mage];
+  battleSystem._enemyUnits = [offColumnLowHpEnemy, sameColumnEnemy];
+  battleSystem._actionQueue = [mage];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  assert.ok(sameColumnEnemy.hp < 140, 'single-target abilities should prefer an in-lane enemy over a lower-HP enemy in another column');
+  assert.equal(offColumnLowHpEnemy.hp, 20, 'single-target abilities should not just hit the first enemy in array order');
 });
 
 test('void horror void rupture still respects weaken even while ignoring defense', () => {
@@ -425,6 +633,34 @@ test('arcane priest prefers the ally missing shield coverage when everyone is at
   assert.ok(shieldEffects.length > 0, 'arcane priest should shield the ally that is still missing shield coverage');
   assert.equal(priest.abilityCooldown, UNIT_MAP.arcane_priest.ability.cooldown, 'arcane restoration should consume the ability cooldown when it casts for shield coverage');
   assert.equal(distantEnemy.hp, distantEnemy.maxHp, 'arcane priest should use the support ability instead of basic attacking when shield coverage is the relevant effect');
+});
+
+test('arcane priest heals and shields the injured ally with the lowest absolute HP', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const priest = mkUnit(UNIT_MAP.arcane_priest, 4, 0, false);
+  const lowAbsoluteHpAlly = mkUnit(UNIT_MAP.arcane_priest, 4, 1, false);
+  const lowRatioAlly = mkUnit(UNIT_MAP.earth_golem, 3, 1, false);
+  const distantEnemy = mkUnit(UNIT_MAP.fire_imp, 0, 0, true);
+
+  lowAbsoluteHpAlly.hp = 60;
+  lowRatioAlly.hp = 80;
+
+  battleSystem._playerUnits = [priest, lowAbsoluteHpAlly, lowRatioAlly];
+  battleSystem._enemyUnits = [distantEnemy];
+  battleSystem._actionQueue = [priest];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  const lowAbsoluteHpShield = lowAbsoluteHpAlly.statusEffects.find(effect => effect.type === 'shield');
+  const lowRatioShield = lowRatioAlly.statusEffects.find(effect => effect.type === 'shield');
+
+  assert.equal(lowAbsoluteHpAlly.hp, 85, 'arcane restoration should heal the injured ally with the lowest current HP total');
+  assert.equal(lowRatioAlly.hp, 80, 'arcane restoration should not redirect to a bulkier ally just because its HP ratio is lower');
+  assert.ok(lowAbsoluteHpShield, 'arcane restoration should shield the ally it healed');
+  assert.equal(lowAbsoluteHpShield.duration, 2, 'arcane restoration shield should last 2 turns');
+  assert.equal(lowAbsoluteHpShield.value, 10, 'arcane restoration shield should grant the documented defense bonus');
+  assert.equal(lowRatioShield, undefined, 'arcane restoration should not shield the non-selected injured ally');
 });
 
 test('flame tyrant ability text matches the clarified burn rules', () => {
@@ -819,6 +1055,77 @@ test('blood lord crimson tide cleaves up to 3 enemies and heals from total damag
     assert.ok(target.hp < target.maxHp, 'crimson tide should hit up to 3 targets in its cleave');
   }
   assert.equal(lord.hp, 100 + expectedHeal, 'crimson tide should heal for 25 percent of total damage across all struck targets');
+});
+
+test('fire demon hellfire burns up to 3 enemies and leaves extra targets untouched', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const demon = mkUnit(UNIT_MAP.fire_demon, 2, 0, false);
+  const targets = [
+    mkUnit(UNIT_MAP.earth_golem, 2, 0, true),
+    mkUnit(UNIT_MAP.earth_golem, 1, 0, true),
+    mkUnit(UNIT_MAP.earth_golem, 3, 0, true),
+    mkUnit(UNIT_MAP.earth_golem, 2, 1, true),
+  ];
+
+  battleSystem._playerUnits = [demon];
+  battleSystem._enemyUnits = targets;
+
+  battleSystem._useAbility(demon, targets, [demon]);
+
+  const burnedTargets = targets.filter(target => target.statusEffects.some(effect => effect.type === 'burn'));
+  const untouchedTargets = targets.filter(target => target.hp === target.maxHp && target.statusEffects.length === 0);
+
+  assert.equal(burnedTargets.length, 3, 'hellfire should only burn up to 3 enemies');
+  assert.equal(untouchedTargets.length, 1, 'hellfire should leave one enemy untouched when more than 3 are in range');
+  assert.ok(burnedTargets.every(target => target.hp < target.maxHp), 'hellfire should damage every enemy it burns');
+  assert.ok(burnedTargets.every(target => target.statusEffects.find(effect => effect.type === 'burn')?.duration === 3), 'hellfire burn should last 3 turns on each struck target');
+  assert.ok(burnedTargets.every(target => target.statusEffects.find(effect => effect.type === 'burn')?.value === 3), 'hellfire burn should tick for 3 damage on each struck target');
+});
+
+test('fire ravager kill-stack passive gains attack per kill and caps at 50 percent', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const ravager = mkUnit(UNIT_MAP.fire_ravager, 2, 0, false);
+  const weakSameLaneEnemy = mkUnit(UNIT_MAP.fire_imp, 2, 0, true);
+  const weakOffLaneEnemy = mkUnit(UNIT_MAP.fire_imp, 2, 1, true);
+
+  weakSameLaneEnemy.hp = 1;
+  weakOffLaneEnemy.hp = 1;
+  battleSystem._playerUnits = [ravager];
+  battleSystem._enemyUnits = [weakSameLaneEnemy, weakOffLaneEnemy];
+
+  battleSystem._useAbility(ravager, battleSystem._enemyUnits, [ravager]);
+
+  assert.equal(ravager._kills, 2, 'rampage should count kills from both struck targets toward the passive');
+  assert.equal(battleSystem._calcAttackPower(ravager), ravager.stats.attack * 1.2, 'two kills should grant the documented 20 percent attack bonus');
+
+  ravager._kills = 10;
+
+  assert.equal(battleSystem._calcAttackPower(ravager), ravager.stats.attack * 1.5, 'kill-stack attack bonus should cap at the documented 50 percent maximum');
+});
+
+test('battle start clears prior-battle passive progress on reused unit objects', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const ravager = mkUnit(UNIT_MAP.fire_ravager, 4, 0, false);
+  const pupil = mkUnit(UNIT_MAP.arcane_pupil, 4, 1, false);
+  const enemy = mkUnit(UNIT_MAP.fire_imp, 0, 0, true);
+  const pupilBaseAttack = pupil.stats.attack;
+  const pupilBaseDefense = pupil.stats.defense;
+
+  ravager._kills = 4;
+  pupil._turnsSurvived = 9;
+  pupil._evolveStacks = 3;
+  pupil._evolveBase = { attack: pupilBaseAttack, defense: pupilBaseDefense };
+  pupil.stats.attack = Math.floor(pupilBaseAttack * 1.3);
+  pupil.stats.defense = Math.floor(pupilBaseDefense * 1.3);
+
+  battleSystem.start([ravager, pupil], [enemy]);
+
+  assert.equal(ravager._kills, 0, 'battle start should reset kill-stack counters from the previous battle');
+  assert.equal(battleSystem._calcAttackPower(ravager), ravager.stats.attack, 'battle start should remove prior-battle kill-stack attack bonuses');
+  assert.equal(pupil._turnsSurvived || 0, 0, 'battle start should reset evolve turn progress from the previous battle');
+  assert.equal(pupil._evolveStacks || 0, 0, 'battle start should reset evolve stacks from the previous battle');
+  assert.equal(pupil.stats.attack, pupilBaseAttack, 'battle start should restore evolved attack back to the unit\'s pre-battle base');
+  assert.equal(pupil.stats.defense, pupilBaseDefense, 'battle start should restore evolved defense back to the unit\'s pre-battle base');
 });
 
 test('plague rat infect applies the plague baseline poison after its immediate hit', () => {

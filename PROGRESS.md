@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: May 24, 2026
+> **Last Updated**: May 28, 2026
 
 ---
 
@@ -202,6 +202,8 @@
 - [x] Continued prep/grid cleanup now clears stale pending shop purchases and hidden move-selection state when rerolling, buying upgrades, or selling selected units, while the latest audit text sync also makes Frozen Wall, Hellfire, Blizzard, Arcane Restoration, Miasma, Tyrant's Wrath, Absolute Zero, Void Cataclysm, Abyssal Devour, Reality Tear, and the economy upgrades spell out their implemented caps, floors, durations, and values
 - [x] Follow-up prep/shop cleanup now cancels armed purchases on blocked shop clicks, invalid placement clicks, and right-click sell confirms, clears stale prep detail panels on battle start and move completion, and keeps multiplayer rerolls plus other prep invalidation points in sync with the visible detail and upgrade UI
 - [x] Latest audit coverage now mirrors deferred guest authoritative-state requests, locks `Room` resume/snapshot invariants, spells out Void Knight and Void Blighter debuff strengths in player-facing text, and adds focused battle coverage for Shadow Phase untargetable targeting
+- [x] Continued battle audit fixes now keep Fire Warrior lane strikes and other single-target abilities on their documented same-column targeting rules, while new focused regressions also lock Nature Spirit healing, Fire Demon target caps, and Fire Ravager kill-stack growth
+- [x] Battle-start cleanup now resets prior-fight passive progress on reused unit objects, preventing Fire Ravager kill stacks and Arcane Pupil evolve progress from leaking into later battles
 - [ ] Revisit stronger multiplayer authority when ranked, spectate, or broader platform targets raise the reliability bar beyond transient reconnect recovery
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance

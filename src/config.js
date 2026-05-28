@@ -1083,43 +1083,53 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.22',
+    date: 'May 28, 2026',
+    title: '⚔️ Battle Cleanup & Card Clarity',
+    notes: [
+      '🎯 Battle targeting is more reliable, including lane-based attacks and single-target abilities that should stay focused on the right enemy',
+      '🔄 Battle-only power-ups now reset cleanly between fights so units start each round fresh instead of carrying over old momentum',
+      '📋 More battle text and recent patch-note wording have been cleaned up to stay clearer for normal players',
+    ],
+  },
+  {
     version: '1.0.21',
     date: 'May 24, 2026',
-    title: '🧪 Audit Coverage & Void Debuff Text Sync',
+    title: '🕳️ Multiplayer Polish & Void Card Clarity',
     notes: [
-      '🧪 Multiplayer audit coverage now mirrors the guest\'s deferred authoritative-state request path and locks `Room` saved-session resume cleanup plus deep snapshot isolation so reconnect/reload regressions stay caught in tests',
-      '🕳️ Void Knight and Void Blighter ability text now spell out their implemented 8% weaken and 50% wound values instead of leaving those debuff strengths implicit on the unit cards',
-      '👻 Focused battle regressions now lock Shadow Phase untargetable targeting behavior plus the clarified Void debuff values so the latest faction audit findings stay covered',
+      '🔌 Multiplayer reconnects and resumed matches should feel more reliable after a round gets interrupted',
+      '🕳️ Void Knight and Void Blighter cards now clearly show how strong their debuffs are',
+      '👻 Void battle interactions got another cleanup pass so tricky stealth and debuff moments behave more consistently',
     ],
   },
   {
     version: '1.0.20',
     date: 'May 24, 2026',
-    title: '🧪 Prep Interaction Cleanup Follow-Up',
+    title: '🛒 Prep Phase Cleanup Follow-Up',
     notes: [
-      '🧹 Blocked shop clicks, invalid placement cancels, right-click sell confirms, battle start, move completion, upgrade buys, and multiplayer rerolls now all clear stale prep selections, detail panels, and hidden pending purchases instead of leaving the UI armed behind the scenes',
-      '🛒 Shop-card selection now invalidates older pending purchases before affordability checks run, while the shared prep cleanup helper also clears the canceled shop-card detail panel so visible prep state stays in sync with the underlying selection state',
-      '🧪 Expanded multiplayer bootstrap regressions now cover sell-confirm flows, stale prep detail cleanup, blocked shop clicks, invalid placement cancels, and multiplayer reroll refresh behavior so these prep audit fixes stay locked in',
+      '🧹 Starting battles, rerolling, selling, moving, and canceling placements now clear old prep selections more reliably',
+      '🛍️ Shop cards and pending buys now update more cleanly when you change your mind mid-prep',
+      '✨ General prep and multiplayer lobby polish reduces weird stuck UI moments between rounds',
     ],
   },
   {
     version: '1.0.19',
     date: 'May 24, 2026',
-    title: '🧪 Prep Cleanup & Economy Text Sync',
+    title: '📋 Prep Polish & Clearer Card Text',
     notes: [
-      '🧹 Shop rerolls, prep upgrades, and selling a selected unit now all clear stale pending placements, move highlights, and hidden selection state instead of leaving the grid in an armed prep state',
-      '📋 More boss, support, status, and upgrade descriptions now match the implemented rules, including Frozen Wall, Hellfire, Blizzard, Arcane Restoration, Miasma, Tyrant\'s Wrath, Absolute Zero, Void Cataclysm, Abyssal Devour, Reality Tear, Hovs Handouts, War Chest, Field Medic, Victory Bonus, and Refresh Master',
-      '🧪 Focused regressions now lock the prep cleanup paths and the clarified economy caps, floors, durations, and damage values so these audit fixes stay covered',
+      '🧹 Prep actions like rerolls, upgrades, and sells now clear leftover placement and selection states more cleanly',
+      '📋 More unit, boss, and upgrade descriptions now match what they actually do in battle',
+      '💰 Economy and reward text is clearer about costs, caps, healing, and bonus values',
     ],
   },
   {
     version: '1.0.18',
     date: 'May 22, 2026',
-    title: '🧪 Unit Text Sync & Support Targeting Fixes',
+    title: '✨ Support Targeting & Card Text Updates',
     notes: [
-      '📋 More unit cards now match the clarified battle rules, including Chain Lightning, Stone Skin, Arcane Bolt, Shadow Strike, Rampage, Toxic Dart, Frost Arrow, Corruption Strike, Crimson Cleave, Plague Cloud, and Crimson Tide',
-      '🛡️ Guardian\'s Blessing and several other support/utility descriptions now make their team-wide coverage, durations, and target caps explicit instead of relying on older shorthand',
-      '✨ Arcane Priest now shields the ally still missing shield coverage when everyone is already at full HP instead of wasting the cast on a unit that was already protected',
+      '📋 More unit cards now explain their damage, debuffs, and target caps more clearly',
+      '🛡️ Support and utility cards now do a better job spelling out team-wide effects and durations',
+      '✨ Arcane Priest now does a better job protecting the ally that still needs the shield most',
     ],
   },
   {

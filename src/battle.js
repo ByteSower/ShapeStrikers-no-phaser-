@@ -79,6 +79,8 @@ class BattleSystem {
   start(playerUnits, enemyUnits) {
     this._playerUnits = playerUnits.slice();
     this._enemyUnits  = enemyUnits.slice();
+    this._resetBattleScopedUnitState(this._playerUnits);
+    this._resetBattleScopedUnitState(this._enemyUnits);
     this._resetReplayLog();
     this._running = true;
     this._log('⚔️ Battle begins!', 'system');
@@ -89,6 +91,23 @@ class BattleSystem {
       enemyUnits: this._snapshotUnits(this._enemyUnits),
     });
     this._scheduleRound();
+  }
+
+  _resetBattleScopedUnitState(units) {
+    for (const unit of units || []) {
+      unit._kills = 0;
+
+      const evolveBaseAttack = unit._evolveBase?.attack;
+      const evolveBaseDefense = unit._evolveBase?.defense;
+      if (unit.stats) {
+        if (Number.isFinite(evolveBaseAttack)) unit.stats.attack = evolveBaseAttack;
+        if (Number.isFinite(evolveBaseDefense)) unit.stats.defense = evolveBaseDefense;
+      }
+
+      unit._turnsSurvived = 0;
+      unit._evolveStacks = 0;
+      delete unit._evolveBase;
+    }
   }
 
   stop() {
@@ -462,8 +481,7 @@ class BattleSystem {
     this._log(`✨ ${this._n(unit)} uses ${ab.name}!`, 'ability', this._side(unit));
     this._emitAbilityUsed(unit, ab.name);
 
-    const unitRange = unit.stats.range || 1;
-    const aliveEnemies = enemies.filter(u => u.hp > 0 && Math.abs(unit.row - u.row) <= unitRange && !u.statusEffects.find(s => s.type === 'untargetable'));
+    const aliveEnemies = this._getPrioritizedTargets(unit, enemies);
     const aliveAllies  = allies.filter(u => u.hp > 0);
 
     // ── Per-unit ability dispatch ─────────────────────────────────────────
@@ -543,7 +561,7 @@ class BattleSystem {
 
       // ---- TIER 2 ----
       case 'fire_warrior':   // Blazing Charge: damage enemies in front in same column + burn
-        { const inFront = aliveEnemies.filter(e => e.col === unit.col && (unit.isEnemy ? e.row > unit.row : e.row < unit.row));
+        { const inFront = enemies.filter(e => e.hp > 0 && !e.statusEffects.find(s => s.type === 'untargetable') && e.col === unit.col && (unit.isEnemy ? e.row > unit.row : e.row < unit.row));
           this._abilityDamage(unit, inFront, 1.4);
           this._applyStatusToTargets(inFront, 'burn', 3, 3); }
         break;
@@ -581,8 +599,8 @@ class BattleSystem {
       case 'arcane_priest':  // Arcane Restoration: heal lowest 25 HP + shield same target
         {
           const supportTargetOrder = (left, right) => {
-            const ratioDiff = (left.hp / left.maxHp) - (right.hp / right.maxHp);
-            if (ratioDiff !== 0) return ratioDiff;
+            const hpDiff = left.hp - right.hp;
+            if (hpDiff !== 0) return hpDiff;
             return String(left.id) < String(right.id) ? -1 : String(left.id) > String(right.id) ? 1 : 0;
           };
           const injuredAllies = aliveAllies.filter(target => target.hp > 0 && target.hp < target.maxHp);
@@ -780,7 +798,7 @@ class BattleSystem {
     const targets = healAll
       ? allies.filter(u => u.hp > 0)
       : [allies.filter(u => u.hp > 0).sort((a, b) => {
-          const diff = (a.hp / a.maxHp) - (b.hp / b.maxHp);
+          const diff = a.hp - b.hp;
           if (diff !== 0) return diff;
           return String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0;
         })[0]].filter(Boolean);
@@ -867,25 +885,25 @@ class BattleSystem {
     if (unit.definition.isBoss) this._checkBossPhase(unit);
   }
 
-  _pickTarget(attacker, targets) {
-    const alive = targets.filter(t => {
+  _getPrioritizedTargets(attacker, targets, maxRange = attacker.stats.range || 1) {
+    return targets.filter(t => {
       if (t.hp <= 0) return false;
       if (t.statusEffects.find(s => s.type === 'untargetable')) return false;
       // Check range: row distance only (lane-based combat)
       const dist = Math.abs(attacker.row - t.row);
-      if (dist > (attacker.stats.range || 1)) return false;
+      if (dist > maxRange) return false;
       return true;
-    });
-    if (alive.length === 0) return null;
-    // Prefer units in same column (lane), else lowest HP
-    const sameCol = alive.filter(t => t.col === attacker.col);
-    const pool = sameCol.length > 0 ? sameCol : alive;
-    // Stable sort: primary = lowest HP, tie-break = string id (deterministic cross-engine)
-    return pool.sort((a, b) => {
+    }).slice().sort((a, b) => {
+      if (a.col === attacker.col && b.col !== attacker.col) return -1;
+      if (a.col !== attacker.col && b.col === attacker.col) return 1;
       const diff = a.hp - b.hp;
       if (diff !== 0) return diff;
       return String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0;
-    })[0];
+    });
+  }
+
+  _pickTarget(attacker, targets) {
+    return this._getPrioritizedTargets(attacker, targets)[0] || null;
   }
 
   _canUseAbility(unit, targets) {
@@ -921,11 +939,9 @@ class BattleSystem {
       });
     }
     if (unit.definition.id === 'fire_warrior') {
-      const range = unit.stats.range || 1;
       return targets.some(target => {
         if (target.hp <= 0) return false;
         if (target.statusEffects.find(s => s.type === 'untargetable')) return false;
-        if (Math.abs(unit.row - target.row) > range) return false;
         if (target.col !== unit.col) return false;
         return unit.isEnemy ? target.row > unit.row : target.row < unit.row;
       });
