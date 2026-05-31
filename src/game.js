@@ -14,6 +14,7 @@ const Game = (() => {
   let _battleStats = null;    // per-battle performance tracking
   let _gameStats = null;      // cumulative game-wide stats
   let _currentSpeedMult = 1;  // persisted speed multiplier across waves
+  let _wavePreviewPinned = false;
   let _preBattlePositions = null; // saved player unit positions {id, row, col}
   let _battleParticipants = null; // snapshot of player units at battle start (for stats)
   let _inspectedUnit = null; // unit currently shown in detail panel during battle
@@ -605,12 +606,85 @@ const Game = (() => {
 
   // ── Wave Preview ──────────────────────────────────────────────────────────
 
+  function _setWavePreviewOpen(isOpen) {
+    _wavePreviewPinned = !!isOpen;
+    const wrap = document.getElementById('hud-wave');
+    if (!wrap) return;
+    wrap.classList.toggle('wave-preview-open', _wavePreviewPinned);
+    if (typeof wrap.setAttribute === 'function') {
+      wrap.setAttribute('aria-expanded', _wavePreviewPinned ? 'true' : 'false');
+    }
+  }
+
+  function _bindWavePreviewControls() {
+    const wrap = document.getElementById('hud-wave');
+    if (!wrap || wrap._wavePreviewControlsBound) return;
+
+    wrap._wavePreviewControlsBound = true;
+    wrap.tabIndex = 0;
+    if (typeof wrap.setAttribute === 'function') {
+      wrap.setAttribute('role', 'button');
+      wrap.setAttribute('aria-expanded', 'false');
+    }
+
+    const togglePreview = (event) => {
+      if (state?.phase !== 'prep') {
+        _setWavePreviewOpen(false);
+        return;
+      }
+      if ((state?.upgradeLevels?.['scouts_intel'] || 0) < 1) {
+        _setWavePreviewOpen(false);
+        return;
+      }
+      event?.preventDefault?.();
+      _setWavePreviewOpen(!_wavePreviewPinned);
+    };
+
+    wrap.addEventListener('click', togglePreview);
+    wrap.addEventListener('keydown', (event) => {
+      const key = String(event?.key || '');
+      if (key === 'Enter' || key === ' ') {
+        togglePreview(event);
+        return;
+      }
+      if (key === 'Escape') {
+        event?.preventDefault?.();
+        _setWavePreviewOpen(false);
+      }
+    });
+  }
+
   function _updateWavePreview() {
     const el = document.getElementById('wave-preview');
-    if (!el || !_currentWaveDef) { if (el) el.classList.add('hidden'); return; }
+    const wrap = document.getElementById('hud-wave');
+    if (!el || !_currentWaveDef) {
+      if (el) {
+        el.innerHTML = '';
+        el.classList.add('hidden');
+      }
+      _setWavePreviewOpen(false);
+      return;
+    }
     const scoutLevel = state?.upgradeLevels?.['scouts_intel'] || 0;
 
-    // Always show current wave basic info
+    if (scoutLevel < 1) {
+      el.innerHTML = '';
+      el.classList.add('hidden');
+      _setWavePreviewOpen(false);
+      if (typeof wrap?.setAttribute === 'function') {
+        wrap.setAttribute('aria-label', 'Wave preview locked until Scout\'s Intel is purchased.');
+      }
+      return;
+    }
+
+    if (typeof wrap?.setAttribute === 'function') {
+      wrap.setAttribute(
+        'aria-label',
+        'Wave preview. Hover or tap to inspect this wave and the next wave.'
+      );
+    }
+
+    // Scout's Intel reveals both the current and next wave during prep.
     const enemies = _currentWaveDef.enemies || [];
     let html = `<div class="wave-preview-title">🔍 Wave ${state.wave} Scout</div>`;
     let total = 0;
@@ -810,13 +884,8 @@ const Game = (() => {
     // Full Army: all 12 player grid slots filled (6 cols × 2 player rows)
     if (state.playerUnits.length >= 12) _unlockAchievement('full_army');
     // Synergy Master: 3+ active synergies
-    const elemCounts = {};
-    for (const u of state.playerUnits) {
-      const e = u.definition?.element;
-      if (e) elemCounts[e] = (elemCounts[e] || 0) + 1;
-    }
-    const activeSynergies = ELEMENT_SYNERGIES.filter(s => (elemCounts[s.element] || 0) >= s.requiredCount).length;
-    if (activeSynergies >= 3) _unlockAchievement('synergy_master');
+    const activeSynergies = _getActiveSynergiesForUnits(state.playerUnits);
+    if (activeSynergies.length >= 3) _unlockAchievement('synergy_master');
     // Big Spender: 10+ upgrades bought
     if (_totalUpgradesBought >= 10) _unlockAchievement('big_spender');
   }
@@ -851,12 +920,13 @@ const Game = (() => {
 
   // ── Synergy Display Helpers ───────────────────────────────────────────────
 
-  /** Get active synergies for a specific unit based on current team composition */
-  function _getActiveSynergiesForUnit(unit) {
-    // Synergies now buff ALL player units — return every active synergy regardless of this unit's element.
-    // The element filter is only used to pick WHICH synergies are triggered (need 2+ of that element).
+  function _getActiveSynergiesForUnits(units) {
     const counts = {};
-    for (const u of state.playerUnits) counts[u.definition.element] = (counts[u.definition.element] || 0) + 1;
+    for (const unit of units || []) {
+      const element = unit.definition?.element;
+      if (element) counts[element] = (counts[element] || 0) + 1;
+    }
+
     const byKey = {};
     for (const syn of ELEMENT_SYNERGIES) {
       if ((counts[syn.element] || 0) >= syn.requiredCount) {
@@ -866,20 +936,23 @@ const Game = (() => {
     return Object.values(byKey);
   }
 
+  /** Get active synergies for a specific unit based on current team composition */
+  function _getActiveSynergiesForUnit(unit) {
+    // Synergies now buff ALL player units — return every active synergy regardless of this unit's element.
+    // The element filter is only used to pick WHICH synergies are triggered (need 2+ of that element).
+    return _getActiveSynergiesForUnits(state.playerUnits);
+  }
+
   /** Refresh synergy icons on all player unit tiles */
   function _refreshSynergyIcons() {
-    const counts = {};
-    for (const u of state.playerUnits) counts[u.definition.element] = (counts[u.definition.element] || 0) + 1;
     const activeSynsByElement = {};
-    for (const syn of ELEMENT_SYNERGIES) {
-      if ((counts[syn.element] || 0) >= syn.requiredCount) {
-        if (!activeSynsByElement[syn.element]) activeSynsByElement[syn.element] = {};
-        activeSynsByElement[syn.element][syn.bonus.stat] = syn;
-      }
+    for (const syn of _getActiveSynergiesForUnits(state.playerUnits)) {
+      if (!activeSynsByElement[syn.element]) activeSynsByElement[syn.element] = [];
+      activeSynsByElement[syn.element].push(syn);
     }
     for (const u of state.playerUnits) {
       const elem = u.definition.element;
-      const syns = activeSynsByElement[elem] ? Object.values(activeSynsByElement[elem]) : [];
+      const syns = activeSynsByElement[elem] || [];
       Grid.updateSynergyIcons(u.row, u.col, syns, elem);
     }
   }
@@ -1081,7 +1154,17 @@ const Game = (() => {
     }
 
     // Always show unit detail when clicking a shop card (even if can't buy)
-    UI.showUnitDetail({ definition: def, hp: def.stats.hp, maxHp: def.stats.hp, stats: { ...def.stats }, statusEffects: [] });
+    const previewUnit = {
+      definition: def,
+      hp: def.stats.hp,
+      maxHp: def.stats.hp,
+      stats: { ...def.stats },
+      statusEffects: [],
+      isEnemy: false,
+    };
+    _applyUpgradeBuffsToUnit(previewUnit);
+    const previewSynergies = _getActiveSynergiesForUnits([...state.playerUnits, previewUnit]);
+    UI.showUnitDetail(previewUnit, state.upgradeLevels, previewSynergies);
 
     if (state.phase !== 'prep') { UI.showMessage('Can only buy during the shop phase.'); return; }
     if (state.playerUnits.length >= _maxUnits()) { UI.showMessage('Army is full! Upgrade Army Expansion.'); return; }
@@ -1132,6 +1215,13 @@ const Game = (() => {
     return state.playerUnits.find(u => u.row === row && u.col === col) || null;
   }
 
+  function _replayUnitAt(row, col) {
+    for (const unit of Object.values(_mpReplayUnitsById || {})) {
+      if (unit && unit.row === row && unit.col === col) return unit;
+    }
+    return null;
+  }
+
   function _mkUnit(def, row, col, isEnemy = false) {
     const unit = {
       id:             nextUnitId++,
@@ -1165,7 +1255,7 @@ const Game = (() => {
 
     // During battle — allow inspecting any unit (read-only)
     if (state.phase === 'battle') {
-      const unit = clickedUnit || clickedEnemy;
+      const unit = _replayUnitAt(row, col) || clickedUnit || clickedEnemy;
       if (unit) {
         _inspectedUnit = unit;
         Grid.clearSelection();
@@ -1399,6 +1489,7 @@ const Game = (() => {
     const waveDef = _currentWaveDef;
 
     state.phase = 'battle';
+  _setWavePreviewOpen(false);
     state.selectedUnit = null;
     state.selectedShopIdx = null;
     // Check prep-phase achievements before battle
@@ -1780,6 +1871,7 @@ const Game = (() => {
       isEnemy: !!viewSnapshot.isEnemy,
       row: viewSnapshot.row,
       col: viewSnapshot.col,
+      _alreadyBoosted: true,
     });
 
     _mpReplayUnitsById[snapshot.id] = unit;
@@ -2465,6 +2557,7 @@ const Game = (() => {
     if (state.wave >= totalWaves) { _handleGameWin(); return; }
     state.wave++;
     state.phase = 'prep';
+    _setWavePreviewOpen(false);
     // Pre-generate upcoming wave for preview tooltip
     _currentWaveDef = WaveGenerator.generate(state.wave);
     _updateWavePreview();
@@ -2582,12 +2675,17 @@ const Game = (() => {
     // Immediate effects (match Phaser original)
     if (id === 'refresh_master') state.refreshesLeft += (upg.effect.value || 1);
 
-    UI.showMessage(`${upg.name} upgraded to level ${level + 1}!`);
+    UI.showMessage(
+      id === 'scouts_intel'
+        ? '🔭 Scout\'s Intel unlocked — hover or tap the wave badge to inspect the next wave.'
+        : `${upg.name} upgraded to level ${level + 1}!`
+    );
     UI.renderShop(state.shopUnits, state.gold, _buyShopUnit);
     _updateUpgradeList();
     _updateRefreshBtn();
     _refreshHUD();
     UI.updateSynergies(state.playerUnits);
+    if (id === 'scouts_intel') _updateWavePreview();
 
     // Update upgrade badges on all player units
     if (id === 'elite_training' || id === 'double_edge') {
@@ -2744,6 +2842,8 @@ const Game = (() => {
     Grid.build();
     Grid.onClick    = _handleTileClick;
     Grid.onRightClick = _handleTileRightClick;
+    _bindWavePreviewControls();
+    _setWavePreviewOpen(false);
 
     refreshShop(true);
     UI.updateSynergies([]);
@@ -5775,6 +5875,7 @@ const Game = (() => {
     playLastMpReplay: _playLastMpReplay,
     getRefreshCost,
     getMultiplayerPolicy,
+    getActiveSynergiesForUnits: _getActiveSynergiesForUnits,
     showAchievements: _showAchievements,
     showChallenges: _showChallenges,
     showLeaderboard: _showLeaderboard,

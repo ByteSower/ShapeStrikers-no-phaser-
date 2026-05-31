@@ -309,6 +309,7 @@ function loadGameContext({
     forceMatchEndCalls: [],
   };
   const tileElements = new Map();
+  const gridUnits = new Map();
 
   let multiplayerActive = false;
   let multiplayerCallbacks = {};
@@ -660,8 +661,12 @@ function loadGameContext({
         if (!tileElements.has(key)) tileElements.set(key, document.createElement('div'));
         return tileElements.get(key);
       },
-      removeUnitFromTile() {},
-      placeUnit() {},
+      removeUnitFromTile(row, col) {
+        gridUnits.delete(`${row},${col}`);
+      },
+      placeUnit(unit, row, col) {
+        gridUnits.set(`${row},${col}`, plain(unit));
+      },
       resetAnimations() {},
       updateUnitHp() {},
       updateStatusIcons() {},
@@ -930,8 +935,14 @@ function loadGameContext({
     replayControls,
     gridCalls,
     unitDetailCalls,
+    getGridUnits() {
+      return [...gridUnits.entries()].map(([key, unit]) => ({ key, unit: plain(unit) }));
+    },
     getCurrentUnitDetail() {
       return plain(currentUnitDetail);
+    },
+    setElementSynergies(nextSynergies) {
+      context.ELEMENT_SYNERGIES = plain(nextSynergies || []);
     },
     getSavedSession() {
       return currentSavedSession;
@@ -1483,6 +1494,68 @@ await test('Multiplayer prep hides disabled upgrades and blocks buying them', ()
   assert.equal(uiMessages.includes('This upgrade is disabled in multiplayer.'), true);
 });
 
+await test('Scout\'s Intel stays locked until bought and resets on a fresh run', () => {
+  const {
+    Game,
+    document,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'hud-wave',
+      'wave-preview',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const hudWave = document.getElementById('hud-wave');
+  const wavePreview = document.getElementById('wave-preview');
+
+  assert.equal(wavePreview.classList.contains('hidden'), true, 'Prep should keep the wave preview hidden before Scout\'s Intel is purchased');
+  assert.equal(wavePreview.innerHTML, '', 'Prep should clear any stale scout markup before Scout\'s Intel is purchased');
+  hudWave.click();
+  assert.equal(hudWave.classList.contains('wave-preview-open'), false, 'Clicking the wave badge should do nothing before Scout\'s Intel is purchased');
+  assert.equal(wavePreview.innerHTML.includes('Next Wave 2'), false, 'Prep should not reveal the next wave before Scout\'s Intel is bought');
+
+  Game.nextWave();
+  Game.nextWave();
+  Game.nextWave();
+
+  assert.equal(wavePreview.classList.contains('hidden'), true, 'Later prep phases should also keep the preview hidden until Scout\'s Intel is purchased');
+  assert.equal(wavePreview.innerHTML.includes('Next Wave 5'), false, 'The later prep phase should still hide the next wave before Scout\'s Intel is bought');
+
+  Game.state.gold = 99;
+  Game.buyUpgrade('scouts_intel');
+
+  assert.equal(wavePreview.classList.contains('hidden'), false, 'Buying Scout\'s Intel should reveal the wave preview immediately');
+  assert.ok(wavePreview.innerHTML.includes('Wave 4 Scout'), 'Buying Scout\'s Intel should reveal the current wave scout info immediately');
+  assert.ok(wavePreview.innerHTML.includes('Next Wave 5'), 'Buying Scout\'s Intel should immediately refresh the prep wave preview with the next wave');
+  assert.ok(wavePreview.innerHTML.includes('HP:'), 'Scout\'s Intel should show the next wave stats in the prep preview');
+  assert.equal(hudWave.classList.contains('wave-preview-open'), false, 'The wave preview should start collapsed until the player opens it');
+
+  hudWave.click();
+  assert.equal(hudWave.classList.contains('wave-preview-open'), true, 'Clicking the wave badge during prep should open the Scout\'s Intel preview for tap/mobile access');
+
+  hudWave.click();
+  assert.equal(hudWave.classList.contains('wave-preview-open'), false, 'Clicking the wave badge again should close the Scout\'s Intel preview');
+
+  Game.nextWave();
+
+  assert.ok(wavePreview.innerHTML.includes('Wave 5 Scout'), 'Advancing to the next prep phase should refresh the current wave scout info');
+  assert.ok(wavePreview.innerHTML.includes('Next Wave 6'), 'Scout\'s Intel should keep revealing the next wave on later prep phases after purchase');
+
+  Game.startGame('normal');
+
+  assert.equal(Game.state.upgradeLevels.scouts_intel, undefined, 'A fresh run should not keep Scout\'s Intel from the previous run');
+  assert.equal(wavePreview.classList.contains('hidden'), true, 'Starting a fresh run should hide the Scout\'s Intel preview again');
+  assert.equal(wavePreview.innerHTML, '', 'Starting a fresh run should clear the previous run\'s scout preview markup');
+  assert.equal(hudWave.classList.contains('wave-preview-open'), false, 'Starting a fresh run should collapse the wave badge preview state');
+});
+
 await test('Pending shop purchases recheck affordability before placement after later gold spend', () => {
   const {
     Game,
@@ -1524,6 +1597,38 @@ await test('Pending shop purchases recheck affordability before placement after 
   assert.equal(Game.state.gold, goldBeforeUpgrade - 5, 'Placement should recheck affordability and avoid overspending');
   assert.equal(Game.state.playerUnits.length, 0, 'Unaffordable pending purchase should not place a unit');
   assert.equal(Game.state.shopUnits[0].cost, 8, 'Failed placement should leave the shop card available');
+});
+
+await test('Upgrade purchases clear any stale pending shop detail panel state', () => {
+  const {
+    Game,
+    clickShop,
+    getCurrentUnitDetail,
+    unitDetailCalls,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  clickShop(0);
+
+  const clearDetailBeforeUpgrade = unitDetailCalls.clear;
+
+  assert.notEqual(getCurrentUnitDetail(), null, 'Selecting a shop card should populate the detail panel before the upgrade purchase');
+  assert.equal(Game.state.selectedShopIdx, 0, 'Shop card should be pending before the upgrade purchase cancels it');
+
+  Game.buyUpgrade('field_medic');
+
+  assert.equal(Game.state.selectedShopIdx, null, 'Upgrade purchases should cancel the pending shop card state');
+  assert.equal(getCurrentUnitDetail(), null, 'Upgrade purchases should clear stale detail from the canceled shop card');
+  assert.equal(unitDetailCalls.clear, clearDetailBeforeUpgrade + 1, 'Upgrade purchases should explicitly clear the canceled shop-card detail panel');
 });
 
 await test('Clicking an unaffordable different shop card cancels the previously armed purchase', () => {
@@ -1569,6 +1674,342 @@ await test('Clicking an unaffordable different shop card cancels the previously 
 
   assert.equal(Game.state.playerUnits.length, 0, 'Clicking a tile after the blocked shop click should not place the previously armed unit');
   assert.equal(Game.state.shopUnits[0].cost, 1, 'Canceling the hidden pending purchase should leave the original shop card available');
+});
+
+await test('Selecting a shop card previews current upgrade buffs and active team synergies', () => {
+  const {
+    Game,
+    clickShop,
+    getCurrentUnitDetail,
+    setElementSynergies,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  setElementSynergies([
+    { element: 'fire', requiredCount: 2, bonus: { stat: 'attack', multiplier: 1.15 }, description: '2🔥: +15% ATK' },
+  ]);
+
+  Game.state.upgradeLevels = { elite_training: 1 };
+  Game.state.playerUnits = [
+    {
+      id: 'p-fire-a',
+      name: 'Fire Ally A',
+      definition: {
+        id: 'fire-a',
+        name: 'Fire Ally A',
+        element: 'fire',
+        cost: 1,
+        tier: 1,
+        stats: { hp: 10, attack: 6, defense: 2, speed: 3, range: 1 },
+        ability: { name: 'Spark', description: 'Test ability', cooldown: 1 },
+      },
+      hp: 10,
+      maxHp: 10,
+      stats: { hp: 10, attack: 6, defense: 2, speed: 3, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 3,
+      col: 0,
+    },
+    {
+      id: 'p-fire-b',
+      name: 'Fire Ally B',
+      definition: {
+        id: 'fire-b',
+        name: 'Fire Ally B',
+        element: 'fire',
+        cost: 1,
+        tier: 1,
+        stats: { hp: 11, attack: 7, defense: 2, speed: 2, range: 1 },
+        ability: { name: 'Blaze', description: 'Test ability', cooldown: 1 },
+      },
+      hp: 11,
+      maxHp: 11,
+      stats: { hp: 11, attack: 7, defense: 2, speed: 2, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 3,
+      col: 1,
+    },
+  ];
+
+  Game.state.shopUnits[0] = {
+    id: 'shop-preview-target',
+    name: 'Shop Preview Target',
+    element: 'ice',
+    cost: 1,
+    tier: 1,
+    stats: { hp: 20, attack: 20, defense: 10, speed: 10, range: 1 },
+    ability: { name: 'Preview', description: 'Test ability', cooldown: 1 },
+  };
+
+  clickShop(0);
+
+  const detail = getCurrentUnitDetail();
+  assert.ok(detail, 'Selecting a shop card should populate the detail payload');
+  assert.equal(detail.upgradeLevels.elite_training, 1, 'Shop preview should receive the current upgrade levels');
+  assert.equal(detail.unit.stats.attack, 21, 'Shop preview should include active upgrade buffs in the previewed unit stats');
+  assert.deepEqual(
+    (detail.synergies || []).map((syn) => syn.description),
+    ['2🔥: +15% ATK'],
+    'Shop preview should receive the active team synergies for unit-card projection'
+  );
+});
+
+await test('Selecting a shop card previews the synergy that the purchase would newly activate', () => {
+  const {
+    Game,
+    clickShop,
+    getCurrentUnitDetail,
+    setElementSynergies,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  setElementSynergies([
+    { element: 'fire', requiredCount: 2, bonus: { stat: 'attack', multiplier: 1.15 }, description: '2🔥: +15% ATK' },
+  ]);
+
+  Game.state.playerUnits = [
+    {
+      id: 'p-fire-preview-base',
+      name: 'Fire Preview Base',
+      definition: {
+        id: 'fire-preview-base',
+        name: 'Fire Preview Base',
+        element: 'fire',
+        cost: 1,
+        tier: 1,
+        stats: { hp: 10, attack: 6, defense: 2, speed: 3, range: 1 },
+        ability: { name: 'Spark', description: 'Test ability', cooldown: 1 },
+      },
+      hp: 10,
+      maxHp: 10,
+      stats: { hp: 10, attack: 6, defense: 2, speed: 3, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 3,
+      col: 0,
+    },
+  ];
+
+  Game.state.shopUnits[0] = {
+    id: 'shop-preview-fire-finisher',
+    name: 'Shop Preview Fire Finisher',
+    element: 'fire',
+    cost: 1,
+    tier: 1,
+    stats: { hp: 20, attack: 20, defense: 10, speed: 10, range: 1 },
+    ability: { name: 'Preview', description: 'Test ability', cooldown: 1 },
+  };
+
+  clickShop(0);
+
+  const detail = getCurrentUnitDetail();
+  assert.ok(detail, 'Selecting a shop card should populate the detail payload');
+  assert.deepEqual(
+    (detail.synergies || []).map((syn) => syn.description),
+    ['2🔥: +15% ATK'],
+    'Shop preview should include synergies that would activate after buying the clicked shop card'
+  );
+});
+
+await test('Selecting a third fire shop card previews the higher fire tier instead of both attack tiers', () => {
+  const {
+    Game,
+    clickShop,
+    getCurrentUnitDetail,
+    setElementSynergies,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  setElementSynergies([
+    { element: 'fire', requiredCount: 2, bonus: { stat: 'attack', multiplier: 1.15 }, description: '2🔥: +15% ATK' },
+    { element: 'fire', requiredCount: 3, bonus: { stat: 'attack', multiplier: 1.30 }, description: '3🔥: +30% ATK' },
+  ]);
+
+  Game.state.playerUnits = [
+    {
+      id: 'p-fire-a',
+      name: 'Fire A',
+      definition: {
+        id: 'fire-a',
+        name: 'Fire A',
+        element: 'fire',
+        cost: 1,
+        tier: 1,
+        stats: { hp: 10, attack: 6, defense: 2, speed: 3, range: 1 },
+        ability: { name: 'Spark', description: 'Test ability', cooldown: 1 },
+      },
+      hp: 10,
+      maxHp: 10,
+      stats: { hp: 10, attack: 6, defense: 2, speed: 3, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 3,
+      col: 0,
+    },
+    {
+      id: 'p-fire-b',
+      name: 'Fire B',
+      definition: {
+        id: 'fire-b',
+        name: 'Fire B',
+        element: 'fire',
+        cost: 1,
+        tier: 1,
+        stats: { hp: 11, attack: 7, defense: 2, speed: 2, range: 1 },
+        ability: { name: 'Blaze', description: 'Test ability', cooldown: 1 },
+      },
+      hp: 11,
+      maxHp: 11,
+      stats: { hp: 11, attack: 7, defense: 2, speed: 2, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 3,
+      col: 1,
+    },
+  ];
+
+  Game.state.shopUnits[0] = {
+    id: 'shop-preview-fire-tier-3',
+    name: 'Shop Preview Fire Tier 3',
+    element: 'fire',
+    cost: 1,
+    tier: 1,
+    stats: { hp: 20, attack: 20, defense: 10, speed: 10, range: 1 },
+    ability: { name: 'Preview', description: 'Test ability', cooldown: 1 },
+  };
+
+  clickShop(0);
+
+  const detail = getCurrentUnitDetail();
+  assert.ok(detail, 'Selecting a shop card should populate the detail payload');
+  assert.deepEqual(
+    (detail.synergies || []).map((syn) => syn.description),
+    ['3🔥: +30% ATK'],
+    'Shop preview should collapse same-stat tiers to the highest fire attack bonus after the purchase would complete 3 fire'
+  );
+});
+
+await test('Selecting a third void shop card previews both active void tiers after the purchase', () => {
+  const {
+    Game,
+    clickShop,
+    getCurrentUnitDetail,
+    setElementSynergies,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  setElementSynergies([
+    { element: 'void', requiredCount: 2, bonus: { stat: 'attack', multiplier: 1.25 }, description: '2🕳️: +25% ATK' },
+    { element: 'void', requiredCount: 3, bonus: { stat: 'hp', multiplier: 1.20 }, description: '3🕳️: +20% HP' },
+  ]);
+
+  Game.state.playerUnits = [
+    {
+      id: 'p-void-a',
+      name: 'Void A',
+      definition: {
+        id: 'void-a',
+        name: 'Void A',
+        element: 'void',
+        cost: 1,
+        tier: 1,
+        stats: { hp: 10, attack: 6, defense: 2, speed: 3, range: 1 },
+        ability: { name: 'Spark', description: 'Test ability', cooldown: 1 },
+      },
+      hp: 10,
+      maxHp: 10,
+      stats: { hp: 10, attack: 6, defense: 2, speed: 3, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 3,
+      col: 0,
+    },
+    {
+      id: 'p-void-b',
+      name: 'Void B',
+      definition: {
+        id: 'void-b',
+        name: 'Void B',
+        element: 'void',
+        cost: 1,
+        tier: 1,
+        stats: { hp: 11, attack: 7, defense: 2, speed: 2, range: 1 },
+        ability: { name: 'Blaze', description: 'Test ability', cooldown: 1 },
+      },
+      hp: 11,
+      maxHp: 11,
+      stats: { hp: 11, attack: 7, defense: 2, speed: 2, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 3,
+      col: 1,
+    },
+  ];
+
+  Game.state.shopUnits[0] = {
+    id: 'shop-preview-void-tier-3',
+    name: 'Shop Preview Void Tier 3',
+    element: 'void',
+    cost: 1,
+    tier: 1,
+    stats: { hp: 20, attack: 20, defense: 10, speed: 10, range: 1 },
+    ability: { name: 'Preview', description: 'Test ability', cooldown: 1 },
+  };
+
+  clickShop(0);
+
+  const detail = getCurrentUnitDetail();
+  assert.ok(detail, 'Selecting a shop card should populate the detail payload');
+  assert.deepEqual(
+    (detail.synergies || []).map((syn) => syn.description),
+    ['2🕳️: +25% ATK', '3🕳️: +20% HP'],
+    'Shop preview should keep both active void tiers when the purchase would add a new HP tier instead of replacing the attack tier'
+  );
 });
 
 await test('Refreshing the shop clears any armed pending placement highlights', () => {
@@ -1721,6 +2162,53 @@ await test('Buying an upgrade clears any selected unit move state', () => {
 
   assert.equal(Game.state.playerUnits[0].row, 3, 'Clicking after the upgrade purchase should not move the previously selected unit');
   assert.equal(Game.state.playerUnits[0].col, 0, 'Upgrade purchases should leave the unit in place instead of keeping a hidden move selection');
+});
+
+await test('Upgrade purchases clear any stale selected unit detail panel state', () => {
+  const {
+    Game,
+    clickTile,
+    getCurrentUnitDetail,
+    unitDetailCalls,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-upgrade-detail',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickTile(3, 0);
+
+  const clearDetailBeforeUpgrade = unitDetailCalls.clear;
+
+  assert.notEqual(getCurrentUnitDetail(), null, 'Selecting a unit should populate the detail panel before the upgrade purchase');
+  assert.equal(Game.state.selectedUnit?.id, 'p-upgrade-detail', 'Unit should be selected before the upgrade purchase cancels it');
+
+  Game.buyUpgrade('field_medic');
+
+  assert.equal(Game.state.selectedUnit, null, 'Upgrade purchases should cancel the selected unit state');
+  assert.equal(getCurrentUnitDetail(), null, 'Upgrade purchases should clear stale detail from the canceled selected unit');
+  assert.equal(unitDetailCalls.clear, clearDetailBeforeUpgrade + 1, 'Upgrade purchases should explicitly clear the canceled selected-unit detail panel');
 });
 
 await test('Multiplayer reroll clears any selected unit move state', () => {
@@ -2135,7 +2623,9 @@ await test('Selling a selected unit clears move selection highlights and selecti
     Game,
     clickTile,
     document,
+    getCurrentUnitDetail,
     gridCalls,
+    unitDetailCalls,
   } = loadGameContext({
     savedSession: null,
     domElementIds: [
@@ -2168,13 +2658,17 @@ await test('Selling a selected unit clears move selection highlights and selecti
 
   const clearSelectionBeforeSell = gridCalls.clearSelection;
   const clearHighlightsBeforeSell = gridCalls.clearHighlights;
+  const clearDetailBeforeSell = unitDetailCalls.clear;
 
   assert.equal(Game.state.selectedUnit?.id, 'p-sell', 'Clicking the unit should select it before selling');
+  assert.notEqual(getCurrentUnitDetail(), null, 'Selecting the unit should populate the detail panel before selling');
 
   document.getElementById('btn-sell-unit')?.click();
 
   assert.equal(Game.state.playerUnits.length, 0, 'Selling the selected unit should remove it from the board');
   assert.equal(Game.state.selectedUnit, null, 'Selling the selected unit should clear the selection state');
+  assert.equal(getCurrentUnitDetail(), null, 'Selling the selected unit should clear stale detail from the sold unit');
+  assert.equal(unitDetailCalls.clear, clearDetailBeforeSell + 1, 'Selling the selected unit should explicitly clear the sold-unit detail panel');
   assert.equal(gridCalls.clearSelection, clearSelectionBeforeSell + 1, 'Selling the selected unit should clear the stale tile selection');
   assert.equal(gridCalls.clearHighlights, clearHighlightsBeforeSell + 1, 'Selling the selected unit should clear the stale move highlights');
 });
@@ -2186,6 +2680,8 @@ await test('Right-click sell cancels any armed pending shop purchase', () => {
     clickTile,
     clickTileRight,
     clickSellConfirmYes,
+    getCurrentUnitDetail,
+    unitDetailCalls,
   } = loadGameContext({
     savedSession: null,
     domElementIds: [
@@ -2215,18 +2711,127 @@ await test('Right-click sell cancels any armed pending shop purchase', () => {
 
   clickShop(0);
 
+  const clearDetailBeforeSell = unitDetailCalls.clear;
+
   assert.equal(Game.state.selectedShopIdx, 0, 'Shop card should be pending before the right-click sell flow');
+  assert.notEqual(getCurrentUnitDetail(), null, 'Selecting the shop card should populate the detail panel before the right-click sell flow');
 
   clickTileRight(3, 0);
   clickSellConfirmYes();
 
   assert.equal(Game.state.playerUnits.length, 0, 'Right-click sell confirm should still sell the unit');
   assert.equal(Game.state.selectedShopIdx, null, 'Selling through the confirm popup should cancel any pending shop placement');
+  assert.equal(getCurrentUnitDetail(), null, 'Right-click sell confirm should clear stale detail from the canceled shop card');
+  assert.equal(unitDetailCalls.clear, clearDetailBeforeSell + 2, 'Right-click sell confirm should clear both the canceled shop detail and the sold-unit detail state');
 
   clickTile(4, 1);
 
   assert.equal(Game.state.playerUnits.length, 0, 'Clicking after the sell confirm should not place the previously armed shop unit');
   assert.notEqual(Game.state.shopUnits[0], null, 'Canceling the pending purchase during sell should leave the shop card available');
+});
+
+await test('Canceling a selected-unit sell confirm keeps the selection and detail panel intact', () => {
+  const {
+    Game,
+    clickTile,
+    clickTileRight,
+    document,
+    getCurrentUnitDetail,
+    unitDetailCalls,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-sell-cancel',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickTile(3, 0);
+
+  const clearDetailBeforeCancel = unitDetailCalls.clear;
+  const detailBeforeCancel = getCurrentUnitDetail();
+
+  assert.equal(Game.state.selectedUnit?.id, 'p-sell-cancel', 'Clicking the unit should select it before opening the sell confirm');
+  assert.ok(detailBeforeCancel, 'Selecting the unit should populate the detail panel before canceling the sell confirm');
+
+  clickTileRight(3, 0);
+  document.querySelector('.sell-confirm')?.querySelector('.sell-no')?.click();
+
+  assert.equal(Game.state.playerUnits.length, 1, 'Canceling the sell confirm should keep the selected unit on the board');
+  assert.equal(Game.state.selectedUnit?.id, 'p-sell-cancel', 'Canceling the sell confirm should keep the selected unit state intact');
+  assert.deepEqual(getCurrentUnitDetail(), detailBeforeCancel, 'Canceling the sell confirm should preserve the selected-unit detail panel');
+  assert.equal(unitDetailCalls.clear, clearDetailBeforeCancel, 'Canceling the sell confirm should not clear the selected-unit detail panel');
+});
+
+await test('Canceling a right-click sell confirm keeps the armed shop preview intact', () => {
+  const {
+    Game,
+    clickShop,
+    clickTileRight,
+    document,
+    getCurrentUnitDetail,
+    unitDetailCalls,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+    ],
+  });
+
+  Game.init();
+  Game.startGame('normal');
+
+  const def = Game.state.shopUnits[0];
+  Game.state.playerUnits = [{
+    id: 'p-right-click-sell-cancel',
+    name: def.name,
+    definition: def,
+    hp: def.stats.hp,
+    maxHp: def.stats.hp,
+    stats: { ...def.stats },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 3,
+    col: 0,
+  }];
+
+  clickShop(0);
+
+  const clearDetailBeforeCancel = unitDetailCalls.clear;
+  const detailBeforeCancel = getCurrentUnitDetail();
+
+  assert.equal(Game.state.selectedShopIdx, 0, 'Shop card should still be armed before canceling the sell confirm');
+  assert.ok(detailBeforeCancel, 'Selecting the shop card should populate the preview detail before canceling the sell confirm');
+
+  clickTileRight(3, 0);
+  document.querySelector('.sell-confirm')?.querySelector('.sell-no')?.click();
+
+  assert.equal(Game.state.playerUnits.length, 1, 'Canceling the sell confirm should keep the unit on the board');
+  assert.equal(Game.state.selectedShopIdx, 0, 'Canceling the sell confirm should keep the pending shop purchase armed');
+  assert.deepEqual(getCurrentUnitDetail(), detailBeforeCancel, 'Canceling the sell confirm should preserve the armed shop preview detail');
+  assert.equal(unitDetailCalls.clear, clearDetailBeforeCancel, 'Canceling the sell confirm should not clear the detail panel');
 });
 
 await test('Multiplayer new prep round clears round-sensitive upgrades and restores base stats', () => {
@@ -2297,9 +2902,376 @@ await test('Multiplayer new prep round clears round-sensitive upgrades and resto
   assert.equal(visibleUpgradeIds.includes('double_edge'), true, 'Round-sensitive upgrades should be available again in the next prep round');
 });
 
+await test('Host battle_start snapshot keeps the upgraded prep stats shown in selected unit detail', () => {
+  const {
+    Game,
+    roomEvents,
+    replayControls,
+    fireMultiplayerCallback,
+    clickTile,
+    getCurrentUnitDetail,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+      'btn-sell-unit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-battle-start-stats',
+    opponentId: 'guest-battle-start-stats',
+    isHost: true,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 30);
+  Game.state.playerUnits = [{
+    id: 'p-battle-start-stats',
+    name: 'Battle Start Stat Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    attack: 4,
+    defense: 2,
+    speed: 1,
+    stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  Game.buyUpgrade('elite_training');
+  Game.buyUpgrade('double_edge');
+  clickTile(4, 0);
+
+  const detail = getCurrentUnitDetail();
+  assert.ok(detail, 'Selecting the upgraded unit should populate the prep detail panel before battle starts');
+  assert.equal(detail.unit.stats.attack, 5, 'Selected unit detail should show the upgraded prep attack');
+  assert.equal(detail.unit.stats.defense, 1, 'Selected unit detail should show the upgraded prep defense');
+
+  fireMultiplayerCallback('onBothReady');
+
+  assert.equal(replayControls.plays.length, 1, 'Host battle start should create a replay payload');
+  const battleStart = replayControls.plays[0].replayLog.events.find((evt) => evt.type === 'battle_start');
+  assert.ok(battleStart, 'Host replay payload should include a battle_start snapshot');
+  assert.equal(battleStart.playerUnits[0].stats.attack, detail.unit.stats.attack, 'battle_start should keep the upgraded attack shown in prep detail');
+  assert.equal(battleStart.playerUnits[0].stats.defense, detail.unit.stats.defense, 'battle_start should keep the upgraded defense shown in prep detail');
+  assert.equal(battleStart.playerUnits[0].stats.speed, detail.unit.stats.speed, 'battle_start should keep the upgraded speed shown in prep detail');
+  assert.equal(battleStart.playerUnits[0].row, detail.unit.row, 'battle_start should keep the prep row shown in selected unit detail');
+  assert.equal(battleStart.playerUnits[0].col, detail.unit.col, 'battle_start should keep the prep column shown in selected unit detail');
+});
+
+await test('Inspecting a multiplayer replay unit marks battle stats as already boosted for detail rendering', () => {
+  const {
+    Game,
+    roomEvents,
+    replayControls,
+    fireMultiplayerCallback,
+    clickTile,
+    getCurrentUnitDetail,
+    setElementSynergies,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+      'btn-sell-unit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-replay-detail',
+    opponentId: 'guest-replay-detail',
+    isHost: true,
+  });
+
+  setElementSynergies([
+    { element: 'fire', requiredCount: 2, bonus: { stat: 'attack', multiplier: 1.15 }, description: '2🔥: +15% ATK' },
+  ]);
+
+  fireMultiplayerCallback('onRoundReady', 1, 30);
+  Game.state.playerUnits = [
+    {
+      id: 'p-replay-a',
+      name: 'Replay Fire A',
+      definition: {
+        id: 'test_unit',
+        name: 'Test Unit',
+        element: 'fire',
+        stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+      },
+      hp: 12,
+      maxHp: 12,
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 4,
+      col: 0,
+    },
+    {
+      id: 'p-replay-b',
+      name: 'Replay Fire B',
+      definition: {
+        id: 'test_unit_b',
+        name: 'Test Unit B',
+        element: 'fire',
+        stats: { hp: 12, attack: 5, defense: 2, speed: 1, range: 1 },
+      },
+      hp: 12,
+      maxHp: 12,
+      stats: { hp: 12, attack: 5, defense: 2, speed: 1, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 4,
+      col: 1,
+    },
+  ];
+
+  fireMultiplayerCallback('onBothReady');
+
+  assert.equal(replayControls.plays.length, 1, 'Host replay playback should start once the round begins');
+
+  clickTile(4, 0);
+
+  const detail = getCurrentUnitDetail();
+  assert.ok(detail, 'Clicking a replay unit during battle should populate the detail panel');
+  assert.equal(detail.unit.stats.attack, 4, 'Replay detail should receive the battle snapshot attack from the clicked unit');
+  assert.equal(detail.unit._alreadyBoosted, true, 'Replay detail should mark battle snapshot stats as already boosted so UI does not project synergies a second time');
+  assert.deepEqual((detail.synergies || []).map((syn) => syn.description), ['2🔥: +15% ATK'], 'Replay detail should still receive the active player synergies for pill display');
+});
+
+await test('Guest replay inspection after resume uses the mirrored live replay unit instead of stale prep state', () => {
+  const {
+    Game,
+    roomEvents,
+    replayControls,
+    fireMultiplayerCallback,
+    setRound,
+    clickTile,
+    emitRoomStateChange,
+    getGridUnits,
+    getCurrentUnitDetail,
+    setElementSynergies,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+      'btn-sell-unit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-guest-replay-resume-detail',
+    opponentId: 'host-replay-resume-detail',
+    isHost: false,
+  });
+
+  setRound(1);
+  setElementSynergies([
+    { element: 'fire', requiredCount: 2, bonus: { stat: 'attack', multiplier: 1.15 }, description: '2🔥: +15% ATK' },
+  ]);
+
+  Game.state.playerUnits = [
+    {
+      id: 'guest-prep-a',
+      name: 'Guest Prep Fire A',
+      definition: {
+        id: 'guest-fire-a',
+        name: 'Guest Fire A',
+        element: 'fire',
+        stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+      },
+      hp: 12,
+      maxHp: 12,
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 4,
+      col: 2,
+    },
+    {
+      id: 'guest-prep-b',
+      name: 'Guest Prep Fire B',
+      definition: {
+        id: 'guest-fire-b',
+        name: 'Guest Fire B',
+        element: 'fire',
+        stats: { hp: 12, attack: 5, defense: 2, speed: 1, range: 1 },
+      },
+      hp: 12,
+      maxHp: 12,
+      stats: { hp: 12, attack: 5, defense: 2, speed: 1, range: 1 },
+      statusEffects: [],
+      abilityCooldown: 0,
+      isEnemy: false,
+      row: 3,
+      col: 2,
+    },
+  ];
+
+  fireMultiplayerCallback('onBothReady');
+
+  const replayPayload = {
+    roundNumber: 1,
+    boardHash: 'guest-resume-replay-hash',
+    hostWon: true,
+    replayLog: {
+      events: [
+        {
+          type: 'battle_start',
+          seq: 1,
+          turn: 0,
+          playerUnits: [
+            {
+              id: 'host-replay-a',
+              defId: 'host-fire-a',
+              name: 'Host Replay Fire A',
+              isEnemy: false,
+              hp: 12,
+              maxHp: 12,
+              row: 4,
+              col: 0,
+              stats: { hp: 12, attack: 7, defense: 2, speed: 1, range: 1 },
+              abilityCooldown: 0,
+              statusEffects: [],
+            },
+          ],
+          enemyUnits: [
+            {
+              id: 'guest-replay-a',
+              defId: 'guest-fire-a',
+              name: 'Guest Replay Fire A',
+              isEnemy: true,
+              hp: 12,
+              maxHp: 12,
+              row: 0,
+              col: 0,
+              stats: { hp: 12, attack: 6, defense: 2, speed: 1, range: 1 },
+              abilityCooldown: 0,
+              statusEffects: [],
+            },
+          ],
+        },
+        {
+          type: 'turn_start',
+          seq: 2,
+          turn: 1,
+        },
+        {
+          type: 'battle_end',
+          seq: 3,
+          turn: 1,
+          playerWon: true,
+          playerUnits: [],
+          enemyUnits: [],
+        },
+      ],
+    },
+  };
+
+  emitRoomStateChange('battle_replay', replayPayload);
+  emitRoomStateChange('phase_event', {
+    type: 'playback_start',
+    roundNumber: 1,
+    checkpointSeq: 1,
+    boardHash: 'guest-resume-replay-hash',
+  });
+  emitRoomStateChange('playback_checkpoint', {
+    roundNumber: 1,
+    seq: 2,
+    turn: 1,
+    boardHash: 'guest-resume-replay-hash',
+  });
+  emitRoomStateChange('phase_event', {
+    type: 'playback_paused',
+    roundNumber: 1,
+    checkpointSeq: 2,
+    checkpointTurn: 1,
+    boardHash: 'guest-resume-replay-hash',
+  });
+  emitRoomStateChange('phase_event', {
+    type: 'playback_resume_pending',
+    roundNumber: 1,
+    checkpointSeq: 2,
+    checkpointTurn: 1,
+    boardHash: 'guest-resume-replay-hash',
+    resumeAt: 12345,
+  });
+  emitRoomStateChange('phase_event', {
+    type: 'playback_start',
+    roundNumber: 1,
+    checkpointSeq: 2,
+    checkpointTurn: 1,
+    boardHash: 'guest-resume-replay-hash',
+    resumed: true,
+  });
+
+  assert.equal(replayControls.plays.length, 2, 'Guest replay should restart once playback resumes');
+
+  const gridUnits = getGridUnits();
+  assert.equal(gridUnits.length, 2, `Guest replay resume should render two replay units, got ${JSON.stringify(gridUnits)}`);
+
+  const resumedGuestReplayUnit = gridUnits.find((entry) => entry?.unit?.stats?.attack === 6);
+  assert.ok(resumedGuestReplayUnit, `Guest replay resume should render the mirrored guest replay unit, got ${JSON.stringify(gridUnits)}`);
+
+  const [renderedRow, renderedCol] = resumedGuestReplayUnit.key.split(',').map((value) => Number(value));
+
+  clickTile(renderedRow, renderedCol);
+
+  const detail = getCurrentUnitDetail();
+  assert.ok(detail, 'Clicking the rendered guest replay unit after resume should populate the detail panel');
+  assert.equal(detail.unit.stats.attack, 6, 'Guest replay detail should come from the mirrored replay snapshot instead of the stale prep attack');
+  assert.equal(detail.unit._alreadyBoosted, true, 'Guest replay detail after resume should still mark battle stats as already boosted');
+  assert.deepEqual((detail.synergies || []).map((syn) => syn.description), ['2🔥: +15% ATK'], 'Guest replay detail should still use the local player synergy pills after mirroring');
+});
+
 await test('Host reconnect during battle re-broadcasts paused replay state and schedules resume', () => {
   const {
     Game,
+    clickTile,
+    getCurrentUnitDetail,
     roomEvents,
     roomStatus,
     replayControls,
@@ -2376,6 +3348,12 @@ await test('Host reconnect during battle re-broadcasts paused replay state and s
   const resumeSyncs = roomEvents.syncCalls.slice(syncCountBeforeResume);
   assert.equal(resumeSyncs.some((entry) => entry.key === 'phase_event' && entry.value.type === 'playback_start' && entry.value.resumed === true), true, 'Resume timer should re-emit playback_start with resumed=true');
   assert.equal(replayControls.plays.length, 2, 'Host should restart replay playback from the paused checkpoint');
+
+  clickTile(4, 0);
+
+  const resumedDetail = getCurrentUnitDetail();
+  assert.ok(resumedDetail, 'Clicking a unit after replay resume should still populate the detail panel');
+  assert.equal(resumedDetail.unit._alreadyBoosted, true, 'Replay inspection after resume should still use the live replay snapshot instead of stale prep-state units');
 });
 
 await test('Host serves retained authoritative_state for an older unresolved battle round after advancing', () => {

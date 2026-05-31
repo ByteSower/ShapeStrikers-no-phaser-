@@ -5,6 +5,7 @@
 
 // ─── Elements ────────────────────────────────────────────────────────────────
 const Element = Object.freeze({
+  FIRE:      'fire',
   ICE:       'ice',
   LIGHTNING: 'lightning',
   EARTH:     'earth',
@@ -53,7 +54,7 @@ const UPGRADES = [
   { id: 'war_chest',      name: '📈 War Chest',      description: '+10% interest per level on current gold (max 5g)',    cost: 6, maxLevel: 3, effect: { type: 'interestRate',      value: 0.1  } },
   { id: 'victory_bonus',  name: '🏆 Victory Bonus',  description: '+2 gold per wave won per level',      cost: 5, maxLevel: 3, effect: { type: 'goldPerWave',       value: 2    } },
   { id: 'refresh_master', name: '🔄 Refresh Master', description: '+1 refresh per round per level (base 1, max 3 total)',        cost: 6, maxLevel: 2, effect: { type: 'refreshesPerRound', value: 1    } },
-  { id: 'scouts_intel',   name: '🔭 Scout\'s Intel', description: 'Preview next wave enemies, stats & abilities', cost: 25, maxLevel: 1, effect: { type: 'scoutLevel',        value: 1    } },
+  { id: 'scouts_intel',   name: '🔭 Scout\'s Intel', description: 'During prep, hover or tap the wave badge to preview the next wave\'s enemies, stats, and abilities', cost: 25, maxLevel: 1, effect: { type: 'scoutLevel',        value: 1    } },
   { id: 'elite_training', name: '⬆️ Elite Training', description: 'Lv1: +5% ATK/SPD, Lv2: +10% ATK/+5% SPD, Lv3: +10% ATK/DEF/+5% SPD', cost: 7, maxLevel: 3, effect: { type: 'eliteTraining', value: 1 } },
   { id: 'mercenary',      name: '📜 Mercenary',      description: '+1 shop card per refresh',          cost: 6, maxLevel: 2, effect: { type: 'shopCards',          value: 1    } },
   { id: 'double_edge',    name: '⚔️ Double Edge',    description: '+20% ATK, −20% DEF all units',     cost: 5, maxLevel: 1, effect: { type: 'doubleEdge',        value: 1    } },
@@ -1082,6 +1083,16 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '1.0.23',
+    date: 'May 31, 2026',
+    title: '🔭 Scouting & Prep Audit Cleanup',
+    notes: [
+      '🔭 Scout\'s Intel now unlocks from the prep wave badge for the current run only, so fresh runs start without scouting until you buy it again',
+      '🛒 Shop previews and synergy callouts now line up better with your real team buffs, including mixed-stat synergy tiers and upgrade-influenced unit details',
+      '🧼 Battle setup now clears leftover cooldowns, status effects, boss phase state, and stale synergy snapshots more reliably before the next fight starts',
+    ],
+  },
   {
     version: '1.0.22',
     date: 'May 28, 2026',

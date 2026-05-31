@@ -241,9 +241,9 @@ Trim or rework the upgrade pool for multiplayer so it matches the round-based fo
 - `War Chest`
 - `Victory Bonus`
 
-### Extra Note: Scout's Intel Is Incomplete
+### Extra Note: Scout's Intel Multiplayer Outcome
 
-`Scout's Intel` is still not delivering its promised next-wave preview clearly in campaign or multiplayer. Users currently do not have a dependable way to see the next wave as described.
+`Scout's Intel` now works in single-player by revealing the next PvE wave from the prep-phase wave badge. It remains intentionally disabled in multiplayer, where there is no separate PvE next-wave preview to expose.
 
 ### Reset-Sensitive Upgrades
 

@@ -1112,6 +1112,8 @@ test('battle start clears prior-battle passive progress on reused unit objects',
   const pupilBaseDefense = pupil.stats.defense;
 
   ravager._kills = 4;
+  ravager.abilityCooldown = 2;
+  ravager.statusEffects = [{ type: 'burn', duration: 2, stacks: 1, value: 5 }];
   pupil._turnsSurvived = 9;
   pupil._evolveStacks = 3;
   pupil._evolveBase = { attack: pupilBaseAttack, defense: pupilBaseDefense };
@@ -1122,10 +1124,140 @@ test('battle start clears prior-battle passive progress on reused unit objects',
 
   assert.equal(ravager._kills, 0, 'battle start should reset kill-stack counters from the previous battle');
   assert.equal(battleSystem._calcAttackPower(ravager), ravager.stats.attack, 'battle start should remove prior-battle kill-stack attack bonuses');
+  assert.equal(ravager.abilityCooldown, 0, 'battle start should reset lingering ability cooldowns from the previous battle');
+  assert.equal(ravager.statusEffects.length, 0, 'battle start should clear lingering status effects from the previous battle');
   assert.equal(pupil._turnsSurvived || 0, 0, 'battle start should reset evolve turn progress from the previous battle');
   assert.equal(pupil._evolveStacks || 0, 0, 'battle start should reset evolve stacks from the previous battle');
   assert.equal(pupil.stats.attack, pupilBaseAttack, 'battle start should restore evolved attack back to the unit\'s pre-battle base');
   assert.equal(pupil.stats.defense, pupilBaseDefense, 'battle start should restore evolved defense back to the unit\'s pre-battle base');
+});
+
+test('battle start clears reused boss phase state from the previous fight', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const boss = mkUnit(UNIT_MAP.boss_frost_colossus, 0, 0, true);
+  const player = mkUnit(UNIT_MAP.fire_imp, 4, 0, false);
+  const baseAttack = boss.stats.attack;
+  const baseDefense = boss.stats.defense;
+  const baseSpeed = boss.stats.speed;
+  const baseHp = boss.hp;
+  const baseMaxHp = boss.maxHp;
+
+  boss._currentPhaseIndex = 1;
+  boss._bossBaseStats = { attack: baseAttack, defense: baseDefense, speed: baseSpeed, hp: baseHp, maxHp: baseMaxHp };
+  boss.stats.attack = Math.floor(baseAttack * 1.5);
+  boss.stats.defense = Math.floor(baseDefense * 1.5);
+  boss.stats.speed = Math.floor(baseSpeed * 0.8);
+  boss.hp = 450;
+  boss.maxHp = 450;
+
+  battleSystem.start([player], [boss]);
+
+  assert.equal(boss._currentPhaseIndex, undefined, 'battle start should clear prior boss phase progress from reused boss objects');
+  assert.equal(boss._bossBaseStats, undefined, 'battle start should clear cached boss base stats from the previous fight');
+  assert.equal(boss.stats.attack, baseAttack, 'battle start should restore boss attack to its base value before phase logic runs again');
+  assert.equal(boss.stats.defense, baseDefense, 'battle start should restore boss defense to its base value before phase logic runs again');
+  assert.equal(boss.stats.speed, baseSpeed, 'battle start should restore boss speed to its base value before phase logic runs again');
+  assert.equal(boss.hp, baseHp, 'battle start should restore boss HP to its pre-phase value before the next fight');
+  assert.equal(boss.maxHp, baseMaxHp, 'battle start should restore boss max HP to its pre-phase value before the next fight');
+});
+
+test('battle start clears reused synergy state before a no-synergy fight begins', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const unit = mkUnit(UNIT_MAP.fire_imp, 4, 0, false);
+  const enemy = mkUnit(UNIT_MAP.earth_golem, 0, 0, true);
+  const baseStats = { ...unit.stats };
+  const baseHp = unit.hp;
+  const baseMaxHp = unit.maxHp;
+
+  unit._baseStats = { ...baseStats };
+  unit._baseHp = baseHp;
+  unit._baseMaxHp = baseMaxHp;
+  unit.stats.attack = Math.floor(baseStats.attack * 1.3);
+  unit.maxHp = Math.floor(baseMaxHp * 1.2);
+  unit.hp = unit.maxHp;
+
+  battleSystem.start([unit], [enemy]);
+
+  assert.equal(unit.stats.attack, baseStats.attack, 'battle start should restore stale synergy-buffed attack before applying current synergies');
+  assert.equal(unit.maxHp, baseMaxHp, 'battle start should restore stale synergy-buffed max HP before a no-synergy fight');
+  assert.equal(unit.hp, baseHp, 'battle start should restore stale synergy-buffed HP before a no-synergy fight');
+  assert.equal(unit._baseStats.attack, baseStats.attack, 'the new battle should snapshot from the restored base stats instead of the stale synergy buff');
+});
+
+test('fire synergy buffs off-element allies across the whole army', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const fireA = mkUnit(UNIT_MAP.fire_imp, 4, 0, false);
+  const fireB = mkUnit(UNIT_MAP.fire_scout, 4, 1, false);
+  const offElementAlly = mkUnit(UNIT_MAP.earth_golem, 4, 2, false);
+  const baseAttack = offElementAlly.stats.attack;
+
+  battleSystem._applyElementSynergies([fireA, fireB, offElementAlly]);
+
+  assert.equal(offElementAlly.stats.attack, Math.floor(baseAttack * 1.15), '2-fire synergy should boost attack for non-fire allies too');
+  assert.equal(offElementAlly.stats.defense, UNIT_MAP.earth_golem.stats.defense, 'fire synergy should not alter unrelated stats');
+});
+
+test('same-stat synergies multiply together for off-element allies', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const fireA = mkUnit(UNIT_MAP.fire_imp, 4, 0, false);
+  const fireB = mkUnit(UNIT_MAP.fire_scout, 4, 1, false);
+  const bloodA = mkUnit(UNIT_MAP.blood_imp, 4, 2, false);
+  const bloodB = mkUnit(UNIT_MAP.blood_knight, 4, 3, false);
+  const offElementAlly = mkUnit(UNIT_MAP.earth_golem, 4, 4, false);
+  const baseAttack = offElementAlly.stats.attack;
+
+  battleSystem._applyElementSynergies([fireA, fireB, bloodA, bloodB, offElementAlly]);
+
+  assert.equal(offElementAlly.stats.attack, Math.floor(baseAttack * 1.15 * 1.15), 'whole-army attack synergies should multiply together instead of replacing one another');
+});
+
+test('earth synergy buffs off-element HP and resetSynergies restores the base pool', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const earthA = mkUnit(UNIT_MAP.earth_golem, 4, 0, false);
+  const earthB = mkUnit(UNIT_MAP.earth_archer, 4, 1, false);
+  const offElementAlly = mkUnit(UNIT_MAP.fire_imp, 4, 2, false);
+  const baseHp = offElementAlly.hp;
+  const baseMaxHp = offElementAlly.maxHp;
+
+  battleSystem._applyElementSynergies([earthA, earthB, offElementAlly]);
+
+  assert.equal(offElementAlly.maxHp, Math.floor(baseMaxHp * 1.2), '2-earth synergy should raise max HP for non-earth allies too');
+  assert.equal(offElementAlly.hp, Math.floor(baseHp * 1.2), '2-earth synergy should raise current HP with the new max HP at battle start');
+
+  battleSystem._resetSynergies([earthA, earthB, offElementAlly]);
+
+  assert.equal(offElementAlly.maxHp, baseMaxHp, 'resetSynergies should restore the pre-synergy max HP pool');
+  assert.equal(offElementAlly.hp, baseHp, 'resetSynergies should restore the pre-synergy HP pool for an untouched unit');
+});
+
+test('same-stat tier upgrades keep only the highest tier bonus', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const fireA = mkUnit(UNIT_MAP.fire_imp, 4, 0, false);
+  const fireB = mkUnit(UNIT_MAP.fire_scout, 4, 1, false);
+  const fireC = mkUnit(UNIT_MAP.fire_warrior, 4, 2, false);
+  const offElementAlly = mkUnit(UNIT_MAP.earth_golem, 4, 3, false);
+  const baseAttack = offElementAlly.stats.attack;
+
+  battleSystem._applyElementSynergies([fireA, fireB, fireC, offElementAlly]);
+
+  assert.equal(offElementAlly.stats.attack, Math.floor(baseAttack * 1.3), '3-fire synergy should use the higher tier attack bonus instead of stacking the 2-fire and 3-fire tiers together');
+});
+
+test('mixed-stat tier upgrades stay active together when a 3-unit synergy adds a new stat', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const voidA = mkUnit(UNIT_MAP.void_shade, 4, 0, false);
+  const voidB = mkUnit(UNIT_MAP.void_knight, 4, 1, false);
+  const voidC = mkUnit(UNIT_MAP.void_horror, 4, 2, false);
+  const offElementAlly = mkUnit(UNIT_MAP.fire_imp, 4, 3, false);
+  const baseAttack = offElementAlly.stats.attack;
+  const baseHp = offElementAlly.hp;
+  const baseMaxHp = offElementAlly.maxHp;
+
+  battleSystem._applyElementSynergies([voidA, voidB, voidC, offElementAlly]);
+
+  assert.equal(offElementAlly.stats.attack, Math.floor(baseAttack * 1.25), '3-void synergy should keep the 2-void attack bonus because the higher tier adds HP, not attack');
+  assert.equal(offElementAlly.maxHp, Math.floor(baseMaxHp * 1.2), '3-void synergy should also apply the HP tier to off-element allies');
+  assert.equal(offElementAlly.hp, Math.floor(baseHp * 1.2), '3-void synergy should raise current HP with the new HP tier at battle start');
 });
 
 test('plague rat infect applies the plague baseline poison after its immediate hit', () => {

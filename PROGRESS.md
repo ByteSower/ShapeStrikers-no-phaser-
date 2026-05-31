@@ -101,7 +101,7 @@
 - [x] Battle participants snapshot — dead units now appear in stats with ☠️ marker
 - [x] Enhanced stats table — added Kills column + accolade badges
 - [x] 4 new upgrades: Scout's Intel, Elite Training, Mercenary, Double Edge
-- [x] Scout's Intel — L1: enemy HP/ATK/DEF in wave preview, L2: abilities
+- [x] Scout's Intel — once bought for the current run, the prep-phase wave badge reveals the current and next PvE wave's enemies, stats, and abilities
 - [x] Elite Training — +5% ATK & DEF per level (applied/removed at battle start/end)
 - [x] Mercenary — +1 shop card per refresh per level
 - [x] Double Edge — +20% ATK, −10% DEF (risk/reward)
@@ -204,6 +204,9 @@
 - [x] Latest audit coverage now mirrors deferred guest authoritative-state requests, locks `Room` resume/snapshot invariants, spells out Void Knight and Void Blighter debuff strengths in player-facing text, and adds focused battle coverage for Shadow Phase untargetable targeting
 - [x] Continued battle audit fixes now keep Fire Warrior lane strikes and other single-target abilities on their documented same-column targeting rules, while new focused regressions also lock Nature Spirit healing, Fire Demon target caps, and Fire Ravager kill-stack growth
 - [x] Battle-start cleanup now resets prior-fight passive progress on reused unit objects, preventing Fire Ravager kill stacks and Arcane Pupil evolve progress from leaking into later battles
+- [x] Follow-up battle-start cleanup now also clears lingering cooldowns, status effects, boss phase state, and stale synergy base snapshots from reused units before the next fight begins
+- [x] Synergy and prep-preview audits now keep whole-army buffs, mixed-stat tiers, sidebar labels, and shop-card detail previews aligned between prep and battle
+- [x] Scout's Intel now works as a run-scoped prep feature: buying it immediately unlocks the wave badge preview for the current run, while fresh runs start with scouting locked again and multiplayer still keeps the upgrade disabled
 - [ ] Revisit stronger multiplayer authority when ranked, spectate, or broader platform targets raise the reliability bar beyond transient reconnect recovery
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance

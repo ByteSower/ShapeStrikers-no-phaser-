@@ -96,17 +96,42 @@ class BattleSystem {
   _resetBattleScopedUnitState(units) {
     for (const unit of units || []) {
       unit._kills = 0;
+      unit.abilityCooldown = 0;
+      unit.statusEffects = [];
 
       const evolveBaseAttack = unit._evolveBase?.attack;
       const evolveBaseDefense = unit._evolveBase?.defense;
+      const bossBaseStats = unit._bossBaseStats;
+      const synergyBaseStats = unit._baseStats;
+      const synergyBaseHp = unit._baseHp;
+      const synergyBaseMaxHp = unit._baseMaxHp;
       if (unit.stats) {
         if (Number.isFinite(evolveBaseAttack)) unit.stats.attack = evolveBaseAttack;
         if (Number.isFinite(evolveBaseDefense)) unit.stats.defense = evolveBaseDefense;
+        if (bossBaseStats) {
+          if (Number.isFinite(bossBaseStats.attack)) unit.stats.attack = bossBaseStats.attack;
+          if (Number.isFinite(bossBaseStats.defense)) unit.stats.defense = bossBaseStats.defense;
+          if (Number.isFinite(bossBaseStats.speed)) unit.stats.speed = bossBaseStats.speed;
+        }
+        if (synergyBaseStats) Object.assign(unit.stats, synergyBaseStats);
+      }
+      if (bossBaseStats && Number.isFinite(bossBaseStats.maxHp)) {
+        unit.maxHp = bossBaseStats.maxHp;
+        if (Number.isFinite(bossBaseStats.hp)) unit.hp = Math.min(bossBaseStats.hp, unit.maxHp);
+      }
+      if (Number.isFinite(synergyBaseMaxHp)) {
+        unit.maxHp = synergyBaseMaxHp;
+        if (Number.isFinite(synergyBaseHp)) unit.hp = Math.min(synergyBaseHp, unit.maxHp);
       }
 
       unit._turnsSurvived = 0;
       unit._evolveStacks = 0;
+      delete unit._baseStats;
+      delete unit._baseHp;
+      delete unit._baseMaxHp;
       delete unit._evolveBase;
+      delete unit._bossBaseStats;
+      delete unit._currentPhaseIndex;
     }
   }
 
@@ -1224,7 +1249,7 @@ class BattleSystem {
       const phase = phases[boss._currentPhaseIndex];
 
       // Apply stat multipliers from BASE stats (not compounding)
-      if (!boss._bossBaseStats) boss._bossBaseStats = { attack: boss.stats.attack, defense: boss.stats.defense, speed: boss.stats.speed };
+      if (!boss._bossBaseStats) boss._bossBaseStats = { attack: boss.stats.attack, defense: boss.stats.defense, speed: boss.stats.speed, hp: boss.hp, maxHp: boss.maxHp };
       if (phase.statModifiers.attackMult)  boss.stats.attack  = Math.floor(boss._bossBaseStats.attack  * phase.statModifiers.attackMult);
       if (phase.statModifiers.defenseMult) boss.stats.defense = Math.floor(boss._bossBaseStats.defense * phase.statModifiers.defenseMult);
       if (phase.statModifiers.speedMult)   boss.stats.speed   = Math.floor(boss._bossBaseStats.speed   * phase.statModifiers.speedMult);

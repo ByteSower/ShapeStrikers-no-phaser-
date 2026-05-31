@@ -20,9 +20,12 @@ const UI = (() => {
   function updateHUD(state) {
     const { wave, waveCount, gold, score, units, maxUnits, phase, challengeLabel } = state;
     const waveEl = document.getElementById('hud-wave');
-    waveEl.textContent = challengeLabel
+    const waveText = challengeLabel
       ? `${challengeLabel} · Wave ${wave} / ${waveCount}`
       : `Wave ${wave} / ${waveCount}`;
+    const waveLabelEl = document.getElementById('hud-wave-label');
+    if (waveLabelEl) waveLabelEl.textContent = waveText;
+    else waveEl.textContent = waveText;
     document.getElementById('gold-val').textContent   = gold;
     document.getElementById('score-val').textContent  = score;
     document.getElementById('units-val').textContent  = units;
@@ -69,14 +72,22 @@ const UI = (() => {
       const syns = ELEMENT_SYNERGIES.filter(s => s.element === elem && s.requiredCount <= (count > 0 ? count + 1 : 99));
       if (syns.length === 0 && count === 0) continue;
 
-      const best = ELEMENT_SYNERGIES.filter(s => s.element === elem && s.requiredCount <= count).pop();
+      const activeByStat = {};
+      for (const syn of ELEMENT_SYNERGIES) {
+        if (syn.element === elem && syn.requiredCount <= count) {
+          activeByStat[syn.bonus.stat] = syn; // highest tier wins for the same stat
+        }
+      }
+      const activeSyns = Object.values(activeByStat);
       const next = ELEMENT_SYNERGIES.filter(s => s.element === elem && s.requiredCount > count)[0];
 
       const pill = document.createElement('div');
-      pill.className = 'synergy-pill ' + (best ? 'active' : 'inactive');
+      pill.className = 'synergy-pill ' + (activeSyns.length ? 'active' : 'inactive');
       const emoji = ELEMENT_EMOJI[elem];
-      const label = best ? best.description : (next ? `${next.requiredCount}${emoji}: need ${next.requiredCount - count} more` : '');
-      pill.innerHTML = `<span>${emoji} ${count}</span><span style="flex:1;font-size:11px;color:${best ? '#2eaa5e' : '#556677'}">${label}</span>`;
+      const label = activeSyns.length
+        ? activeSyns.map(s => s.description).join(' • ')
+        : (next ? `${next.requiredCount}${emoji}: need ${next.requiredCount - count} more` : '');
+      pill.innerHTML = `<span>${emoji} ${count}</span><span style="flex:1;font-size:11px;color:${activeSyns.length ? '#2eaa5e' : '#556677'}">${label}</span>`;
       container.appendChild(pill);
     }
 
@@ -181,7 +192,7 @@ const UI = (() => {
 
     // Compute synergy-projected stat values (only during prep — during battle, stats are already boosted)
     const synergyBoosts = {};
-    const alreadyBoosted = !!unit._baseStats; // _baseStats exists during battle = synergies already in stats
+    const alreadyBoosted = !!unit._baseStats || !!unit._alreadyBoosted; // battle snapshots already include active synergy stats
     if (activeSynergies && activeSynergies.length > 0 && !alreadyBoosted) {
       // Multiply multipliers together so multiple synergies boosting the same stat stack correctly
       for (const syn of activeSynergies) {
