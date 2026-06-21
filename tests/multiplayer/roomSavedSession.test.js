@@ -288,6 +288,45 @@ test('prep-state updates clear stale phase-event metadata from resume context', 
   assert.equal('boardHash' in saved.resumeContext, false, 'prep resume context should clear stale battle hashes carried by phase events');
 });
 
+test('prep-state updates clear stale authoritative-state battle metadata from resume context', () => {
+  const { Room, sessionStorage } = loadRoomContext();
+
+  Room.join('room-theta-auth', false, 'opp-13b');
+  Room.applyState('authoritative_state', {
+    roundNumber: 3,
+    at: Date.now(),
+    state: {
+      playback_checkpoint: {
+        roundNumber: 3,
+        seq: 14,
+        turn: 5,
+        boardHash: 'hash-authoritative-old',
+      },
+      phase_event: {
+        roundNumber: 3,
+        type: 'playback_start',
+        checkpointSeq: 14,
+        boardHash: 'hash-authoritative-old',
+      },
+    },
+  }, 'opp-13b');
+
+  Room.applyState('prep_state', {
+    roundNumber: 4,
+    shopSeed: 67890,
+    rerollIndex: 1,
+    at: Date.now(),
+  }, 'opp-13b');
+
+  const saved = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY));
+  assert.equal(saved.resumeContext.roundNumber, 4);
+  assert.equal(saved.resumeContext.phase, 'prep');
+  assert.equal(saved.resumeContext.sourceKey, 'prep_state');
+  assert.equal(saved.resumeContext.checkpointSeq, 0, 'prep resume context should not retain stale authoritative checkpoint metadata');
+  assert.equal('phaseEventType' in saved.resumeContext, false, 'prep resume context should clear stale authoritative phase-event metadata');
+  assert.equal('boardHash' in saved.resumeContext, false, 'prep resume context should clear stale authoritative battle hashes');
+});
+
 test('applyState and getState keep nested room payloads detached', () => {
   const { Room } = loadRoomContext();
 

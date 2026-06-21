@@ -298,6 +298,7 @@ function loadGameContext({
     destroyCalls: 0,
     discardSavedSessionCalls: [],
     syncCalls: [],
+    resyncCalls: [],
     matchFoundHandler: null,
     stateChangeHandlers: [],
     opponentDisconnectHandlers: [],
@@ -306,6 +307,7 @@ function loadGameContext({
   const multiplayerEvents = {
     startCalls: [],
     destroyCalls: 0,
+    endRoundCalls: [],
     forceMatchEndCalls: [],
   };
   const tileElements = new Map();
@@ -314,6 +316,7 @@ function loadGameContext({
   let multiplayerActive = false;
   let multiplayerCallbacks = {};
   let currentRound = 0;
+  let multiplayerScores = { my: 0, opp: 0 };
   let currentSavedSession = savedSession ? plain(savedSession) : null;
   const document = createDocumentStub(domElementIds);
 
@@ -438,6 +441,23 @@ function loadGameContext({
         roomEvents.syncCalls.push({ key, value: plain(value) });
         return { ok: true };
       },
+      beginResync(reason = 'authoritative_state_requested', meta = {}) {
+        roomStatus.lifecycleState = 'RESYNCING';
+        roomEvents.resyncCalls.push({ type: 'begin', reason, meta: plain(meta) });
+        return true;
+      },
+      endResync(reason = 'authoritative_state_applied', meta = {}) {
+        roomStatus.lifecycleState = roomStatus.connectionState === 'SUBSCRIBED' ? 'ACTIVE' : 'RECONNECTING';
+        roomEvents.resyncCalls.push({ type: 'end', reason, meta: plain(meta) });
+        return true;
+      },
+      applyState(key, value, source = 'applyState') {
+        roomStatus.state[key] = plain(value);
+        for (const handler of [...roomEvents.stateChangeHandlers]) {
+          handler(key, plain(value), source);
+        }
+        return true;
+      },
       onStateChange(handler) {
         roomEvents.stateChangeHandlers.push(handler);
       },
@@ -524,11 +544,10 @@ function loadGameContext({
           roomState.battle_replay,
           roomState.prep_state,
         ];
-        for (const candidate of candidates) {
+        return candidates.reduce((highestRound, candidate) => {
           const roundNumber = Number(candidate?.roundNumber || candidate?.round || 0);
-          if (roundNumber > 0) return roundNumber;
-        }
-        return 0;
+          return Math.max(highestRound, roundNumber > 0 ? roundNumber : 0);
+        }, 0);
       },
       resolveResumeTarget({
         savedResumeContext = null,
@@ -700,7 +719,7 @@ function loadGameContext({
       },
       hydrateMatchState() {},
       getScores() {
-        return { my: 0, opp: 0 };
+        return plain(multiplayerScores);
       },
       getRound() {
         return currentRound;
@@ -726,7 +745,9 @@ function loadGameContext({
       getTotalRounds() {
         return 5;
       },
-      endRound() {},
+      endRound(...args) {
+        multiplayerEvents.endRoundCalls.push(args.map((entry) => plain(entry)));
+      },
       forceMatchEnd(winner, meta) {
         multiplayerEvents.forceMatchEndCalls.push({ winner, meta });
         multiplayerCallbacks.onMatchEnd?.(winner, meta);
@@ -949,6 +970,12 @@ function loadGameContext({
     },
     setRound(round) {
       currentRound = Number(round || 0);
+    },
+    setScores(scores = {}) {
+      multiplayerScores = {
+        my: Math.max(0, Number(scores.my) || 0),
+        opp: Math.max(0, Number(scores.opp) || 0),
+      };
     },
     fireMultiplayerCallback(name, ...args) {
       return multiplayerCallbacks?.[name]?.(...args);
@@ -1282,6 +1309,221 @@ await test('Guest resume prefers the saved battle round over newer prep metadata
   assert.equal(requestSync.value.checkpointSeq, 9);
 });
 
+await test('Guest reload resume exits RESYNCING when matching prep_state arrives after an authoritative request', () => {
+  const {
+    Game,
+    roomStatus,
+    roomEvents,
+    emitRoomStateChange,
+  } = loadGameContext({
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    savedSession: {
+      roomId: 'room-resume-resync-clear',
+      isHost: false,
+      resumeContext: {
+        roundNumber: 4,
+        checkpointSeq: 9,
+        phase: 'battle',
+      },
+    },
+    roomState: {},
+    domElementIds: [
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+    ],
+  });
+
+  Game.init();
+
+  assert.equal(roomStatus.lifecycleState, 'RESYNCING', 'Reload resume should enter RESYNCING when it requests authoritative_state for an empty room cache');
+  assert.equal(roomEvents.resyncCalls.some((entry) => entry.type === 'begin' && entry.reason === 'reload_resume_authoritative_request'), true, 'Reload resume should begin a resync before live state arrives');
+
+  emitRoomStateChange('prep_state', {
+    roundNumber: 4,
+    shopSeed: 12345,
+    rerollIndex: 0,
+    at: Date.now(),
+  });
+
+  assert.equal(Game.state.wave, 4, 'Reload resume should still hydrate the recovered prep round from live room state');
+  assert.equal(roomStatus.lifecycleState, 'ACTIVE', 'Matching prep_state should clear RESYNCING once reload resume has recovered without an authoritative bundle');
+  assert.equal(roomEvents.resyncCalls.some((entry) => entry.type === 'end'), true, 'Reload resume recovery should end the resync lifecycle once live state arrives');
+});
+
+await test('Guest reload resume exits RESYNCING when a stale wrong-round authoritative_state arrives', () => {
+  const {
+    Game,
+    roomStatus,
+    roomEvents,
+    intervals,
+    emitRoomStateChange,
+  } = loadGameContext({
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    savedSession: {
+      roomId: 'room-resume-resync-mismatch',
+      isHost: false,
+      resumeContext: {
+        roundNumber: 4,
+        checkpointSeq: 9,
+        phase: 'battle',
+      },
+    },
+    roomState: {},
+    domElementIds: [
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+    ],
+  });
+
+  Game.init();
+
+  assert.equal(roomStatus.lifecycleState, 'RESYNCING', 'Reload resume should enter RESYNCING before an authoritative response arrives');
+
+  emitRoomStateChange('authoritative_state', {
+    roundNumber: 3,
+    at: 1234,
+    state: {
+      battle_replay: {
+        roundNumber: 3,
+        boardHash: 'stale-hash',
+        replayLog: { events: [] },
+      },
+    },
+  });
+
+  assert.equal(roomStatus.lifecycleState, 'ACTIVE', 'Wrong-round authoritative_state should end the in-flight resync instead of leaving reload resume stranded in RESYNCING');
+  assert.equal(roomEvents.resyncCalls.some((entry) => entry.type === 'end'), true, 'Wrong-round authoritative_state should still close the resync lifecycle as a rejected response');
+
+  roomStatus.connectionState = 'CHANNEL_ERROR';
+  roomStatus.lifecycleState = 'DISCONNECTED';
+  intervals[0].fn();
+
+  const syncCountBeforeResubscribe = roomEvents.syncCalls.length;
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  intervals[0].fn();
+
+  const resubscribeSyncs = roomEvents.syncCalls.slice(syncCountBeforeResubscribe);
+  const retryRequest = resubscribeSyncs.find((entry) => entry.key === 'request_authoritative_state');
+  assert.ok(retryRequest, 'Reconnect plus room-watch resubscribe should re-request authoritative_state after a wrong-round reload response left the room unresolved');
+  assert.equal(retryRequest.value.roundNumber, 4);
+});
+
+await test('Guest resume ignores stale older authoritative_state when newer prep metadata exists', () => {
+  const {
+    Game,
+    roomEvents,
+  } = loadGameContext({
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    savedSession: {
+      roomId: 'room-stale-authoritative-older-round',
+      isHost: false,
+      resumeContext: null,
+    },
+    roomState: {
+      prep_state: {
+        roundNumber: 5,
+        shopSeed: 77,
+      },
+      authoritative_state: {
+        roundNumber: 4,
+        at: 1234,
+        state: {
+          battle_replay: {
+            roundNumber: 4,
+            hostWon: true,
+            replayLog: {
+              events: [],
+            },
+          },
+        },
+      },
+    },
+    domElementIds: [
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+    ],
+  });
+
+  Game.init();
+
+  assert.equal(Game.state.wave, 5, 'Guest resume should stay anchored to the newer live prep round instead of stale older authoritative_state');
+  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'request_authoritative_state'), false, 'Guest should not request authoritative_state when newer prep state already exists for the live round');
+});
+
+await test('Guest prep resume ignores a late older authoritative_state once newer prep state is already live', () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    intervals,
+    emitRoomStateChange,
+  } = loadGameContext({
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    savedSession: {
+      roomId: 'room-late-stale-authoritative',
+      isHost: false,
+      resumeContext: null,
+    },
+    roomState: {
+      prep_state: {
+        roundNumber: 5,
+        shopSeed: 77,
+      },
+    },
+    domElementIds: [
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+    ],
+  });
+
+  Game.init();
+
+  assert.equal(Game.state.wave, 5, 'Guest should already be anchored to the newer live prep round before a stale authoritative response arrives');
+
+  const syncCountBeforeLateAuthoritative = roomEvents.syncCalls.length;
+  emitRoomStateChange('authoritative_state', {
+    roundNumber: 4,
+    at: 4321,
+    state: {
+      battle_replay: {
+        roundNumber: 4,
+        hostWon: true,
+        replayLog: {
+          events: [],
+        },
+      },
+    },
+  });
+
+  assert.equal(Game.state.wave, 5, 'Late stale authoritative_state should not pull the guest off the current prep round');
+  assert.equal(roomEvents.syncCalls.slice(syncCountBeforeLateAuthoritative).some((entry) => entry.key === 'request_authoritative_state'), false, 'Late stale authoritative_state should not immediately trigger a fresh authoritative request once newer prep state is already live');
+
+  roomStatus.connectionState = 'CHANNEL_ERROR';
+  roomStatus.lifecycleState = 'DISCONNECTED';
+  intervals[0].fn();
+
+  const syncCountBeforeResubscribe = roomEvents.syncCalls.length;
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  intervals[0].fn();
+
+  const resubscribeSyncs = roomEvents.syncCalls.slice(syncCountBeforeResubscribe);
+  assert.equal(resubscribeSyncs.some((entry) => entry.key === 'request_authoritative_state'), false, 'Reconnect plus room-watch resubscribe should not request authoritative_state again when the live prep round is already resolved by newer prep_state');
+});
+
 await test('Guest replay bootstrap requests missing battle_replay for the resumed older round', () => {
   const {
     Game,
@@ -1339,6 +1581,235 @@ await test('Guest replay bootstrap requests missing battle_replay for the resume
   assert.ok(requestSync, 'Guest should request missing battle_replay for the resumed retained round');
   assert.equal(requestSync.value.roundNumber, 4);
   assert.equal(requestSync.value.checkpointSeq, 9);
+});
+
+await test('Guest replay bootstrap exits RESYNCING once a matching battle_replay arrives', () => {
+  const {
+    Game,
+    roomStatus,
+    roomEvents,
+    setRound,
+    emitRoomStateChange,
+  } = loadGameContext({
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    savedSession: {
+      roomId: 'room-replay-bootstrap-resync-clear',
+      isHost: false,
+      resumeContext: {
+        roundNumber: 4,
+        checkpointSeq: 9,
+        phase: 'battle',
+      },
+    },
+    roomState: {
+      prep_state: {
+        roundNumber: 5,
+        shopSeed: 77,
+      },
+    },
+    domElementIds: [
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+    ],
+  });
+
+  setRound(5);
+  Game.init();
+
+  emitRoomStateChange('phase_event', {
+    type: 'playback_start',
+    roundNumber: 4,
+    checkpointSeq: 9,
+    boardHash: 'older-round-hash',
+  });
+  emitRoomStateChange('playback_checkpoint', {
+    roundNumber: 4,
+    seq: 9,
+    turn: 2,
+    boardHash: 'older-round-hash',
+  });
+
+  assert.equal(roomStatus.lifecycleState, 'RESYNCING', 'Missing battle_replay recovery should mark the room as RESYNCING while the authoritative request is in flight');
+  assert.equal(roomEvents.resyncCalls.some((entry) => entry.type === 'begin' && entry.reason === 'authoritative_request:missing_battle_replay'), true, 'Guest replay bootstrap should begin a resync when it requests missing battle_replay');
+
+  emitRoomStateChange('battle_replay', {
+    roundNumber: 4,
+    boardHash: 'older-round-hash',
+    hostWon: true,
+    replayLog: {
+      events: [
+        {
+          type: 'battle_start',
+          playerUnits: [],
+          enemyUnits: [],
+        },
+        {
+          type: 'turn_start',
+          seq: 9,
+          turn: 2,
+        },
+        {
+          type: 'battle_end',
+          playerWon: false,
+          playerUnits: [],
+          enemyUnits: [],
+        },
+      ],
+    },
+  });
+
+  assert.equal(roomStatus.lifecycleState, 'ACTIVE', 'Matching live battle_replay should clear RESYNCING once replay bootstrap recovers without an authoritative bundle');
+  assert.equal(roomEvents.resyncCalls.some((entry) => entry.type === 'end'), true, 'Replay bootstrap recovery should end the resync lifecycle once matching live state arrives');
+});
+
+await test('Guest result recovery exits RESYNCING once a matching round_result arrives', () => {
+  const {
+    Game,
+    roomStatus,
+    roomEvents,
+    setRound,
+    emitRoomStateChange,
+  } = loadGameContext({
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    savedSession: {
+      roomId: 'room-result-resync-clear',
+      isHost: false,
+      resumeContext: {
+        roundNumber: 4,
+        checkpointSeq: 9,
+        phase: 'battle',
+      },
+    },
+    roomState: {
+      prep_state: {
+        roundNumber: 5,
+        shopSeed: 77,
+      },
+    },
+    domElementIds: [
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+    ],
+  });
+
+  setRound(5);
+  Game.init();
+
+  emitRoomStateChange('phase_event', {
+    type: 'playback_start',
+    roundNumber: 4,
+    checkpointSeq: 9,
+    boardHash: 'older-round-hash',
+  });
+  emitRoomStateChange('playback_checkpoint', {
+    roundNumber: 4,
+    seq: 9,
+    turn: 2,
+    boardHash: 'older-round-hash',
+  });
+
+  assert.equal(roomStatus.lifecycleState, 'RESYNCING', 'Result recovery should start from RESYNCING once the guest requests authoritative sync');
+
+  emitRoomStateChange('round_result', {
+    hostWon: true,
+    roundNumber: 4,
+    seq: 7,
+    boardHash: 'older-round-hash',
+  });
+
+  assert.equal(roomStatus.lifecycleState, 'ACTIVE', 'Matching round_result should clear RESYNCING once the host resolves the round without an authoritative bundle');
+  assert.equal(roomEvents.resyncCalls.some((entry) => entry.type === 'end'), true, 'Result recovery should end the resync lifecycle once matching round_result arrives');
+});
+
+await test('Guest battle recovery exits RESYNCING when a stale wrong-round authoritative_state arrives', () => {
+  const {
+    Game,
+    roomStatus,
+    roomEvents,
+    intervals,
+    setRound,
+    emitRoomStateChange,
+  } = loadGameContext({
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    savedSession: {
+      roomId: 'room-battle-resync-mismatch',
+      isHost: false,
+      resumeContext: {
+        roundNumber: 4,
+        checkpointSeq: 9,
+        phase: 'battle',
+      },
+    },
+    roomState: {
+      prep_state: {
+        roundNumber: 5,
+        shopSeed: 77,
+      },
+    },
+    domElementIds: [
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+    ],
+  });
+
+  setRound(5);
+  Game.init();
+
+  emitRoomStateChange('phase_event', {
+    type: 'playback_start',
+    roundNumber: 4,
+    checkpointSeq: 9,
+    boardHash: 'older-round-hash',
+  });
+  emitRoomStateChange('playback_checkpoint', {
+    roundNumber: 4,
+    seq: 9,
+    turn: 2,
+    boardHash: 'older-round-hash',
+  });
+
+  assert.equal(roomStatus.lifecycleState, 'RESYNCING', 'Battle recovery should enter RESYNCING before the authoritative response arrives');
+
+  emitRoomStateChange('authoritative_state', {
+    roundNumber: 3,
+    at: 1234,
+    state: {
+      round_result: {
+        hostWon: true,
+        roundNumber: 3,
+        seq: 7,
+        boardHash: 'stale-hash',
+      },
+    },
+  });
+
+  assert.equal(roomStatus.lifecycleState, 'ACTIVE', 'Wrong-round authoritative_state should end the in-flight battle resync instead of leaving the guest stranded in RESYNCING');
+  assert.equal(roomEvents.resyncCalls.some((entry) => entry.type === 'end'), true, 'Wrong-round battle authoritative_state should still close the resync lifecycle as a rejected response');
+
+  roomStatus.connectionState = 'CHANNEL_ERROR';
+  roomStatus.lifecycleState = 'DISCONNECTED';
+  intervals[0].fn();
+
+  const syncCountBeforeResubscribe = roomEvents.syncCalls.length;
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  roomEvents.reconnectHandlers[0]?.();
+  intervals[0].fn();
+
+  const resubscribeSyncs = roomEvents.syncCalls.slice(syncCountBeforeResubscribe);
+  const retryRequest = resubscribeSyncs.find((entry) => entry.key === 'request_authoritative_state');
+  assert.ok(retryRequest, 'Reconnect plus room-watch resubscribe should re-request authoritative_state after a wrong-round battle response left replay recovery unresolved');
+  assert.equal(retryRequest.value.reason, 'missing_battle_replay');
+  assert.equal(retryRequest.value.roundNumber, 4);
 });
 
 await test('Multiplayer round end preserves roster instead of pruning dead or damaged units from replay outcome', async () => {
@@ -3267,6 +3738,624 @@ await test('Guest replay inspection after resume uses the mirrored live replay u
   assert.deepEqual((detail.synergies || []).map((syn) => syn.description), ['2🔥: +15% ATK'], 'Guest replay detail should still use the local player synergy pills after mirroring');
 });
 
+await test('Guest room-watch resubscribe does not restart replay again after reconnect already resumed it', () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    replayControls,
+    intervals,
+    fireMultiplayerCallback,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-guest-room-watch-replay',
+    opponentId: 'host-room-watch-replay',
+    isHost: false,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 30);
+  Game.state.playerUnits = [{
+    id: 'guest-room-watch-unit',
+    name: 'Guest Room Watch Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+
+  roomStatus.connectionState = 'CHANNEL_ERROR';
+  roomStatus.lifecycleState = 'DISCONNECTED';
+  intervals[0].fn();
+
+  roomStatus.state.battle_replay = {
+    roundNumber: 1,
+    boardHash: 'room-watch-replay-hash',
+    hostWon: true,
+    replayLog: {
+      events: [
+        {
+          type: 'battle_start',
+          seq: 1,
+          turn: 0,
+          playerUnits: [],
+          enemyUnits: [],
+        },
+        { type: 'turn_start', seq: 1, turn: 1 },
+        {
+          type: 'battle_end',
+          playerWon: false,
+          playerUnits: [],
+          enemyUnits: [],
+        },
+      ],
+    },
+  };
+  roomStatus.state.phase_event = {
+    type: 'playback_start',
+    roundNumber: 1,
+    checkpointSeq: 0,
+    checkpointTurn: 0,
+    boardHash: 'room-watch-replay-hash',
+  };
+
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  roomEvents.reconnectHandlers[0]?.();
+
+  assert.equal(replayControls.plays.length, 1, 'Guest reconnect should resume replay once from cached room state');
+
+  intervals[0].fn();
+
+  assert.equal(replayControls.plays.length, 1, 'The later SUBSCRIBED room-watch tick should not restart the same replay a second time');
+});
+
+await test('Guest reconnect cycle resends cached round_result sync only once when reconnect and room-watch both fire', () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    intervals,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-guest-reconnect-result',
+    opponentId: 'host-reconnect-result',
+    isHost: false,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 30);
+  Game.state.playerUnits = [{
+    id: 'guest-reconnect-result-unit',
+    name: 'Guest Reconnect Result Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  emitRoomStateChange('round_result', { hostWon: true, roundNumber: 1, seq: 7, boardHash: 'hash-123' });
+
+  assert.equal(roomEvents.syncCalls.filter((entry) => entry.key === 'round_result_ack' && entry.value.seq === 7).length, 1, 'Guest should emit the initial round_result_ack when the host result arrives');
+  assert.equal(roomEvents.syncCalls.filter((entry) => entry.key === 'ready_to_continue' && entry.value.seq === 7).length, 1, 'Guest should emit the initial ready_to_continue when the host result arrives');
+
+  roomStatus.connectionState = 'CHANNEL_ERROR';
+  roomStatus.lifecycleState = 'DISCONNECTED';
+  intervals[0].fn();
+
+  const syncCountBeforeReconnect = roomEvents.syncCalls.length;
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  roomEvents.reconnectHandlers[0]?.();
+  intervals[0].fn();
+
+  const reconnectSyncs = roomEvents.syncCalls.slice(syncCountBeforeReconnect);
+  assert.equal(reconnectSyncs.filter((entry) => entry.key === 'round_result_ack' && entry.value.seq === 7).length, 1, 'Guest reconnect should resend round_result_ack only once across reconnect plus room-watch resubscribe');
+  assert.equal(reconnectSyncs.filter((entry) => entry.key === 'ready_to_continue' && entry.value.seq === 7).length, 1, 'Guest reconnect should resend ready_to_continue only once across reconnect plus room-watch resubscribe');
+});
+
+await test('Guest reconnect cycle does not stack cache-check resend on top of a duplicate round_result rebroadcast', () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    intervals,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-guest-reconnect-result-broadcast',
+    opponentId: 'host-reconnect-result-broadcast',
+    isHost: false,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 30);
+  Game.state.playerUnits = [{
+    id: 'guest-reconnect-result-broadcast-unit',
+    name: 'Guest Reconnect Result Broadcast Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  emitRoomStateChange('round_result', { hostWon: true, roundNumber: 1, seq: 7, boardHash: 'hash-123' });
+
+  roomStatus.connectionState = 'CHANNEL_ERROR';
+  roomStatus.lifecycleState = 'DISCONNECTED';
+  intervals[0].fn();
+
+  const syncCountBeforeReconnect = roomEvents.syncCalls.length;
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  roomEvents.reconnectHandlers[0]?.();
+  emitRoomStateChange('round_result', { hostWon: true, roundNumber: 1, seq: 7, boardHash: 'hash-123' });
+  intervals[0].fn();
+
+  const reconnectSyncs = roomEvents.syncCalls.slice(syncCountBeforeReconnect);
+  assert.equal(reconnectSyncs.filter((entry) => entry.key === 'round_result_ack' && entry.value.seq === 7).length, 1, 'Guest reconnect should emit only one round_result_ack when a duplicate round_result rebroadcast arrives before the room-watch cache-check');
+  assert.equal(reconnectSyncs.filter((entry) => entry.key === 'ready_to_continue' && entry.value.seq === 7).length, 1, 'Guest reconnect should emit only one ready_to_continue when a duplicate round_result rebroadcast arrives before the room-watch cache-check');
+});
+
+await test('Guest reconnect prefers cached round_result over retained replay payloads', () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    replayControls,
+    intervals,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-guest-reconnect-result-priority',
+    opponentId: 'host-reconnect-result-priority',
+    isHost: false,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 30);
+  Game.state.playerUnits = [{
+    id: 'guest-reconnect-result-priority-unit',
+    name: 'Guest Reconnect Result Priority Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  emitRoomStateChange('round_result', { hostWon: true, roundNumber: 1, seq: 7, boardHash: 'hash-123' });
+
+  roomStatus.state.battle_replay = {
+    roundNumber: 1,
+    boardHash: 'hash-123',
+    hostWon: true,
+    replayLog: {
+      events: [
+        {
+          type: 'battle_start',
+          seq: 1,
+          turn: 0,
+          playerUnits: [],
+          enemyUnits: [],
+        },
+        { type: 'turn_start', seq: 1, turn: 1 },
+        {
+          type: 'battle_end',
+          playerWon: false,
+          playerUnits: [],
+          enemyUnits: [],
+        },
+      ],
+    },
+  };
+  roomStatus.state.phase_event = {
+    type: 'playback_start',
+    roundNumber: 1,
+    checkpointSeq: 0,
+    checkpointTurn: 0,
+    boardHash: 'hash-123',
+  };
+
+  roomStatus.connectionState = 'CHANNEL_ERROR';
+  roomStatus.lifecycleState = 'DISCONNECTED';
+  intervals[0].fn();
+
+  const syncCountBeforeReconnect = roomEvents.syncCalls.length;
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  roomEvents.reconnectHandlers[0]?.();
+  intervals[0].fn();
+
+  const reconnectSyncs = roomEvents.syncCalls.slice(syncCountBeforeReconnect);
+  assert.equal(replayControls.plays.length, 0, 'Guest reconnect should not restart replay when a matching cached round_result already resolves the round');
+  assert.equal(reconnectSyncs.filter((entry) => entry.key === 'round_result_ack' && entry.value.seq === 7).length, 1, 'Guest reconnect should still resend round_result_ack once when result cache is retained');
+  assert.equal(reconnectSyncs.filter((entry) => entry.key === 'ready_to_continue' && entry.value.seq === 7).length, 1, 'Guest reconnect should still resend ready_to_continue once when result cache is retained');
+});
+
+await test('Guest ignores replay rebroadcasts when room cache already has a matching round_result', () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    replayControls,
+    intervals,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-guest-reconnect-rebroadcast-priority',
+    opponentId: 'host-reconnect-rebroadcast-priority',
+    isHost: false,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 30);
+  Game.state.playerUnits = [{
+    id: 'guest-reconnect-rebroadcast-priority-unit',
+    name: 'Guest Reconnect Rebroadcast Priority Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+
+  roomStatus.state.round_result = { hostWon: true, roundNumber: 1, seq: 7, boardHash: 'hash-123' };
+  roomStatus.state.battle_replay = {
+    roundNumber: 1,
+    boardHash: 'hash-123',
+    hostWon: true,
+    replayLog: {
+      events: [
+        {
+          type: 'battle_start',
+          seq: 1,
+          turn: 0,
+          playerUnits: [],
+          enemyUnits: [],
+        },
+        { type: 'turn_start', seq: 1, turn: 1 },
+        {
+          type: 'battle_end',
+          playerWon: false,
+          playerUnits: [],
+          enemyUnits: [],
+        },
+      ],
+    },
+  };
+  roomStatus.state.phase_event = {
+    type: 'playback_start',
+    roundNumber: 1,
+    checkpointSeq: 0,
+    checkpointTurn: 0,
+    boardHash: 'hash-123',
+  };
+
+  roomStatus.connectionState = 'CHANNEL_ERROR';
+  roomStatus.lifecycleState = 'DISCONNECTED';
+  intervals[0].fn();
+
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  emitRoomStateChange('battle_replay', roomStatus.state.battle_replay);
+  emitRoomStateChange('phase_event', roomStatus.state.phase_event);
+  roomEvents.reconnectHandlers[0]?.();
+  intervals[0].fn();
+
+  assert.equal(replayControls.plays.length, 0, 'Guest should not restart replay from a reconnect rebroadcast when room cache already contains a matching round_result');
+});
+
+await test('Guest does not request missing battle_replay when room cache already has a matching round_result', () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    intervals,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-guest-reconnect-no-replay-request',
+    opponentId: 'host-reconnect-no-replay-request',
+    isHost: false,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 30);
+  Game.state.playerUnits = [{
+    id: 'guest-reconnect-no-replay-request-unit',
+    name: 'Guest Reconnect No Replay Request Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+
+  roomStatus.state.round_result = { hostWon: true, roundNumber: 1, seq: 7, boardHash: 'hash-123' };
+  roomStatus.state.phase_event = {
+    type: 'playback_start',
+    roundNumber: 1,
+    checkpointSeq: 0,
+    checkpointTurn: 0,
+    boardHash: 'hash-123',
+  };
+
+  roomStatus.connectionState = 'CHANNEL_ERROR';
+  roomStatus.lifecycleState = 'DISCONNECTED';
+  intervals[0].fn();
+
+  const syncCountBeforeReconnect = roomEvents.syncCalls.length;
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  emitRoomStateChange('phase_event', roomStatus.state.phase_event);
+  roomEvents.reconnectHandlers[0]?.();
+  intervals[0].fn();
+
+  const reconnectSyncs = roomEvents.syncCalls.slice(syncCountBeforeReconnect);
+  assert.equal(reconnectSyncs.some((entry) => entry.key === 'request_authoritative_state' && entry.value.reason === 'missing_battle_replay'), false, 'Guest should not request missing battle_replay when a matching cached round_result already resolves the round');
+});
+
+await test('Next prep round clears stale guest reconnect replay hooks from the prior battle session', () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    replayControls,
+    fireMultiplayerCallback,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-guest-stale-replay-hooks',
+    opponentId: 'host-stale-replay-hooks',
+    isHost: false,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 30);
+  Game.state.playerUnits = [{
+    id: 'guest-session-unit',
+    name: 'Guest Session Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+
+  assert.equal(replayControls.plays.length, 0, 'Guest battle startup should still be waiting on the host replay payload');
+
+  fireMultiplayerCallback('onRoundReady', 2, 20);
+
+  assert.equal(Game.state.phase, 'prep', 'Starting the next round should return the guest to prep before reconnect checks run');
+
+  roomStatus.state.battle_replay = {
+    boardHash: 'stale-replay-hash',
+    hostWon: true,
+    replayLog: {
+      events: [
+        {
+          type: 'battle_start',
+          playerUnits: [],
+          enemyUnits: [],
+        },
+        { type: 'turn_start', seq: 1, turn: 1 },
+        {
+          type: 'battle_end',
+          playerWon: false,
+          playerUnits: [],
+          enemyUnits: [],
+        },
+      ],
+    },
+  };
+  roomStatus.state.phase_event = {
+    type: 'playback_start',
+    checkpointSeq: 0,
+    checkpointTurn: 0,
+    boardHash: 'stale-replay-hash',
+  };
+
+  roomEvents.reconnectHandlers[0]?.();
+
+  assert.equal(replayControls.plays.length, 0, 'Prep-round cleanup should disable stale reconnect replay hooks from the previous battle session');
+  assert.equal(Game.state.phase, 'prep', 'Stale reconnect hooks should not pull the guest back into battle after the next prep round begins');
+});
+
 await test('Host reconnect during battle re-broadcasts paused replay state and schedules resume', () => {
   const {
     Game,
@@ -3336,7 +4425,7 @@ await test('Host reconnect during battle re-broadcasts paused replay state and s
   roomEvents.reconnectHandlers[0]();
 
   const reconnectSyncs = roomEvents.syncCalls.slice(syncCountBeforeReconnect);
-  assert.equal(reconnectSyncs.some((entry) => entry.key === 'battle_replay'), true, 'Host should re-broadcast battle_replay on reconnect');
+  assert.equal(reconnectSyncs.filter((entry) => entry.key === 'battle_replay').length, 1, 'Host should re-broadcast battle_replay only once on reconnect while paused');
   assert.equal(reconnectSyncs.some((entry) => entry.key === 'phase_event' && entry.value.type === 'playback_resume_pending'), true, 'Host should schedule a resume_pending phase_event');
 
   const resumeTimeout = [...timeouts].reverse().find((entry) => entry.delay === 3000);
@@ -3356,12 +4445,330 @@ await test('Host reconnect during battle re-broadcasts paused replay state and s
   assert.equal(resumedDetail.unit._alreadyBoosted, true, 'Replay inspection after resume should still use the live replay snapshot instead of stale prep-state units');
 });
 
+await test('Host reconnect after round_result re-broadcasts result state without stale battle_replay', async () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    replayControls,
+    setRound,
+    fireMultiplayerCallback,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-result-reconnect',
+    opponentId: 'guest-result-reconnect',
+    isHost: true,
+  });
+
+  setRound(2);
+  Game.state.playerUnits = [{
+    id: 'host-result-reconnect-unit',
+    name: 'Host Result Reconnect Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host battle replay should be active before resolving the round');
+
+  replayControls.current.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'round_result'), true, 'Host round-end flow should broadcast round_result before reconnect assertions');
+  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'phase_event' && entry.value.type === 'result_show'), true, 'Host round-end flow should publish result_show before reconnect assertions');
+
+  const syncCountBeforeReconnect = roomEvents.syncCalls.length;
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  roomEvents.reconnectHandlers[0]();
+
+  const reconnectSyncs = roomEvents.syncCalls.slice(syncCountBeforeReconnect);
+  assert.equal(reconnectSyncs.some((entry) => entry.key === 'battle_replay'), false, 'Host reconnect should not rebroadcast stale battle_replay once round_result already exists');
+  assert.equal(reconnectSyncs.some((entry) => entry.key === 'phase_event' && entry.value.type === 'result_show'), true, 'Host reconnect should still rebroadcast result_show for the resolved round');
+  assert.equal(reconnectSyncs.some((entry) => entry.key === 'round_result'), true, 'Host reconnect should still rebroadcast round_result for the resolved round');
+});
+
+await test('Host reconnect releases held round advance when cached guest continue signals already match the current result', async () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    replayControls,
+    multiplayerEvents,
+    setRound,
+    fireMultiplayerCallback,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-result-reconnect-cached-continue',
+    opponentId: 'guest-result-reconnect-cached-continue',
+    isHost: true,
+  });
+
+  setRound(2);
+  Game.state.playerUnits = [{
+    id: 'host-result-reconnect-cached-continue-unit',
+    name: 'Host Result Reconnect Cached Continue Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host battle replay should be active before resolving the round');
+
+  replayControls.current.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const roundResultSync = roomEvents.syncCalls.find((entry) => entry.key === 'round_result');
+  assert.ok(roundResultSync, 'Host round-end flow should broadcast round_result before reconnect assertions');
+  assert.equal(multiplayerEvents.endRoundCalls.length, 0, 'Held round advance should not release before guest continue signals are observed');
+
+  roomStatus.state.round_result_ack = {
+    roundNumber: roundResultSync.value.roundNumber,
+    seq: roundResultSync.value.seq,
+    at: 1000,
+  };
+  roomStatus.state.ready_to_continue = {
+    roundNumber: roundResultSync.value.roundNumber,
+    seq: roundResultSync.value.seq,
+    at: 1001,
+  };
+
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  roomEvents.reconnectHandlers[0]();
+
+  assert.equal(multiplayerEvents.endRoundCalls.length, 1, 'Host reconnect should consume matching cached guest continue signals and release the held round advance');
+});
+
+await test('Host reconnect skips resolved-round rebroadcast churn when cached guest continue signals already match', async () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    replayControls,
+    multiplayerEvents,
+    setRound,
+    fireMultiplayerCallback,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-result-reconnect-no-churn',
+    opponentId: 'guest-result-reconnect-no-churn',
+    isHost: true,
+  });
+
+  setRound(2);
+  Game.state.playerUnits = [{
+    id: 'host-result-reconnect-no-churn-unit',
+    name: 'Host Result Reconnect No Churn Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host battle replay should be active before resolving the round');
+
+  replayControls.current.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const roundResultSync = roomEvents.syncCalls.find((entry) => entry.key === 'round_result');
+  assert.ok(roundResultSync, 'Host round-end flow should broadcast round_result before reconnect assertions');
+  assert.equal(multiplayerEvents.endRoundCalls.length, 0, 'Held round advance should still be waiting before reconnect');
+
+  roomStatus.state.round_result_ack = {
+    roundNumber: roundResultSync.value.roundNumber,
+    seq: roundResultSync.value.seq,
+    at: 1100,
+  };
+  roomStatus.state.ready_to_continue = {
+    roundNumber: roundResultSync.value.roundNumber,
+    seq: roundResultSync.value.seq,
+    at: 1101,
+  };
+
+  const syncCountBeforeReconnect = roomEvents.syncCalls.length;
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  roomEvents.reconnectHandlers[0]();
+
+  const reconnectSyncs = roomEvents.syncCalls.slice(syncCountBeforeReconnect);
+  assert.equal(multiplayerEvents.endRoundCalls.length, 1, 'Host reconnect should still release the held round advance when cached guest continue signals match');
+  assert.equal(reconnectSyncs.some((entry) => entry.key === 'phase_event' && entry.value.type === 'result_show'), false, 'Host reconnect should skip result_show rebroadcast churn when guest catch-up is already confirmed from cached room state');
+  assert.equal(reconnectSyncs.some((entry) => entry.key === 'round_result'), false, 'Host reconnect should skip round_result rebroadcast churn when guest catch-up is already confirmed from cached room state');
+});
+
+await test('Host reconnect during next prep round does not rebroadcast stale prior-round result payloads', async () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    replayControls,
+    setRound,
+    fireMultiplayerCallback,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+      'btn-mp-ready',
+      'mp-ready-opp-status',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-prep-reconnect',
+    opponentId: 'guest-prep-reconnect',
+    isHost: true,
+  });
+
+  setRound(2);
+  Game.state.playerUnits = [{
+    id: 'host-prep-reconnect-unit',
+    name: 'Host Prep Reconnect Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host battle replay should be active before resolving the round');
+
+  replayControls.current.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  fireMultiplayerCallback('onRoundReady', 3, 20);
+  roomStatus.state.prep_state = {
+    roundNumber: 3,
+    revision: 1,
+    units: [],
+  };
+
+  const syncCountBeforeReconnect = roomEvents.syncCalls.length;
+  roomStatus.connectionState = 'SUBSCRIBED';
+  roomStatus.lifecycleState = 'ACTIVE';
+  roomEvents.reconnectHandlers[0]();
+
+  const reconnectSyncs = roomEvents.syncCalls.slice(syncCountBeforeReconnect);
+  assert.equal(reconnectSyncs.some((entry) => entry.key === 'prep_state'), true, 'Host reconnect during prep should still rebroadcast current prep_state');
+  assert.equal(reconnectSyncs.some((entry) => entry.key === 'round_result'), false, 'Host reconnect during the next prep round should not rebroadcast the previous round_result');
+  assert.equal(reconnectSyncs.some((entry) => entry.key === 'phase_event' && entry.value.type === 'result_show'), false, 'Host reconnect during the next prep round should not rebroadcast the previous result_show phase event');
+});
+
 await test('Host serves retained authoritative_state for an older unresolved battle round after advancing', () => {
   const {
     Game,
     roomEvents,
+    roomStatus,
     replayControls,
     setRound,
+    setScores,
     fireMultiplayerCallback,
     emitRoomStateChange,
   } = loadGameContext({
@@ -3388,6 +4795,7 @@ await test('Host serves retained authoritative_state for an older unresolved bat
     isHost: true,
   });
 
+  setScores({ my: 1, opp: 1 });
   setRound(4);
   Game.state.playerUnits = [{
     id: 'p1',
@@ -3412,6 +4820,9 @@ await test('Host serves retained authoritative_state for an older unresolved bat
   assert.ok(replayControls.current, 'Host battle replay should be active');
 
   setRound(5);
+  setScores({ my: 2, opp: 1 });
+  roomStatus.state.prep_p1 = { roundNumber: 5, gold: 23 };
+  roomStatus.state.prep_p2 = { roundNumber: 5, gold: 19 };
 
   const syncCountBeforeRequest = roomEvents.syncCalls.length;
   emitRoomStateChange('request_authoritative_state', {
@@ -3424,6 +4835,609 @@ await test('Host serves retained authoritative_state for an older unresolved bat
   const authoritativeSync = requestSyncs.find((entry) => entry.key === 'authoritative_state');
   assert.ok(authoritativeSync, 'Host should answer an older unresolved round with retained authoritative_state');
   assert.equal(authoritativeSync.value.roundNumber, 4);
+  assert.deepEqual(Object.keys(authoritativeSync.value.state), [
+    'battle_replay',
+    'playback_checkpoint',
+    'phase_event',
+  ]);
+  assert.deepEqual(authoritativeSync.value.meta?.matchState?.goldBySlot || {}, {
+    p1: null,
+    p2: null,
+  }, 'Older retained authoritative_state should not leak newer prep gold into matchState metadata');
+  assert.deepEqual(authoritativeSync.value.meta?.matchState?.scores || {}, {
+    my: 1,
+    opp: 1,
+  }, 'Older retained authoritative_state should not leak newer live scores into matchState metadata');
+  assert.deepEqual(authoritativeSync.value.meta?.matchState?.scoresBeforeResult || {}, {
+    my: 1,
+    opp: 1,
+  }, 'Older unresolved authoritative_state should keep the response-round pre-result scores instead of the current live scoreboard');
+});
+
+await test('Host serves older resolved authoritative_state with response-round scores instead of current live scores', async () => {
+  const {
+    Game,
+    roomEvents,
+    replayControls,
+    setRound,
+    setScores,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-older-resolved-123',
+    opponentId: 'guest-older-resolved-456',
+    isHost: true,
+  });
+
+  setScores({ my: 1, opp: 1 });
+  setRound(4);
+  Game.state.playerUnits = [{
+    id: 'p1',
+    name: 'Test Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host round 4 battle replay should be active before resolving the round');
+
+  replayControls.current.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  setRound(5);
+  setScores({ my: 3, opp: 1 });
+
+  const syncCountBeforeRequest = roomEvents.syncCalls.length;
+  emitRoomStateChange('request_authoritative_state', {
+    roundNumber: 4,
+    reason: 'reload_resume',
+    mode: 'battle',
+  });
+
+  const requestSyncs = roomEvents.syncCalls.slice(syncCountBeforeRequest);
+  const authoritativeSync = requestSyncs.find((entry) => entry.key === 'authoritative_state');
+  assert.ok(authoritativeSync, 'Host should answer the older resolved round with retained authoritative_state');
+  assert.equal(authoritativeSync.value.roundNumber, 4);
+  assert.deepEqual(Object.keys(authoritativeSync.value.state), [
+    'battle_replay',
+    'playback_checkpoint',
+    'phase_event',
+    'round_result',
+  ]);
+  assert.deepEqual(authoritativeSync.value.meta?.matchState?.scoresBeforeResult || {}, {
+    my: 1,
+    opp: 1,
+  }, 'Older resolved authoritative_state should keep the response-round pre-result scores instead of the current live scoreboard');
+  assert.deepEqual(authoritativeSync.value.meta?.matchState?.scores || {}, {
+    my: 2,
+    opp: 1,
+  }, 'Older resolved authoritative_state should derive resolved scores from the retained response-round snapshot plus the retained round_result');
+});
+
+await test('Host serves current resolved authoritative_state with response-round scores before round advance releases', async () => {
+  const {
+    Game,
+    roomEvents,
+    replayControls,
+    setRound,
+    setScores,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-current-resolved-123',
+    opponentId: 'guest-current-resolved-456',
+    isHost: true,
+  });
+
+  setScores({ my: 1, opp: 1 });
+  setRound(4);
+  Game.state.playerUnits = [{
+    id: 'p1',
+    name: 'Test Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host current-round battle replay should be active before resolving the round');
+
+  replayControls.current.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const syncCountBeforeRequest = roomEvents.syncCalls.length;
+  emitRoomStateChange('request_authoritative_state', {
+    roundNumber: 4,
+    reason: 'reload_resume',
+    mode: 'battle',
+  });
+
+  const requestSyncs = roomEvents.syncCalls.slice(syncCountBeforeRequest);
+  const authoritativeSync = requestSyncs.find((entry) => entry.key === 'authoritative_state');
+  assert.ok(authoritativeSync, 'Host should answer the current resolved round with authoritative_state before held round advance is released');
+  assert.equal(authoritativeSync.value.roundNumber, 4);
+  assert.deepEqual(Object.keys(authoritativeSync.value.state), [
+    'battle_replay',
+    'playback_checkpoint',
+    'phase_event',
+    'round_result',
+  ]);
+  assert.deepEqual(authoritativeSync.value.meta?.matchState?.scoresBeforeResult || {}, {
+    my: 1,
+    opp: 1,
+  }, 'Current resolved authoritative_state should preserve the response-round pre-result scores while round advance is still held');
+  assert.deepEqual(authoritativeSync.value.meta?.matchState?.scores || {}, {
+    my: 2,
+    opp: 1,
+  }, 'Current resolved authoritative_state should expose the resolved response-round scores even before MultiplayerGame advances its live scoreboard');
+});
+
+await test('Host ignores duplicate identical authoritative_state requests when the round state is unchanged', async () => {
+  const {
+    Game,
+    roomEvents,
+    replayControls,
+    setRound,
+    setScores,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-dedupe-request-123',
+    opponentId: 'guest-dedupe-request-456',
+    isHost: true,
+  });
+
+  setScores({ my: 1, opp: 1 });
+  setRound(4);
+  Game.state.playerUnits = [{
+    id: 'p1',
+    name: 'Test Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host battle replay should be active before testing duplicate authoritative requests');
+
+  replayControls.current.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const duplicateRequest = {
+    roundNumber: 4,
+    reason: 'reload_resume',
+    mode: 'battle',
+    checkpointSeq: 0,
+  };
+
+  const syncCountBeforeRequest = roomEvents.syncCalls.length;
+  emitRoomStateChange('request_authoritative_state', duplicateRequest);
+  emitRoomStateChange('request_authoritative_state', duplicateRequest);
+
+  const requestSyncs = roomEvents.syncCalls.slice(syncCountBeforeRequest);
+  assert.equal(requestSyncs.filter((entry) => entry.key === 'authoritative_state').length, 1, 'Host should emit only one authoritative_state bundle when an identical request is repeated without any round-state change');
+});
+
+await test('Host re-sends authoritative_state when a same-round request changes checkpointSeq', async () => {
+  const {
+    Game,
+    roomEvents,
+    replayControls,
+    setRound,
+    setScores,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-dedupe-checkpoint-123',
+    opponentId: 'guest-dedupe-checkpoint-456',
+    isHost: true,
+  });
+
+  setScores({ my: 1, opp: 1 });
+  setRound(4);
+  Game.state.playerUnits = [{
+    id: 'p1',
+    name: 'Test Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host battle replay should be active before testing changed authoritative requests');
+
+  replayControls.current.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const syncCountBeforeRequest = roomEvents.syncCalls.length;
+  emitRoomStateChange('request_authoritative_state', {
+    roundNumber: 4,
+    reason: 'reload_resume',
+    mode: 'battle',
+    checkpointSeq: 0,
+  });
+  emitRoomStateChange('request_authoritative_state', {
+    roundNumber: 4,
+    reason: 'reload_resume',
+    mode: 'battle',
+    checkpointSeq: 4,
+  });
+
+  const requestSyncs = roomEvents.syncCalls.slice(syncCountBeforeRequest).filter((entry) => entry.key === 'authoritative_state');
+  assert.equal(requestSyncs.length, 2, 'Host should emit a fresh authoritative_state bundle when a same-round request changes checkpointSeq');
+  assert.equal(requestSyncs.at(-1)?.value?.meta?.request?.checkpointSeq, 4, 'The latest authoritative response should reflect the changed checkpointSeq request metadata');
+});
+
+await test('Host re-sends authoritative_state when the response state changes for the same request', async () => {
+  const {
+    Game,
+    roomEvents,
+    replayControls,
+    setRound,
+    setScores,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-dedupe-response-change-123',
+    opponentId: 'guest-dedupe-response-change-456',
+    isHost: true,
+  });
+
+  setScores({ my: 1, opp: 1 });
+  setRound(4);
+  Game.state.playerUnits = [{
+    id: 'p1',
+    name: 'Test Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host battle replay should be active before testing response-state changes');
+
+  const repeatedRequest = {
+    roundNumber: 4,
+    reason: 'reload_resume',
+    mode: 'battle',
+    checkpointSeq: 0,
+  };
+
+  const syncCountBeforeRequests = roomEvents.syncCalls.length;
+  emitRoomStateChange('request_authoritative_state', repeatedRequest);
+
+  replayControls.current.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  emitRoomStateChange('request_authoritative_state', repeatedRequest);
+
+  const requestSyncs = roomEvents.syncCalls.slice(syncCountBeforeRequests).filter((entry) => entry.key === 'authoritative_state');
+  assert.equal(requestSyncs.length, 2, 'Host should emit a fresh authoritative_state bundle when the repeated request sees new response state');
+  assert.deepEqual(Object.keys(requestSyncs[0].value.state), [
+    'battle_replay',
+    'playback_checkpoint',
+    'phase_event',
+  ], 'The first authoritative response should reflect the unresolved battle state');
+  assert.deepEqual(Object.keys(requestSyncs[1].value.state), [
+    'battle_replay',
+    'playback_checkpoint',
+    'phase_event',
+    'round_result',
+  ], 'The second authoritative response should reflect the newly resolved round state');
+});
+
+await test('Host serves an older retained authoritative_state again after prep resets the dedupe cache', async () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    replayControls,
+    setRound,
+    setScores,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+      'btn-mp-ready',
+      'mp-ready-opp-status',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-dedupe-reset-123',
+    opponentId: 'guest-dedupe-reset-456',
+    isHost: true,
+  });
+
+  setScores({ my: 1, opp: 1 });
+  setRound(4);
+  Game.state.playerUnits = [{
+    id: 'p1',
+    name: 'Test Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host battle replay should be active before testing dedupe reset across prep');
+
+  replayControls.current.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const repeatedRequest = {
+    roundNumber: 4,
+    reason: 'reload_resume',
+    mode: 'battle',
+    checkpointSeq: 0,
+  };
+
+  const syncCountBeforeCurrentRoundRequest = roomEvents.syncCalls.length;
+  emitRoomStateChange('request_authoritative_state', repeatedRequest);
+  const currentRoundRequestSyncs = roomEvents.syncCalls.slice(syncCountBeforeCurrentRoundRequest);
+  assert.equal(currentRoundRequestSyncs.filter((entry) => entry.key === 'authoritative_state').length, 1, 'Host should answer the initial current-round authoritative request before prep starts');
+
+  setRound(5);
+  setScores({ my: 2, opp: 1 });
+  fireMultiplayerCallback('onRoundReady', 5, 20);
+  roomStatus.state.prep_state = { roundNumber: 5, revision: 1, units: [] };
+
+  const syncCountBeforeOlderRoundRetry = roomEvents.syncCalls.length;
+  emitRoomStateChange('request_authoritative_state', repeatedRequest);
+  const olderRoundRetrySyncs = roomEvents.syncCalls.slice(syncCountBeforeOlderRoundRetry);
+  assert.equal(olderRoundRetrySyncs.filter((entry) => entry.key === 'authoritative_state').length, 1, 'Host should answer the same older-round request again after prep resets the dedupe cache and the durable authoritative_state key has been cleared');
+});
+
+await test('Host drops older retained authoritative_state once a newer battle session starts', () => {
+  const {
+    Game,
+    roomEvents,
+    replayControls,
+    setRound,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-retained-drop-123',
+    opponentId: 'guest-retained-drop-456',
+    isHost: true,
+  });
+
+  Game.state.playerUnits = [{
+    id: 'p1',
+    name: 'Test Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  setRound(4);
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host round 4 battle replay should be active');
+
+  setRound(5);
+  fireMultiplayerCallback('onBothReady');
+  assert.ok(replayControls.current, 'Host round 5 battle replay should replace the retained round 4 replay');
+
+  const syncCountBeforeOldRoundRequest = roomEvents.syncCalls.length;
+  emitRoomStateChange('request_authoritative_state', {
+    roundNumber: 4,
+    reason: 'reload_resume',
+    mode: 'battle',
+  });
+
+  const oldRoundRequestSyncs = roomEvents.syncCalls.slice(syncCountBeforeOldRoundRequest);
+  assert.equal(oldRoundRequestSyncs.some((entry) => entry.key === 'authoritative_state'), false, 'Host should not keep serving round 4 authoritative_state after round 5 battle has started');
+
+  const syncCountBeforeCurrentRoundRequest = roomEvents.syncCalls.length;
+  emitRoomStateChange('request_authoritative_state', {
+    roundNumber: 5,
+    reason: 'reload_resume',
+    mode: 'battle',
+  });
+
+  const currentRoundRequestSyncs = roomEvents.syncCalls.slice(syncCountBeforeCurrentRoundRequest);
+  const authoritativeSync = currentRoundRequestSyncs.find((entry) => entry.key === 'authoritative_state');
+  assert.ok(authoritativeSync, 'Host should still answer the current round authoritative_state request');
+  assert.equal(authoritativeSync.value.roundNumber, 5);
   assert.deepEqual(Object.keys(authoritativeSync.value.state), [
     'battle_replay',
     'playback_checkpoint',

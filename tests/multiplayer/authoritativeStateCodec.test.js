@@ -128,6 +128,31 @@ test('resolveResumeTarget prefers fresher room state and room checkpoints over s
   assert.equal(target.requestedMode, 'battle');
 });
 
+test('resolveResumeTarget ignores stale older authoritative_state when newer prep metadata exists', () => {
+  const target = MultiplayerAuthorityState.resolveResumeTarget({
+    savedResumeContext: null,
+    roomState: {
+      authoritative_state: {
+        roundNumber: 4,
+        at: 1234,
+        state: {
+          battle_replay: { roundNumber: 4, boardHash: 'hash-4' },
+        },
+      },
+      prep_state: { roundNumber: 5, shopSeed: 77 },
+      prep_p2: { roundNumber: 5, gold: 10 },
+    },
+    snapshotRound: 0,
+    localWave: 0,
+    trackedRound: 0,
+    liveRound: 0,
+  });
+
+  assert.equal(target.roundNumber, 5);
+  assert.equal(target.checkpointSeq, 0);
+  assert.equal(target.requestedMode, 'prep');
+});
+
 test('buildPayload can emit battle-only bundles for replay/bootstrap recovery', () => {
   const payload = MultiplayerAuthorityState.buildPayload({
     roundNumber: 5,

@@ -142,6 +142,7 @@ function createGuestRoundHandler({
     _hostResultWaitStartedAt = 0;
     if (_hostResultTimer) { clearTimeout(_hostResultTimer); _hostResultTimer = null; }
     room.offStateChange(_roundResultFn);
+    room.offStateChange(_authoritativeStateFn);
     if (resultPayload) _sendGuestResultSync('round_result_ack', resultPayload);
     onRoundEnd({ guestWon, source });
     if (resultPayload) _sendGuestResultSync('ready_to_continue', resultPayload);
@@ -217,7 +218,20 @@ function createGuestRoundHandler({
     if (value.roundNumber !== undefined && value.roundNumber !== expectedRound) return;
     _applyResult(!value.hostWon, 'host', value);
   };
+
+  const _authoritativeStateFn = (key, value) => {
+    if (key !== 'authoritative_state' || !value) return;
+    if (value.roundNumber !== undefined && Number(value.roundNumber) !== expectedRound) return;
+
+    _lastAuthoritativeRequestAt = 0;
+    for (const [entryKey, entryValue] of Object.entries(value.state || {})) {
+      if (entryValue === undefined || entryValue === null) continue;
+      room._emit(entryKey, entryValue);
+    }
+  };
+
   room.onStateChange(_roundResultFn);
+  room.onStateChange(_authoritativeStateFn);
 
   // Mirrors the guest replay-complete path arming the authoritative result timeout.
   const onBattleEnd = (_ignoredLocalWon) => {
@@ -430,7 +444,7 @@ test('Room listener is removed after host result is applied', () => {
   const room = createMockRoom();
   const results = [];
   createGuestRoundHandler({ room, onRoundEnd: (r) => results.push(r) });
-  assert.equal(room._listenerCount(), 1);
+  assert.equal(room._listenerCount(), 2);
   room._emit('round_result', { hostWon: false, roundNumber: 1 });
   assert.equal(room._listenerCount(), 0);
 });
@@ -488,6 +502,41 @@ testAsync('Timeout defers while playback_start is still live and host result can
   assert.equal(results.length, 1);
   assert.equal(results[0].guestWon, false);
   assert.equal(results[0].source, 'host');
+});
+
+testAsync('Deferred timeout resolves from authoritative_state and never falls through to timeout fallback', async () => {
+  const room = createMockRoom({ phase_event: { type: 'playback_start', roundNumber: 1 } });
+  const results = [];
+  const handler = createGuestRoundHandler({
+    room,
+    onRoundEnd: (r) => results.push(r),
+    timeoutMs: 20,
+    deferTimeoutMs: 20,
+    maxWaitMs: 120,
+    replayHostWon: false,
+  });
+
+  handler.onBattleEnd();
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  const resyncRequestsBeforeAuthoritative = room.getSyncs().filter((entry) => entry.key === 'request_authoritative_state');
+  assert.equal(resyncRequestsBeforeAuthoritative.length > 0, true, 'Deferred timeout path should request authoritative_state before the authoritative bundle arrives');
+
+  room._emit('authoritative_state', {
+    roundNumber: 1,
+    state: {
+      round_result: { hostWon: true, roundNumber: 1, seq: 11, boardHash: null },
+    },
+  });
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  assert.equal(results.length, 1, 'Authoritative round_result should settle the guest result once');
+  assert.equal(results[0].guestWon, false);
+  assert.equal(results[0].source, 'host');
+
+  await new Promise(resolve => setTimeout(resolve, 80));
+
+  assert.equal(results.length, 1, 'Timeout fallback should stay cancelled after authoritative_state already resolved the round');
 });
 
 testAsync('Timeout still falls back after the hard wait ceiling', async () => {

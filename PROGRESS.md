@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: May 28, 2026
+> **Last Updated**: June 21, 2026
 
 ---
 
@@ -207,6 +207,9 @@
 - [x] Follow-up battle-start cleanup now also clears lingering cooldowns, status effects, boss phase state, and stale synergy base snapshots from reused units before the next fight begins
 - [x] Synergy and prep-preview audits now keep whole-army buffs, mixed-stat tiers, sidebar labels, and shop-card detail previews aligned between prep and battle
 - [x] Scout's Intel now works as a run-scoped prep feature: buying it immediately unlocks the wave badge preview for the current run, while fresh runs start with scouting locked again and multiplayer still keeps the upgrade disabled
+- [x] Recent multiplayer replay hardening now keeps guest reload/reconnect recovery anchored to the correct round, prefers live prep/result state over stale retained bundles, and preserves round-scoped score and gold metadata in authoritative responses
+- [x] Host reconnect result recovery now consumes cached guest continue signals before releasing held rounds, skips redundant resolved-round rebroadcast churn once catch-up is already confirmed, and no longer double-sends battle replay payloads during paused-battle reconnects
+- [x] Expanded multiplayer regression coverage now locks cached reconnect recovery, held-round release behavior, duplicate authoritative-response suppression, round-boundary room-key cleanup, and paused-battle reconnect rebroadcast counts
 - [ ] Revisit stronger multiplayer authority when ranked, spectate, or broader platform targets raise the reliability bar beyond transient reconnect recovery
 
 ### Phase 9 — Audio Overhaul, Leaderboard v2 & Balance

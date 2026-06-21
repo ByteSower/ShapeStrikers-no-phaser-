@@ -1084,6 +1084,16 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.24',
+    date: 'June 21, 2026',
+    title: '🔌 Multiplayer Reconnect & Replay Hardening',
+    notes: [
+      '🔄 Multiplayer reconnects now recover in-progress rounds more reliably, including better resume targeting after reloads and cleaner catch-up when a battle or result window was interrupted',
+      '📡 Hosts now avoid extra replay and result re-sends after the guest is already caught up, which reduces duplicate room churn during reconnect-heavy matches',
+      '🧭 Authoritative multiplayer recovery now keeps the right round-specific score and gold context when older or current rounds need to be re-served after a reconnect',
+    ],
+  },
+  {
     version: '1.0.23',
     date: 'May 31, 2026',
     title: '🔭 Scouting & Prep Audit Cleanup',

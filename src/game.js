@@ -37,6 +37,7 @@ const Game = (() => {
   let _mpLastBattleReplayPayload = null;  // host: latest battle_replay room payload
   let _mpLastPhaseEventPayload = null;    // host: latest phase_event room payload
   let _mpLastPlaybackCheckpoint = null;   // host: latest playback_checkpoint room payload
+  let _mpRoundScoreSnapshots = Object.create(null);
   let _mpReplayPlayer = null;
   let _mpReplayUnitsById = Object.create(null);
   let _mpRoomWatchTimer = null;
@@ -50,6 +51,7 @@ const Game = (() => {
   let _mpGuestResumeReplay = () => false;
   let _mpGuestBattleSessionCleanup = () => {};
   let _mpGuestBattleSessionRound = -1;
+  let _mpGuestReconnectRecoveryHandled = false;
   let _mpHostRoundSyncFn = null;
   let _mpRoomOpponentDisconnectFn = null;
   let _mpRoomReconnectSyncFn = null;
@@ -62,6 +64,8 @@ const Game = (() => {
   let _mpLastRoundResultAckPayload = null;
   let _mpLastReadyToContinuePayload = null;
   let _mpLastAuthoritativeStatePayload = null;
+  let _mpLastAuthoritativeRequestSignature = null;
+  let _mpLastAuthoritativeResponseSignature = null;
   let _mpOwnPrepRevision = 0;
   let _mpDebugReplayHashOverride = null;
   let _mpPendingResumeAuthoritativeRequest = false;
@@ -456,9 +460,11 @@ const Game = (() => {
     if (requestResult && typeof requestResult.then === 'function') {
       requestResult.then((result) => {
         if (!result?.ok) {
+          _mpPendingResumeAuthoritativeRequest = true;
           Room.endResync?.('reload_resume_authoritative_request_failed', { roundNumber });
         }
       }).catch(() => {
+        _mpPendingResumeAuthoritativeRequest = true;
         Room.endResync?.('reload_resume_authoritative_request_failed', { roundNumber });
       });
     }
@@ -507,7 +513,17 @@ const Game = (() => {
     if (!_mpMode || typeof Room === 'undefined' || typeof MultiplayerAuthorityState === 'undefined') return false;
 
     const payload = roomState?.authoritative_state;
-    if (!payload || !MultiplayerAuthorityState.matchesRound(payload, roundNumber)) return false;
+    if (!payload) return false;
+    if (!MultiplayerAuthorityState.matchesRound(payload, roundNumber)) {
+      _mpPendingResumeAuthoritativeRequest = true;
+      if (Room.getLifecycleState?.() === 'RESYNCING') {
+        Room.endResync?.('reload_resume_authoritative_mismatch', {
+          roundNumber,
+          receivedRound: Number(payload?.roundNumber || payload?.round || 0),
+        });
+      }
+      return false;
+    }
 
     const payloadAt = Number(payload.at || 0);
     if (payloadAt > 0 && payloadAt === _mpLastResumeAuthoritativeStateAt) return false;
@@ -515,6 +531,7 @@ const Game = (() => {
     const entries = MultiplayerAuthorityState.getEntries(payload);
     _mpLastResumeAuthoritativeStateAt = payloadAt > 0 ? payloadAt : Date.now();
     if (!entries.length) {
+      _mpPendingResumeAuthoritativeRequest = true;
       Room.endResync?.('reload_resume_authoritative_empty', { roundNumber });
       return false;
     }
@@ -2271,6 +2288,48 @@ const Game = (() => {
     return Object.keys(retained).length ? retained : null;
   }
 
+  function _mpNormalizeScoreSnapshot(scores = null) {
+    return {
+      my: Math.max(0, Number(scores?.my) || 0),
+      opp: Math.max(0, Number(scores?.opp) || 0),
+    };
+  }
+
+  function _mpBuildAuthoritativeRequestSignature(requestPayload = null) {
+    if (!requestPayload) return 'null';
+    return JSON.stringify({
+      roundNumber: Number(requestPayload.roundNumber || 0),
+      reason: requestPayload.reason || null,
+      mode: requestPayload.mode || null,
+      seq: Number(requestPayload.seq || 0),
+      checkpointSeq: Number(requestPayload.checkpointSeq || 0),
+      guestBoardHash: requestPayload.guestBoardHash ?? null,
+      hostBoardHash: requestPayload.hostBoardHash ?? null,
+    });
+  }
+
+  function _mpBuildAuthoritativeResponseSignature(payload = null) {
+    if (!payload) return 'null';
+    return JSON.stringify({
+      roundNumber: Number(payload.roundNumber || 0),
+      responseMode: payload.meta?.responseMode || null,
+      matchState: payload.meta?.matchState || null,
+      state: payload.state || {},
+    });
+  }
+
+  function _mpCaptureRoundScoreSnapshot(roundNumber = 0, scores = null) {
+    const targetRound = Number(roundNumber || 0);
+    if (targetRound <= 0) return null;
+
+    const snapshot = _mpNormalizeScoreSnapshot(scores || {
+      my: _mpState.myScore,
+      opp: _mpState.oppScore,
+    });
+    _mpRoundScoreSnapshots[targetRound] = snapshot;
+    return snapshot;
+  }
+
   function _mpSendAuthoritativeState(reason = 'resync', requestPayload = null) {
     if (typeof Room === 'undefined' || typeof MultiplayerAuthorityState === 'undefined') return null;
     const roomState = Room.getState();
@@ -2283,17 +2342,31 @@ const Game = (() => {
 
     const responseRound = retainedRoundState ? requestedRound : currentRound;
     const responseRoomState = retainedRoundState || roomState;
+    const responsePrepP1 = _mpPayloadMatchesRound(responseRoomState.prep_p1, responseRound)
+      ? responseRoomState.prep_p1
+      : null;
+    const responsePrepP2 = _mpPayloadMatchesRound(responseRoomState.prep_p2, responseRound)
+      ? responseRoomState.prep_p2
+      : null;
     const currentScores = (typeof MultiplayerGame !== 'undefined' && typeof MultiplayerGame.getScores === 'function')
       ? MultiplayerGame.getScores()
       : { my: _mpState.myScore, opp: _mpState.oppScore };
-    const scoresBeforeResult = {
-      my: Math.max(0, Number(currentScores.my) || 0),
-      opp: Math.max(0, Number(currentScores.opp) || 0),
-    };
+    const retainedScoreSnapshot = responseRound > 0 && _mpRoundScoreSnapshots[responseRound]
+      ? _mpNormalizeScoreSnapshot(_mpRoundScoreSnapshots[responseRound])
+      : null;
+    const responseScores = retainedScoreSnapshot
+      ? retainedScoreSnapshot
+      : _mpNormalizeScoreSnapshot(currentScores);
+    const scoresBeforeResult = _mpNormalizeScoreSnapshot(responseScores);
     const responseResult = responseRoomState.round_result;
     if (_mpPayloadMatchesRound(responseResult, responseRound) && typeof responseResult?.hostWon === 'boolean') {
-      if (responseResult.hostWon) scoresBeforeResult.my = Math.max(0, scoresBeforeResult.my - 1);
-      else scoresBeforeResult.opp = Math.max(0, scoresBeforeResult.opp - 1);
+      if (retainedScoreSnapshot) {
+        if (responseResult.hostWon) responseScores.my += 1;
+        else responseScores.opp += 1;
+      } else {
+        if (responseResult.hostWon) scoresBeforeResult.my = Math.max(0, scoresBeforeResult.my - 1);
+        else scoresBeforeResult.opp = Math.max(0, scoresBeforeResult.opp - 1);
+      }
     }
     const responseMode = MultiplayerAuthorityState.resolveResponseMode({
       requestedMode: requestPayload?.mode,
@@ -2310,16 +2383,25 @@ const Game = (() => {
         request: requestPayload ? { ...requestPayload, responseMode } : null,
         matchState: {
           roundNumber: responseRound,
-          scores: currentScores,
+          scores: responseScores,
           scoresBeforeResult,
           goldBySlot: {
-            p1: roomState.prep_p1?.gold ?? null,
-            p2: roomState.prep_p2?.gold ?? null,
+            p1: responsePrepP1?.gold ?? null,
+            p2: responsePrepP2?.gold ?? null,
           },
         },
       },
     });
+    const requestSignature = _mpBuildAuthoritativeRequestSignature(requestPayload);
+    const responseSignature = _mpBuildAuthoritativeResponseSignature(payload);
+    if (_mpLastAuthoritativeRequestSignature === requestSignature && _mpLastAuthoritativeResponseSignature === responseSignature) {
+      console.info(`[MP:R${responseRound || currentRound || '?'}] Suppressing duplicate authoritative_state response for unchanged request/state.`);
+      return null;
+    }
+
     _mpLastAuthoritativeStatePayload = payload;
+    _mpLastAuthoritativeRequestSignature = requestSignature;
+    _mpLastAuthoritativeResponseSignature = responseSignature;
     Room.syncState('authoritative_state', payload);
     return payload;
   }
@@ -3776,7 +3858,14 @@ const Game = (() => {
         _mpOpponentOfflineDuringBattle = false;
       }
 
-      if (isHost && _mpLastBattleReplayPayload) {
+      if (isHost && _mpHeldRoundAdvanceFn) {
+        _mpConsumeCachedRoundContinueSignals();
+        _mpMaybeReleaseHeldRoundAdvance('opponent reconnect');
+      }
+
+      const shouldRebroadcastResolvedRoundState = !_mpLastRoundResultPayload || !!_mpHeldRoundAdvanceFn;
+
+      if (isHost && !_mpOpponentOfflineDuringBattle && _mpLastBattleReplayPayload && !_mpLastRoundResultPayload) {
         console.info(`[MP:R${_mpLastBattleReplayPayload.roundNumber}] Opponent reconnected — re-broadcasting battle_replay.`);
         Room.syncState('battle_replay', _mpLastBattleReplayPayload);
       }
@@ -3784,7 +3873,7 @@ const Game = (() => {
         console.info(`[MP:R${_mpLastPlaybackCheckpoint.roundNumber}] Opponent reconnected — re-broadcasting playback_checkpoint seq=${_mpLastPlaybackCheckpoint.seq}.`);
         Room.syncState('playback_checkpoint', _mpLastPlaybackCheckpoint);
       }
-      if (isHost && !_mpOpponentOfflineDuringBattle && _mpLastPhaseEventPayload) {
+      if (isHost && !_mpOpponentOfflineDuringBattle && _mpLastPhaseEventPayload && !(state?.phase === 'prep' && _mpLastRoundResultPayload)) {
         const phasePayload = (_mpLastPhaseEventPayload.type === MP_PHASE_EVENTS.PLAYBACK_START && _mpLastPlaybackCheckpoint)
           ? {
               ..._mpLastPhaseEventPayload,
@@ -3793,11 +3882,14 @@ const Game = (() => {
               resumed: true,
             }
           : _mpLastPhaseEventPayload;
-        _mpLastPhaseEventPayload = phasePayload;
-        console.info(`[MP:R${phasePayload.roundNumber}] Opponent reconnected — re-broadcasting phase_event ${phasePayload.type}.`);
-        Room.syncState('phase_event', phasePayload);
+        const shouldRebroadcastPhaseEvent = phasePayload.type !== MP_PHASE_EVENTS.RESULT_SHOW || shouldRebroadcastResolvedRoundState;
+        if (shouldRebroadcastPhaseEvent) {
+          _mpLastPhaseEventPayload = phasePayload;
+          console.info(`[MP:R${phasePayload.roundNumber}] Opponent reconnected — re-broadcasting phase_event ${phasePayload.type}.`);
+          Room.syncState('phase_event', phasePayload);
+        }
       }
-      if (isHost && _mpLastRoundResultPayload) {
+      if (isHost && _mpLastRoundResultPayload && state?.phase !== 'prep' && shouldRebroadcastResolvedRoundState) {
         console.info(`[MP:R${_mpLastRoundResultPayload.roundNumber}] Opponent reconnected — re-broadcasting last round_result.`);
         Room.syncState('round_result', _mpLastRoundResultPayload);
       }
@@ -3814,8 +3906,7 @@ const Game = (() => {
         _mpMaybeReleaseHeldRoundAdvance('opponent reconnect');
       }
       if (!isHost) {
-        _mpGuestResumeReplay();
-        _mpGuestCheckCachedResult();
+        _mpMaybeRunGuestReconnectRecovery();
       }
     };
 
@@ -3872,7 +3963,21 @@ const Game = (() => {
     const cleanup = _mpGuestBattleSessionCleanup;
     _mpGuestBattleSessionCleanup = () => {};
     _mpGuestBattleSessionRound = -1;
+    _mpGuestCheckCachedResult = () => false;
+    _mpGuestResumeReplay = () => false;
+    _mpGuestExtendResultTimeout = () => {};
+    _mpGuestReconnectRecoveryHandled = false;
     cleanup(reason);
+  }
+
+  function _mpMaybeRunGuestReconnectRecovery() {
+    if (_mpGuestReconnectRecoveryHandled) return false;
+    _mpGuestReconnectRecoveryHandled = true;
+    const recoveredFromCachedResult = _mpGuestCheckCachedResult();
+    if (!recoveredFromCachedResult) {
+      _mpGuestResumeReplay();
+    }
+    return true;
   }
 
   function _mpMaybeResumeBattleFromRoomState() {
@@ -3887,6 +3992,9 @@ const Game = (() => {
       roundNumber = Number(_mpResolveResumeTarget(roomState).roundNumber || 0);
     }
     _mpHydrateLiveRoundState(null, roomState);
+    if (Room.getLifecycleState?.() === 'RESYNCING' && _mpHasLiveBootstrapState(roomState, roundNumber)) {
+      Room.endResync?.('reload_resume_recovered_from_live_state', { roundNumber });
+    }
     const phaseEvent = roomState.phase_event;
     const shouldResume =
       _mpPayloadMatchesRound(roomState.battle_replay, roundNumber) ||
@@ -4179,6 +4287,8 @@ const Game = (() => {
     _clearMPReplayResumeTimers();
     _mpPausedPlaybackState = null;
     _mpHideDisconnectNotice();
+    _mpLastAuthoritativeRequestSignature = null;
+    _mpLastAuthoritativeResponseSignature = null;
 
     // Update state
     state.phase = 'prep';
@@ -4195,6 +4305,10 @@ const Game = (() => {
       _mpState.myScore  = scores.my;
       _mpState.oppScore = scores.opp;
     }
+    _mpCaptureRoundScoreSnapshot(round, {
+      my: _mpState.myScore,
+      opp: _mpState.oppScore,
+    });
     _mpState.round = round;
     _mpState.readySeconds = 35;
 
@@ -4293,6 +4407,12 @@ const Game = (() => {
       console.info(`[MP:R${sessionRoundNumber}] Battle controller already active — skipping duplicate start.`);
       return;
     }
+
+    const battleRoundNumber = Number(sessionRoundNumber || currentRoundNumber || _mpState.round || state?.wave || 0);
+    const battleRoundScores = (typeof MultiplayerGame !== 'undefined' && typeof MultiplayerGame.getScores === 'function')
+      ? MultiplayerGame.getScores()
+      : { my: _mpState.myScore, opp: _mpState.oppScore };
+    _mpCaptureRoundScoreSnapshot(battleRoundNumber, battleRoundScores);
 
     if (_mpState.readyTimer) { clearInterval(_mpState.readyTimer); _mpState.readyTimer = null; }
     _clearMPResumeBattleWatcher();
@@ -4464,6 +4584,8 @@ const Game = (() => {
 
       const _maybeStartReplay = (source) => {
         if (_battleReplayStarted) return false;
+        const roundResult = _getCachedState('round_result');
+        if (roundResult && roundResult.hostWon !== undefined) return false;
 
         const phaseEvent = _getCachedState('phase_event');
         if (!phaseEvent || phaseEvent.type !== MP_PHASE_EVENTS.PLAYBACK_START) return false;
@@ -4497,6 +4619,7 @@ const Game = (() => {
           case MP_PHASE_EVENTS.PLAYBACK_START:
             _mpPausedPlaybackState = null;
             _mpHideDisconnectNotice();
+            if (_mpGuestCheckCachedResult()) return true;
             if (_maybeStartReplay(`${source}:phase_event`)) return true;
             _maybeRequestReplayBootstrap(payload, `${source}:phase_event`);
             UI.showMessage('⚔️ Waiting for battle sync…', 0);
@@ -4600,6 +4723,9 @@ const Game = (() => {
       };
 
       const _maybeRequestReplayBootstrap = (payload, reason) => {
+        const roundResult = _getCachedState('round_result');
+        if (roundResult && roundResult.hostWon !== undefined) return false;
+
         const replayPayload = _getCachedState('battle_replay') || _mpLastBattleReplay;
         if (replayPayload) return false;
 
@@ -4618,10 +4744,22 @@ const Game = (() => {
         if (resultPayload) _lastHandledRoundResult = resultPayload;
         _roundResultHandled = true;
         _hostResultWaitStartedAt = 0;
+        _lastAuthoritativeRequestAt = 0;
         _mpPausedPlaybackState = null;
         _mpHideDisconnectNotice();
         if (_hostResultTimer) { clearTimeout(_hostResultTimer); _hostResultTimer = null; }
         if (_mpReplayPlayer && _mpReplayPlayer.isPlaying()) _mpReplayPlayer.stop();
+        if (typeof Room !== 'undefined' && Room.getLifecycleState?.() === 'RESYNCING') {
+          Room.endResync?.(
+            source === 'timeout'
+              ? 'authoritative_request_resolved_by_timeout_fallback'
+              : 'authoritative_request_resolved_by_round_result',
+            {
+              roundNumber: _expectedRound(),
+              source,
+            }
+          );
+        }
         if (typeof Room !== 'undefined') {
           Room.offStateChange(_roundResultFn);
           Room.offStateChange(_battleReplayFn);
@@ -4680,6 +4818,12 @@ const Game = (() => {
         if (key !== 'battle_replay') return;
         if (!_matchesRound(value)) return;
         _mpLastBattleReplay = value;
+        if (_lastAuthoritativeRequestAt > 0) {
+          _lastAuthoritativeRequestAt = 0;
+          Room.endResync?.('authoritative_request_resolved_by_battle_replay', {
+            roundNumber: _expectedRound(),
+          });
+        }
         _maybeStartReplay('host-battle_replay');
       };
 
@@ -4703,7 +4847,18 @@ const Game = (() => {
       const _authoritativeStateFn = (key, value) => {
         if (key !== 'authoritative_state') return;
         if (typeof Room === 'undefined' || typeof MultiplayerAuthorityState === 'undefined') return;
-        if (!MultiplayerAuthorityState.matchesRound(value, _expectedRound())) return;
+        if (!MultiplayerAuthorityState.matchesRound(value, _expectedRound())) {
+          if (_lastAuthoritativeRequestAt > 0) {
+            _lastAuthoritativeRequestAt = 0;
+          }
+          if (Room.getLifecycleState?.() === 'RESYNCING') {
+            Room.endResync?.('authoritative_state_mismatch', {
+              roundNumber: _expectedRound(),
+              receivedRound: Number(value?.roundNumber || value?.round || 0),
+            });
+          }
+          return;
+        }
 
         const entries = MultiplayerAuthorityState.getEntries(value);
         const authoritativeSeq = Number(value?.state?.round_result?.seq || 0);
@@ -4796,16 +4951,21 @@ const Game = (() => {
         Room.onStateChange(_roundResultFn);
       }
 
-      _mpGuestResumeReplay = () => _maybeStartReplay('reconnect-cache');
+      _mpGuestResumeReplay = () => {
+        const handledCachedPhase = _applyPhaseEvent(_getCachedState('phase_event'), 'reconnect-cache');
+        return handledCachedPhase || _maybeStartReplay('reconnect-cache');
+      };
 
       _mpGuestCheckCachedResult = () => {
         const cached = (typeof Room !== 'undefined') ? Room.getState()['round_result'] : null;
+        const hasMatchingCachedResult = !!(cached && cached.hostWon !== undefined &&
+            (cached.roundNumber === undefined || cached.roundNumber === _expectedRound()));
         if (_roundResultHandled) {
-          if (_lastHandledRoundResult && cached && _matchesRound(cached) && Number(cached?.seq || 0) === Number(_lastHandledRoundResult.seq || 0)) {
+          if (_lastHandledRoundResult && hasMatchingCachedResult && Number(cached?.seq || 0) === Number(_lastHandledRoundResult.seq || 0)) {
             _sendGuestResultSync('round_result_ack', cached, 'cache-check', true);
             _sendGuestResultSync('ready_to_continue', cached, 'cache-check', true);
           }
-          return false;
+          return hasMatchingCachedResult;
         }
         if (state.phase !== 'battle' && state.phase !== 'result') return false;
         if (cached && cached.hostWon !== undefined &&
@@ -5222,10 +5382,14 @@ const Game = (() => {
     _mpLastBattleReplayPayload  = null;
     _mpLastPhaseEventPayload    = null;
     _mpLastPlaybackCheckpoint   = null;
+    _mpLastAuthoritativeRequestSignature = null;
+    _mpLastAuthoritativeResponseSignature = null;
+    _mpRoundScoreSnapshots      = Object.create(null);
     _mpPendingResumeAuthoritativeRequest = false;
     _mpLastResumeAuthoritativeStateAt = 0;
     _mpLastResolvedRoundNumber  = -1;
     _mpGuestResumeReplay        = () => false;
+    _mpGuestReconnectRecoveryHandled = false;
     if (typeof Room !== 'undefined' && _mpHostRoundSyncFn) Room.offStateChange(_mpHostRoundSyncFn);
     _mpHostRoundSyncFn          = null;
     if (_mpReplayPlayer && _mpReplayPlayer.isPlaying()) _mpReplayPlayer.stop();
@@ -5380,6 +5544,44 @@ const Game = (() => {
     return true;
   }
 
+  function _mpConsumeCachedRoundContinueSignals() {
+    if (typeof Room === 'undefined' || typeof Room.getState !== 'function') return false;
+    const cachedState = Room.getState();
+    if (!cachedState) return false;
+
+    let consumed = false;
+    const matchesExpectedResult = (value) => {
+      if (!value) return false;
+      const roundNumber = Number(value.roundNumber);
+      const seq = Number(value.seq);
+      if (_mpExpectedRoundResultRound > 0 && roundNumber !== _mpExpectedRoundResultRound) return false;
+      if (_mpExpectedRoundResultSeq > 0 && seq !== _mpExpectedRoundResultSeq) return false;
+      return true;
+    };
+
+    if (matchesExpectedResult(cachedState.round_result_ack)) {
+      if (typeof Room.applyState === 'function') {
+        Room.applyState('round_result_ack', cachedState.round_result_ack, 'reconnect-cache');
+      } else {
+        _mpLastRoundResultAckPayload = cachedState.round_result_ack;
+        _mpAwaitingGuestResultAck = false;
+      }
+      consumed = true;
+    }
+
+    if (matchesExpectedResult(cachedState.ready_to_continue)) {
+      if (typeof Room.applyState === 'function') {
+        Room.applyState('ready_to_continue', cachedState.ready_to_continue, 'reconnect-cache');
+      } else {
+        _mpLastReadyToContinuePayload = cachedState.ready_to_continue;
+        _mpAwaitingGuestReadyToContinue = false;
+      }
+      consumed = true;
+    }
+
+    return consumed;
+  }
+
   function _mpHandleHostRoundSync(key, value) {
     if (!_mpMode) return;
     if (!value) return;
@@ -5490,10 +5692,15 @@ const Game = (() => {
           : MultiplayerGame.isHost()
       );
       if (shouldForceLocalHostDisconnectEnd && prevState === 'SUBSCRIBED' && roomState !== 'SUBSCRIBED' && roomState !== 'closed') {
+        _mpConsumeCachedRoundContinueSignals();
         _mpLastRoomWatchState = roomState;
         console.warn(`[MP] Host room channel left SUBSCRIBED (${roomLifecycle}) — ending match.`);
         _mpHandleHostDisconnectTermination('local-host-disconnect');
         return;
+      }
+
+      if (_mpMode && typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isActive() && !MultiplayerGame.isHost() && prevState === 'SUBSCRIBED' && roomState !== 'SUBSCRIBED') {
+        _mpGuestReconnectRecoveryHandled = false;
       }
 
       if (_mpMode) _mpUpdateConnIndicator(roomLifecycle);
@@ -5501,8 +5708,7 @@ const Game = (() => {
         if (state?.phase === 'prep') _mpMaybeRestoreOwnPrepState();
         _mpMaybeRequestResumeAuthoritativeState();
         if (typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isActive() && !MultiplayerGame.isHost()) {
-          _mpGuestResumeReplay();
-          _mpGuestCheckCachedResult();
+          _mpMaybeRunGuestReconnectRecovery();
         }
       }
       _mpLastRoomWatchState = roomState;

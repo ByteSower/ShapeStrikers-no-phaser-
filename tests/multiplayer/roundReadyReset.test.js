@@ -76,8 +76,12 @@ test('Host clears stale round-scoped room keys when a new round starts', () => {
     at: syncs.find(sync => sync.key === 'ready_p2')?.value?.at,
   });
   assert.equal(syncs.find(sync => sync.key === 'round_result')?.value, null);
+  assert.equal(syncs.find(sync => sync.key === 'round_result_ack')?.value, null);
+  assert.equal(syncs.find(sync => sync.key === 'ready_to_continue')?.value, null);
   assert.equal(syncs.find(sync => sync.key === 'phase_event')?.value, null);
   assert.equal(syncs.find(sync => sync.key === 'battle_replay')?.value, null);
+  assert.equal(syncs.find(sync => sync.key === 'request_authoritative_state')?.value, null);
+  assert.equal(syncs.find(sync => sync.key === 'authoritative_state')?.value, null);
   assert.ok(syncs.find(sync => sync.key === 'shop_seed'), 'New round should still broadcast a fresh shop_seed');
 
   MultiplayerGame.destroy();

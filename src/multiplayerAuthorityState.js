@@ -105,12 +105,10 @@ const MultiplayerAuthorityState = (() => {
       roomState.prep_p2,
     ];
 
-    for (const candidate of candidates) {
+    return candidates.reduce((highestRound, candidate) => {
       const roundNumber = _asPositiveInt(candidate?.roundNumber || candidate?.round || 0);
-      if (roundNumber > 0) return roundNumber;
-    }
-
-    return 0;
+      return Math.max(highestRound, roundNumber);
+    }, 0);
   }
 
   function resolveCheckpointSeq(roomState = {}, roundNumber = 0) {

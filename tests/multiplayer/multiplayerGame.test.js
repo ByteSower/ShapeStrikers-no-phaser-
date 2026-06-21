@@ -441,6 +441,27 @@ test('endRound: round number increments after each round', () => {
   MultiplayerGame.destroy();
 });
 
+test('endRound: resolved-round score override is consumed once for its round', () => {
+  startAsHost();
+
+  MultiplayerGame.hydrateMatchState({
+    round: 1,
+    myScore: 0,
+    oppScore: 0,
+    resolvedRoundNumber: 1,
+    resolvedMyScore: 1,
+    resolvedOppScore: 0,
+  });
+
+  MultiplayerGame.endRound(false, 0);
+  assert.deepEqual(MultiplayerGame.getScores(), { my: 1, opp: 0 }, 'Round 1 should consume the authoritative resolved score override instead of applying the local loss result');
+  assert.equal(MultiplayerGame.getRound(), 2);
+
+  MultiplayerGame.endRound(false, 0);
+  assert.deepEqual(MultiplayerGame.getScores(), { my: 1, opp: 1 }, 'Round 2 should use the local result after the round 1 override has already been consumed');
+  MultiplayerGame.destroy();
+});
+
 // ── State accessors ───────────────────────────────────────────────────────────
 
 test('isActive: false before start(), true after start(), false after destroy()', () => {
