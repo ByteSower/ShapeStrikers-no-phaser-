@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: June 21, 2026
+> **Last Updated**: November 9, 2026
 
 ---
 
@@ -14,7 +14,7 @@
 | Source lines | ~11,500 (JS + CSS + HTML) |
 | Source files | 14 JS modules, 1 CSS, 1 HTML |
 | Dependencies | **Zero** — fully vanilla |
-| Units | 44 (39 playable + 5 bosses) |
+| Units | 45 (40 playable + 5 bosses) |
 | Elements | 8 (Fire, Ice, Lightning, Earth, Arcane, Void, Blood, Plague) |
 | Status effects | 10 |
 | Upgrades | 10 |
@@ -141,7 +141,22 @@
 - [x] Input sanitization: strips control chars, max 200-char messages, max 20-char names
 - [x] Chat panel repositioned bottom-left to avoid overlapping in-game speed controls
 
-### Phase 9.2 — 1v1 Multiplayer ✨ LATEST
+### Phase 10 — Grid Styles, Prism Warden & Mobile v3 ✨ LATEST
+- [x] Unlockable grid cosmetics (`gridStyles.js`) — Glowing, Flamebound and Frostbound grids unlock on any campaign win; earlier clears are honored; selection persists
+- [x] Grid Styles picker on the title screen with previews, and a win-screen notice listing newly unlocked styles
+- [x] Animated grid effects (`gridFx.js`) — data-driven Canvas 2D particles: flames and sparks along the grid border, falling snow and wind streaks; off under reduced motion
+- [x] Optional WebGL renderer (`gridFxGl.js`) — built-in WebGL, no library; adds layered snow, mist and a frost rim to Frostbound; Canvas 2D stays the default and the fallback
+- [x] Prism Warden Miri — Tier 2 Arcane tank; Refracted Ward shields the 2 lowest-HP unshielded allies and grants Barrier to the lowest-HP unbarriered ally
+- [x] Support abilities without healing only cast when an ally actually needs the effect
+- [x] Local dev tools (`devTools.js`) — localhost with `?dev=1` only: grant unlocks, unlock achievements, reset progression, 8×/16× battle speed, renderer switch, FPS readout
+- [x] Mobile: game screen is a fixed frame — top bar and shop stay put, the board and stats panel scroll between them
+- [x] Mobile: tile size is measured from the space the grid really has (ResizeObserver) instead of guessed from the window; refits on rotation and resize, including mid-battle
+- [x] Mobile: units scale with the tile size instead of fixed per-breakpoint sizes
+- [x] Mobile: title menu scrolls from the top and uses a two-column button grid on phones
+- [x] Mobile: landscape side panel scrolls on its own; chat button sits in a reserved corner of the message bar on screens up to 1024px wide
+- [x] Effects workflow guide — `docs/effects-workflow.md`
+
+### Phase 9.2 — 1v1 Multiplayer
 - [x] `matchmaking.js` — queue join/leave, `join`/`join_ack` broadcast pairing, DB room creation with fallback
 - [x] `room.js` — `room:{roomId}` channel, state sync via broadcast, presence-based disconnect detection (10s grace)
 - [x] `multiplayerGame.js` — best-of-5 round loop, seeded shop RNG (mulberry32), gold economy, hash verification
@@ -265,6 +280,8 @@
 - [ ] Item/equipment system — "may need separate UI"
 - [ ] New enemy units that sacrifice allies to buff self
 - [ ] Fill T3 gaps (Lightning has 0 T3 units)
+- [ ] Dedicated smartphone layout — a separate phone-first arrangement rather than the adapted desktop layout
+- [ ] WebGL versions of the remaining animated grids (Flamebound is Canvas 2D only)
 
 ### Backlog — Architecture
 - [ ] Event bus to replace direct callbacks in battle.js
@@ -294,6 +311,11 @@
 | `shape_strikers_tips_seen` | JSON object of seen contextual tip IDs (versioned) | On tip display |
 | `shape_strikers_tips_enabled` | In-Game Tips toggle preference | Toggle in title |
 | `shape_strikers_mp_desync_log` | JSON array of MP battle hash mismatches (last 10) | On MP battle desync |
+| `shape_strikers_grid_glowing_unlocked` | Unlock the Glowing Grid | Any campaign win |
+| `shape_strikers_grid_flames_unlocked` | Unlock the Flamebound Grid | Any campaign win |
+| `shape_strikers_grid_ice_unlocked` | Unlock the Frostbound Grid | Any campaign win |
+| `shape_strikers_selected_grid_style` | Selected grid style id | Choosing a grid style |
+| `shape_strikers_grid_renderer` | `canvas` (default) or `webgl` for grid effects | Dev tools renderer switch |
 
 ---
 
@@ -314,6 +336,10 @@
 | Multiplayer guest resume self-aborted before room grace elapsed | Resume bootstrap timeout now derives from room disconnect grace with an explicit buffer | 9.2 |
 | Multiplayer host-loss behavior only covered by helper tests | Added game-level lifecycle regression tests for guest resume and both terminal host-disconnect flows | 9.2 |
 | Multiplayer title music persisted into live matches and mute missed active sounds on mobile | MP entry now swaps to gameplay music, audio retries on gesture, and mute stops active cloned SFX | 9 |
+| Start Game unreachable on short phones (title menu overflowed above the screen) | Menu centres with auto margins and scrolls from the top; two-column buttons on phones | 10 |
+| Board pushed off-screen on landscape phones by an uncapped side panel | Game screen is a fixed frame; side panel scrolls on its own | 10 |
+| Grid overlapped the side panel on tablets | Tile size measured from the grid's real space | 10 |
+| Chat button covered shop buttons on phones and tablets | Message bar reserves the corner the chat button sits in | 10 |
 | Latest coverage merge malformed `config.js`, blocking game boot and title entry | Restored the broken `PATCH_NOTES` boundaries and `SHAPE_COLORS` map, then revalidated startup | 9.2 |
 
 ---

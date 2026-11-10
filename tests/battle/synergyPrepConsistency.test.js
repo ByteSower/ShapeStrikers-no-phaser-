@@ -7,6 +7,7 @@ const path = require('path');
 const vm = require('vm');
 
 const CONFIG_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/config.js'), 'utf8');
+const GRID_STYLES_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/gridStyles.js'), 'utf8');
 const GAME_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/game.js'), 'utf8');
 const UI_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/ui.js'), 'utf8');
 
@@ -132,6 +133,7 @@ function loadGameContext() {
 
   vm.createContext(context);
   vm.runInContext(CONFIG_SOURCE, context, { filename: 'config.js' });
+  vm.runInContext(GRID_STYLES_SOURCE, context, { filename: 'gridStyles.js' });
   vm.runInContext(GAME_SOURCE, context, { filename: 'game.js' });
 
   return {
@@ -229,6 +231,7 @@ function loadWavePreviewGameContext() {
 
   vm.createContext(context);
   vm.runInContext(CONFIG_SOURCE, context, { filename: 'config.js' });
+  vm.runInContext(GRID_STYLES_SOURCE, context, { filename: 'gridStyles.js' });
   vm.runInContext(GAME_SOURCE, context, { filename: 'game.js' });
 
   return {

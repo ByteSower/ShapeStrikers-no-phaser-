@@ -35,25 +35,9 @@ const Grid = (() => {
     container.innerHTML = '';
     tileEls = [];
 
-    const { cols, rows, tileSize, battleLineRow, playerZoneRows, enemyZoneRows } = GRID_CONFIG;
+    const { cols, rows, battleLineRow, playerZoneRows, enemyZoneRows } = GRID_CONFIG;
 
-    // Compute responsive tile size for small screens
-    const gap = 4;
-    const padding = 12;
-    // In landscape, grid can use more vertical space since layout is side-by-side
-    const isLandscape = window.innerWidth > window.innerHeight && window.innerHeight <= 500;
-    const vRatio = isLandscape ? 0.75 : 0.55;
-    // In landscape, reserve space for the right panel (~28vw clamped 140-220px)
-    const panelW = isLandscape ? Math.min(220, Math.max(140, window.innerWidth * 0.28)) : 0;
-    const availW = window.innerWidth - padding * 2 - panelW;
-    const availH = window.innerHeight * vRatio;
-    const maxByW = Math.floor((availW - (cols - 1) * gap) / cols);
-    const maxByH = Math.floor((availH - (rows - 1) * gap) / rows);
-    const responsiveSize = Math.min(tileSize, maxByW, maxByH);
-
-    // Set CSS variable for tile size
-    container.style.setProperty('--tile-size', responsiveSize + 'px');
-    document.documentElement.style.setProperty('--tile-size', responsiveSize + 'px');
+    _fitTileSize();
 
     for (let row = 0; row < rows; row++) {
       tileEls[row] = [];
@@ -499,10 +483,9 @@ const Grid = (() => {
     }
 
     // Animate slide
-    const actualTileSize = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--tile-size')) || GRID_CONFIG.tileSize;
-    const tileSize = actualTileSize + 4; // tile + gap
-    const dx = (fromCol - toCol) * tileSize;
-    const dy = (fromRow - toRow) * tileSize;
+    const step = _tileSize + _tileGap;
+    const dx = (fromCol - toCol) * step;
+    const dy = (fromRow - toRow) * step;
     unitEl.style.transition = 'none';
     unitEl.style.transform = `translate(${dx}px, ${dy}px)`;
     requestAnimationFrame(() => {
@@ -611,28 +594,55 @@ const Grid = (() => {
 
   // ── Responsive resize ──────────────────────────────────────────────────
 
-  function _recalcTileSize() {
+  const MIN_TILE_SIZE = 28;
+  let _tileSize = GRID_CONFIG.tileSize;
+  let _tileGap = 4;
+
+  /**
+   * Size tiles to the space the grid really has, measured from the layout
+   * rather than guessed from the window, so every screen shape fits.
+   */
+  function _fitTileSize() {
     const container = document.getElementById('grid-container');
-    if (!container) return;
+    const area = document.getElementById('grid-area');
+    const layout = document.getElementById('layout');
+    if (!container || !area || !layout || !area.clientWidth) return; // hidden: refit when shown
     const { cols, rows, tileSize } = GRID_CONFIG;
-    const gap = 4;
-    const padding = 12;
-    const isLandscape = window.innerWidth > window.innerHeight && window.innerHeight <= 500;
-    const vRatio = isLandscape ? 0.75 : 0.55;
-    const panelW = isLandscape ? Math.min(220, Math.max(140, window.innerWidth * 0.28)) : 0;
-    const availW = window.innerWidth - padding * 2 - panelW;
-    const availH = window.innerHeight * vRatio;
+    const px = value => parseFloat(value) || 0;
+    const gridStyle = getComputedStyle(container);
+    const areaStyle = getComputedStyle(area);
+    const gap = px(gridStyle.columnGap);
+    const frame = 2 * (px(gridStyle.paddingLeft) + px(gridStyle.borderLeftWidth));
+
+    let availW = area.clientWidth - px(areaStyle.paddingLeft) - px(areaStyle.paddingRight) - frame;
+    for (const id of ['grid-labels-left', 'grid-labels-right']) {
+      const label = document.getElementById(id);
+      if (label && label.offsetWidth) availW -= label.offsetWidth + px(areaStyle.columnGap);
+    }
+    // Stacked (portrait) layouts scroll, so the grid may fill the visible middle region.
+    const stacked = getComputedStyle(layout).flexDirection === 'column';
+    const availH = (stacked ? layout.clientHeight : area.clientHeight)
+      - px(areaStyle.paddingTop) - px(areaStyle.paddingBottom) - frame;
+
     const maxByW = Math.floor((availW - (cols - 1) * gap) / cols);
     const maxByH = Math.floor((availH - (rows - 1) * gap) / rows);
-    const size = Math.min(tileSize, maxByW, maxByH);
-    container.style.setProperty('--tile-size', size + 'px');
-    document.documentElement.style.setProperty('--tile-size', size + 'px');
+    _tileGap = gap;
+    _tileSize = Math.max(MIN_TILE_SIZE, Math.min(tileSize, maxByW, maxByH));
+    container.style.setProperty('--tile-size', _tileSize + 'px');
+    document.documentElement.style.setProperty('--tile-size', _tileSize + 'px');
   }
 
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(_fitTileSize);
+    for (const id of ['grid-area', 'layout']) {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    }
+  }
   let _resizeTimer = 0;
   window.addEventListener('resize', () => {
     clearTimeout(_resizeTimer);
-    _resizeTimer = setTimeout(_recalcTileSize, 150);
+    _resizeTimer = setTimeout(_fitTileSize, 150);
   });
 
   // ── Public API ────────────────────────────────────────────────────────────

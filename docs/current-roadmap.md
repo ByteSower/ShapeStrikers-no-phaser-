@@ -1,6 +1,6 @@
 # Shape Strikers — Current Roadmap
 
-Last updated: 2026-05-20
+Last updated: 2026-11-09
 
 Purpose: this is the single source of truth for the active work order in `games/shape_strikers_web/`.
 
@@ -24,6 +24,7 @@ Purpose: this is the single source of truth for the active work order in `games/
 - A two-client live pass on 2026-05-07 confirmed guest reload and recovery events land in the shared telemetry log, alongside real disconnect and recovery transitions.
 - The current release target is stable host-authoritative multiplayer with strong transient reconnect recovery and explicit terminal host-loss handling.
 - Near-term release policy is now locked: confirmed host loss ends the match, and stronger authority is deferred until ranked, spectate, or broader platform requirements make it necessary.
+- Unlockable grid styles (Glowing, Flamebound, Frostbound), Prism Warden Miri, and a mobile layout pass are implemented and awaiting review. The mobile pass was checked in an emulated browser only; multiplayer screens, the tutorial overlay, and real phones still need a pass. A dedicated phone layout is a later idea, tracked in the `PROGRESS.md` backlog.
 
 ## Active Roadmap
 

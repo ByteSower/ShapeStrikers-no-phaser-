@@ -1459,3 +1459,55 @@ test('lightning hunter grapple pull does not drag enemies past the battle line',
 
   assert.equal(target.row, 2, 'grapple pull should clamp at the battle line instead of pulling enemies into player territory');
 });
+
+test('prism warden casts Refracted Ward without an enemy in range', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const warden = mkUnit(UNIT_MAP.arcane_prism_warden, 4, 0, false);
+  const weakest = mkUnit(UNIT_MAP.earth_golem, 4, 1, false);
+  const secondWeakest = mkUnit(UNIT_MAP.ice_slime, 3, 1, false);
+  const healthiest = mkUnit(UNIT_MAP.fire_imp, 4, 2, false);
+  const distantEnemy = mkUnit(UNIT_MAP.fire_imp, 0, 0, true);
+
+  weakest.hp = 35;
+  secondWeakest.hp = 60;
+  battleSystem._playerUnits = [warden, secondWeakest, healthiest, weakest];
+  battleSystem._enemyUnits = [distantEnemy];
+  battleSystem._actionQueue = [warden];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  const weakestShield = weakest.statusEffects.find(effect => effect.type === 'shield');
+  const secondShield = secondWeakest.statusEffects.find(effect => effect.type === 'shield');
+  const weakestBarrier = weakest.statusEffects.find(effect => effect.type === 'barrier');
+
+  assert.equal(weakestShield?.value, 10, 'the lowest-HP ally should receive the +10 DEF shield');
+  assert.equal(weakestShield?.duration, 2, 'the shield should last 2 turns');
+  assert.equal(secondShield?.value, 10, 'the second-lowest-HP ally should also receive a shield');
+  assert.ok(weakestBarrier, 'the lowest-HP ally should receive Barrier');
+  assert.equal(warden.abilityCooldown, UNIT_MAP.arcane_prism_warden.ability.cooldown, 'support cast should consume its cooldown');
+  assert.equal(warden.row, 4, 'the warden should support allies instead of moving toward a distant enemy');
+});
+
+test('prism warden saves Refracted Ward when every living ally is already protected', () => {
+  const battleSystem = makeIdleBattleSystem();
+  const warden = mkUnit(UNIT_MAP.arcane_prism_warden, 4, 0, false);
+  const ally = mkUnit(UNIT_MAP.earth_golem, 4, 1, false);
+  const distantEnemy = mkUnit(UNIT_MAP.fire_imp, 0, 0, true);
+
+  for (const unit of [warden, ally]) {
+    unit.statusEffects.push(
+      { type: 'shield', duration: 2, value: 10, stacks: 1 },
+      { type: 'barrier', duration: 2, value: 0, stacks: 1 }
+    );
+  }
+  battleSystem._playerUnits = [warden, ally];
+  battleSystem._enemyUnits = [distantEnemy];
+  battleSystem._actionQueue = [warden];
+  battleSystem._actionIndex = 0;
+
+  battleSystem._processNextAction();
+
+  assert.equal(warden.abilityCooldown, 0, 'ward should not consume its cooldown when no ally needs protection');
+  assert.equal(warden.row, 3, 'the warden should move toward the distant enemy instead');
+});

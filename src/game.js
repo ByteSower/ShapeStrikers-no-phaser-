@@ -2701,6 +2701,7 @@ const Game = (() => {
         Audio.play('newHighScore');
       }
     }
+    const newlyUnlockedGridStyles = _challengeMode ? [] : GridStyles.unlockForCampaignWin();
     if (!_challengeMode) {
       localStorage.setItem('shape_strikers_void_unlocked', '1');
       localStorage.setItem('shape_strikers_arcane_unlocked', '1');
@@ -2718,7 +2719,7 @@ const Game = (() => {
     const winTitle = _campaignMode === 'void'
       ? '🕳️ VOID CONQUERED!'
       : '🏆 VICTORY!';
-    UI.showWin(state.score, winTitle, _campaignMode);
+    UI.showWin(state.score, winTitle, _campaignMode, newlyUnlockedGridStyles);
 
     const wEl = document.getElementById('win-stats');
     if (wEl && _battleStats) wEl.innerHTML = _buildStatsHTML(_battleStats, state.playerUnits, true);
@@ -2882,6 +2883,7 @@ const Game = (() => {
     if (gridArea) {
       gridArea.classList.toggle('void-campaign', _campaignMode === 'void');
     }
+    GridStyles.applyToGrid();
 
     UI.showScreen('screen-game');
     UI.hideAllOverlays();
@@ -3234,6 +3236,8 @@ const Game = (() => {
     // Title screen
     document.getElementById('btn-start')?.addEventListener('click', () => { _challengeMode = null; startGame('normal'); });
     document.getElementById('btn-start-void')?.addEventListener('click', () => { _challengeMode = null; startGame('void'); });
+    document.getElementById('btn-grid-styles')?.addEventListener('click', () => UI.showGridStyles());
+    document.getElementById('btn-grid-styles-close')?.addEventListener('click', () => UI.hideGridStyles());
     document.getElementById('btn-mp-reconnect')?.addEventListener('click', () => {
       const statusEl = document.getElementById('mp-reconnect-status');
       const btn = document.getElementById('btn-mp-reconnect');
@@ -3473,6 +3477,11 @@ const Game = (() => {
     }
     if (localStorage.getItem('shape_strikers_void_campaign_cleared') === '1') {
       factionBadges.push('<span class="unlock-badge void">🕳️ Void Conqueror</span>');
+    }
+    for (const style of GridStyles.getOptions()) {
+      if (style.unlockKey && style.unlocked) {
+        factionBadges.push(`<span class="unlock-badge grid">${style.icon} ${style.name}</span>`);
+      }
     }
     let html = factionBadges.length
       ? factionBadges.join('')
@@ -6015,6 +6024,7 @@ const Game = (() => {
       _pageExitListenerBound = true;
     }
     _wireDOMButtons();
+    GridStyles.syncCampaignProgress();
     _updateTitleUnlocks();
 
     // Tutorial overlay buttons
@@ -6070,6 +6080,7 @@ const Game = (() => {
 
   return {
     init,
+    refreshProgressionUI: _updateTitleUnlocks,
     startGame,
     startChallenge,
     restart,

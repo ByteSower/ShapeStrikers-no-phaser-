@@ -14,7 +14,7 @@ Shape Strikers is a rogue-like auto-battler where you buy, place, and upgrade sh
 
 ### Features
 
-- **44 unique units** across 4 tiers and 8 elements (39 playable + 5 bosses)
+- **45 unique units** across 4 tiers and 8 elements (40 playable + 5 bosses)
 - **Lane-based combat** on a 6×5 grid with automatic pathfinding
 - **5 boss fights** with multi-phase mechanics (Waves 5, 10, 15, 20, 25)
 - **2 campaign modes** — Normal (15 waves) and Void Campaign (25 waves with hard mode scaling)
@@ -27,7 +27,8 @@ Shape Strikers is a rogue-like auto-battler where you buy, place, and upgrade sh
 - **Guided tutorial** with spotlight highlights
 - **Unit glossary & guidebook** — learn every unit and mechanic in-game
 - **Procedural shape-drawn units** — no sprite assets needed for characters
-- **Dark mode** and **mobile layout** support
+- **Dark mode** and **mobile layout** support — phone, tablet, portrait and landscape
+- **Unlockable grid cosmetics** — complete a campaign to unlock the Glowing, Flamebound (animated fire border) and Frostbound (snow and icy wind) grids
 
 ### Elements
 
@@ -73,10 +74,23 @@ npx serve .
 
 Then open `http://localhost:8000` in your browser.
 
+### Tests
+
+There is no build step or package manifest. Run the tests directly with Node 22 or newer:
+
+```bash
+node --test                         # all unit tests under tests/
+node scripts/checkDeterminism.js    # battle determinism across 100 seeds
+```
+
+### Local dev tools
+
+On `localhost` only, add `?dev=1` to the URL to show a 🛠 Dev Tools panel. It can grant campaign unlocks, unlock achievements, reset progression, raise battle speed, and switch animated grid effects between the Canvas 2D and WebGL renderers. It is inert on the hosted site.
+
 ## Tech Stack
 
 - **HTML5 / CSS3 / ES6+ JavaScript** — zero dependencies
-- **Canvas API** — for unit shape rendering
+- **Canvas API** — for unit shape rendering and animated grid effects (optional built-in WebGL renderer, no library)
 - **GitHub Pages** — static hosting via Actions workflow
 
 ## Privacy
@@ -86,6 +100,7 @@ Shape Strikers stores settings, unlocks, and run-related progress in your browse
 ## Documentation
 
 - [docs/current-roadmap.md](docs/current-roadmap.md) — active source of truth for current priorities and sequencing
+- [docs/effects-workflow.md](docs/effects-workflow.md) — workflow and implementation conventions for game visuals
 - [GAME_DESIGN.md](GAME_DESIGN.md) — Full game design document (rules, stats, formulas, mechanics)
 - [PROGRESS.md](PROGRESS.md) — Development progress tracker and shipped phase history
 - [AUDIT.md](AUDIT.md) — Codebase audit and architecture assessment

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="description" content="Shape Strikers is a vanilla JavaScript lane-based auto-battler with 44 units, 8 elements, boss waves, challenges, and online leaderboards." />
+  <meta name="description" content="Shape Strikers is a vanilla JavaScript lane-based auto-battler with 45 units, 8 elements, boss waves, challenges, and online leaderboards." />
   <title>Shape Strikers</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -38,6 +38,7 @@
       <button class="btn btn-lg btn-fire" id="btn-start">▶ Start Game</button>
       <button class="btn btn-lg btn-void hidden" id="btn-start-void">🕳️ Void Campaign</button>
       <button class="btn btn-lg btn-secondary" onclick="UI.showGlossary()">📖 Unit Glossary</button>
+      <button class="btn btn-lg btn-secondary" id="btn-grid-styles">🎨 Grid Styles</button>
       <button class="btn btn-lg btn-secondary" id="btn-how-to-play">❓ How to Play</button>
       <button class="btn btn-lg btn-secondary" id="btn-achievements">🏅 Achievements</button>
       <button class="btn btn-lg btn-challenge" id="btn-challenges">📅 Challenges</button>
@@ -297,6 +298,7 @@
     <h2 id="win-title">🏆 Victory!</h2>
     <p id="win-subtitle">You defeated the Void Supreme!</p>
     <p id="win-score"></p>
+    <p id="win-unlock-notice" class="win-unlock-notice hidden" role="status" aria-live="polite"></p>
     <div id="win-stats" class="battle-stats"></div>
     <div id="win-submit" class="score-submit-area hidden">
       <input type="text" id="win-name" class="name-input" placeholder="Enter name..." maxlength="20" />
@@ -305,6 +307,18 @@
     </div>
     <button class="btn btn-primary btn-lg" id="btn-win-restart">↺ Play Again</button>
     <button class="btn btn-secondary btn-lg" id="btn-win-menu">🏠 Main Menu</button>
+  </div>
+</div>
+
+<!-- GRID STYLE OVERLAY -->
+<div id="overlay-grid-styles" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="grid-styles-title">
+  <div class="overlay-box grid-styles-box">
+    <div class="overlay-header">
+      <h2 id="grid-styles-title">🎨 Grid Styles</h2>
+      <button class="btn btn-secondary btn-sm" id="btn-grid-styles-close">✕ Close</button>
+    </div>
+    <p class="grid-styles-intro">Choose a look for your battlefield. Win a campaign to unlock new styles.</p>
+    <div id="grid-styles-grid" class="grid-styles-grid"></div>
   </div>
 </div>
 
@@ -567,6 +581,9 @@
 <script src="src/multiplayer/canonicalize.js"></script>
 <script src="src/battle.js"></script>
 <script src="src/grid.js"></script>
+<script src="src/gridFxGl.js"></script>
+<script src="src/gridFx.js"></script>
+<script src="src/gridStyles.js"></script>
 <script src="src/vfx.js"></script>
 <script src="src/ui.js"></script>
 <script src="src/backend.js"></script>
@@ -580,6 +597,8 @@
 <script src="src/multiplayerAuthorityState.js"></script>
 <script src="src/battleReplay.js"></script>
 <script src="src/game.js"></script>
+<script src="src/devTools.js"></script>
+<script>DevTools.init();</script>
 
 </body>
 </html>
