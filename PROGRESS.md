@@ -154,6 +154,7 @@
 - [x] Mobile: units scale with the tile size instead of fixed per-breakpoint sizes
 - [x] Mobile: title menu scrolls from the top and uses a two-column button grid on phones
 - [x] Mobile: landscape side panel scrolls on its own; chat button sits in a reserved corner of the message bar on screens up to 1024px wide
+- [x] Draggable floating UI (`draggable.js`) — the chat button and the dev tools panel can be dragged anywhere (mouse or touch); positions persist, stay on-screen through resize and rotation, and the chat opens away from the nearest screen edges
 - [x] Effects workflow guide — `docs/effects-workflow.md`
 
 ### Phase 9.2 — 1v1 Multiplayer
@@ -316,6 +317,8 @@
 | `shape_strikers_grid_ice_unlocked` | Unlock the Frostbound Grid | Any campaign win |
 | `shape_strikers_selected_grid_style` | Selected grid style id | Choosing a grid style |
 | `shape_strikers_grid_renderer` | `canvas` (default) or `webgl` for grid effects | Dev tools renderer switch |
+| `shape_strikers_ui_pos_chat` | JSON: docked corner and offset of the chat button | Dragging the chat button |
+| `shape_strikers_ui_pos_devtools` | JSON: docked corner and offset of the dev tools panel | Dragging the dev tools panel |
 
 ---
 

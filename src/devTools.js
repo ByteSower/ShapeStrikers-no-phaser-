@@ -90,6 +90,7 @@ const DevTools = (() => {
         </div>
       </details>`;
     document.body.appendChild(root);
+    if (typeof Draggable !== 'undefined') Draggable.attach(root, root.querySelector('summary'), 'devtools');
 
     const status = root.querySelector('.dev-tools-status');
     root.querySelector('[data-dev-action="grant-unlocks"]').addEventListener('click', () => {

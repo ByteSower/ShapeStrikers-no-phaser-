@@ -1101,6 +1101,7 @@ const PATCH_NOTES = [
       '✨ Meet Prism Warden Miri, whose Refracted Ward shields allies and grants Barrier',
       '📱 Fixed the title menu being cut off on phones, the board sliding off-screen in landscape, and the chat button covering shop buttons',
       '📐 The board now resizes to fit any screen and refits when you rotate your device',
+      '✋ Drag the chat button anywhere on screen; it remembers where you left it',
     ],
   },
   {

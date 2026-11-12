@@ -826,6 +826,7 @@ src/gridStyles.js   Unlockable grid cosmetics — definitions, unlocks, selectio
 src/gridFx.js       Animated grid effects on Canvas 2D (flames, snow)
 src/gridFxGl.js     Optional WebGL shader versions of grid effects
 src/devTools.js     Local-only development panel (localhost with ?dev=1)
+src/draggable.js    Drag-to-reposition for floating UI (chat button, dev tools), with saved positions
 src/vfx.js          CSS particle VFX engine — pooled effects, shockwaves, projectiles
 src/ui.js           UI controller — shop, glossary, logs, overlays
 src/audio.js        Sound pool management

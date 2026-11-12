@@ -5908,6 +5908,8 @@ const Game = (() => {
 
     if (!panel || !toggle || !messages || !form || !input) return;
 
+    if (typeof Draggable !== 'undefined') Draggable.attach(panel, toggle, 'chat');
+
     let _unreadCount = 0;
     let _isOpen      = false;
 
