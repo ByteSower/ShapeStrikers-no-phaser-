@@ -4176,6 +4176,11 @@ const Game = (() => {
   };
   let _mpLastResolvedRoundNumber = -1;
 
+  function _mpShouldDisableReadyTimer() {
+    const host = String(location?.hostname || '').toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1';
+  }
+
   // ── Versus screen ──────────────────────────────────────────────────────
   function _mpShowVersusScreen(opponentId, onDone) {
     const vsOverlay = document.getElementById('mp-versus-overlay');
@@ -4611,9 +4616,11 @@ const Game = (() => {
             return true;
           case MP_PHASE_EVENTS.PLAYBACK_PAUSED:
             _pauseReplayForSyncHold(payload);
+            if (_mpGuestCheckCachedResult()) return true;
             return true;
           case MP_PHASE_EVENTS.PLAYBACK_RESUME_PENDING:
             _pauseReplayForSyncHold(payload, '✅ Opponent reconnected — resuming battle…');
+            if (_mpGuestCheckCachedResult()) return true;
             if (payload?.resumeAt) _mpStartReplayResumeCountdown(payload.resumeAt);
             return true;
           case MP_PHASE_EVENTS.PLAYBACK_START:
@@ -5052,6 +5059,9 @@ const Game = (() => {
     }
     if (roundNumber > 0) _mpLastResolvedRoundNumber = roundNumber;
 
+    state.phase = 'result';
+    _inspectedUnit = null;
+
     // Host broadcasts authoritative round result so guest scores correctly.
     if (typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isHost() &&
         typeof Room !== 'undefined') {
@@ -5420,8 +5430,19 @@ const Game = (() => {
   // ── Ready countdown timer ─────────────────────────────────────────────
   function _mpStartReadyTimer() {
     if (_mpState.readyTimer) clearInterval(_mpState.readyTimer);
-    let secs = Math.max(0, Number(_mpState.readySeconds || 35) || 35);
     const timerEl = document.getElementById('mp-ready-timer');
+
+    if (_mpShouldDisableReadyTimer()) {
+      _mpState.readyTimer = null;
+      _mpState.readySeconds = 0;
+      if (timerEl) {
+        timerEl.textContent = 'off';
+        timerEl.classList.remove('urgent');
+      }
+      return;
+    }
+
+    let secs = Math.max(0, Number(_mpState.readySeconds || 35) || 35);
     _mpState.readySeconds = secs;
     if (timerEl) timerEl.textContent = secs;
 
