@@ -100,25 +100,22 @@ html, body {
 }
 
 /* ── Screens ───────────────────────────────────────────────────────────────── */
-.screen { display: none; width: 100%; height: 100%; }
+.screen { display: none; width: 100%; height: 100%; height: 100svh; }
 .screen.active { display: flex; flex-direction: column; }
 
 /* ── Title Screen ──────────────────────────────────────────────────────────── */
 #screen-title {
   align-items: center;
-  justify-content: center;
-  background: url('public/SSTitle4.png') center center / cover no-repeat;
-  position: relative; overflow: hidden;
+  background:
+    linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)),
+    url('public/SSTitle4.png') center center / cover no-repeat;
+  position: relative; overflow-x: hidden; overflow-y: auto;
 }
-#screen-title::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  pointer-events: none;
-}
+/* Auto margins centre the menu when it fits and let it scroll from the top when it doesn't. */
 .title-content {
   display: flex; flex-direction: column; align-items: center; gap: 18px;
   position: relative; z-index: 1;
+  margin: auto 0; flex-shrink: 0; max-width: 100%;
 }
 .game-title {
   font-size: 60px; font-weight: 900;
@@ -241,7 +238,7 @@ html, body {
   0%, 100% { transform: scaleY(1) translateY(0); }
   50%      { transform: scaleY(1.025) translateY(-1px); }
 }
-.unit-canvas { width: 62px; height: 62px; }
+.unit-canvas { width: calc(var(--tile-size, 88px) * 0.7); height: calc(var(--tile-size, 88px) * 0.7); }
 .unit-hp-bar {
   position: absolute; bottom: 4px; left: 6px; right: 6px;
   height: 5px; background: rgba(0,0,0,0.12); border-radius: 3px; overflow: hidden;
@@ -1439,12 +1436,23 @@ html, body {
   left: 16px;
   z-index: 95;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse; /* body opens above the button, which stays put */
   align-items: flex-start;
   font-family: 'Nunito', 'Segoe UI', system-ui, sans-serif;
   font-size: 13px;
   pointer-events: auto;
 }
+/* Dragged to another corner: open away from the nearest screen edges. */
+.chat-panel[data-dock-v="top"] { flex-direction: column; }
+.chat-panel[data-dock-v="top"] .chat-body { margin: 6px 0 0; border-radius: 0 12px 12px 12px; }
+.chat-panel[data-dock-h="right"] { align-items: flex-end; }
+.chat-panel[data-dock-h="right"] .chat-body { border-radius: 12px 12px 0 12px; }
+.chat-panel[data-dock-v="top"][data-dock-h="right"] .chat-body { border-radius: 12px 0 12px 12px; }
+
+/* ── Draggable floating UI ────────────────────────────────────────────────── */
+.drag-handle { touch-action: none; }
+.is-dragging, .is-dragging * { cursor: grabbing !important; }
+.is-dragging { opacity: 0.85; }
 
 /* ── Toggle button ────────────────────────────────────────────────────────── */
 .chat-toggle {
@@ -1672,7 +1680,7 @@ html, body {
 @media (max-width: 900px) {
   :root { --right-panel-w: 240px; }
   #grid-container { gap: 3px; padding: 4px; }
-  .unit-canvas { width: 50px; height: 50px; }
+  #grid-labels-left, #grid-labels-right { display: none; }
   .shop-card { min-width: 110px; }
   .game-title { font-size: 42px; }
   .game-subtitle { font-size: 14px; letter-spacing: 3px; }
@@ -1680,34 +1688,27 @@ html, body {
 
 /* ── Small screens (phones portrait) ───────────────────────────────────────── */
 @media (max-width: 640px) {
-  html, body { overflow: auto; overscroll-behavior: none; }
-
-  #screen-game {
-    overflow-y: auto; overflow-x: hidden;
-    height: auto; min-height: 100vh; min-height: 100svh;
-    overscroll-behavior-y: contain;
+  /* The game is an app shell: top bar and shop stay put, the middle scrolls. */
+  #layout {
+    flex-direction: column; min-height: 0;
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
   }
 
-  /* Stack layout vertically */
-  #layout { flex-direction: column; overflow: visible; }
-
-  /* Grid area — centred, scrollable if needed */
-  #grid-area { padding: 6px 4px; gap: 0; overflow: auto; }
+  /* Grid area — centred, sized to its grid */
+  #grid-area { flex: 0 0 auto; padding: 6px 4px; gap: 0; overflow: visible; }
   #grid-container { gap: 3px; padding: 4px; }
-  .unit-canvas { width: 40px; height: 40px; }
-  #grid-labels-left, #grid-labels-right { display: none; }
 
-  /* Right panel → full width, taller, scrollable */
+  /* Right panel → full width, scrolls with the grid instead of on its own */
   #right-panel {
-    width: 100%; border-left: none; border-top: 2px solid var(--border);
-    max-height: 200px; min-height: 0;
-    box-shadow: none; overflow-y: auto;
+    width: 100%; flex: 0 0 auto; border-left: none; border-top: 2px solid var(--border);
+    box-shadow: none; overflow: visible;
   }
-  .tab-content { padding: 8px; }
+  .tab-content { padding: 8px; overflow: visible; }
 
-  /* Top bar — compact, wrap items */
+  /* Top bar — compact, single row where it fits */
   #top-bar { gap: 6px; padding: 4px 8px; flex-wrap: wrap; height: auto; min-height: 36px; }
   #top-bar span { font-size: 11px; }
+  #top-bar .btn-sm { padding: 4px 7px; }
   .phase-badge { padding: 3px 8px; font-size: 10px; }
 
   /* Bottom bar / shop — stack vertically so cards + controls don't overlap */
@@ -1730,8 +1731,15 @@ html, body {
 
   /* Title */
   .game-title { font-size: 32px; }
-  .game-subtitle { font-size: 12px; letter-spacing: 2px; }
-  .title-buttons { flex-direction: column; gap: 8px; }
+  .game-subtitle { font-size: 12px; letter-spacing: 2px; text-align: center; }
+  .title-buttons {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    width: min(100%, 360px);
+  }
+  .title-buttons .btn-lg { min-width: 0; padding: 10px 6px; font-size: 14px; }
+  #btn-start { grid-column: 1 / -1; }
+  .title-options { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 8px 14px; }
+  #title-unlocks { flex-direction: row; gap: 6px; }
 
   /* Overlays — wider and scrollable */
   .overlay-box { padding: 20px 16px; width: 95%; max-height: 85vh; max-height: 85svh; overflow-y: auto; }
@@ -1755,46 +1763,50 @@ html, body {
   /* Message bar */
   #message-bar { font-size: 11px; }
 
-  /* Title screen scrollable on small phones */
-  #screen-title { overflow-y: auto; }
+  /* Title screen */
   .title-content { padding: 20px 10px; }
 }
 
 /* ── Very small screens (phone portrait tight) ─────────────────────────────── */
 @media (max-width: 380px) {
-  .unit-canvas { width: 32px; height: 32px; }
+  #achievements-grid { grid-template-columns: 1fr; }
+  .leaderboard-table { font-size: 0.8rem; }
+  .leaderboard-table th, .leaderboard-table td { padding: 5px 4px; }
+  .lb-name { max-width: 84px; }
   .shop-card { min-width: 85px; max-width: 120px; }
   .btn-lg { padding: 8px 14px; font-size: 13px; min-width: 110px; }
+  .title-buttons .btn-lg { font-size: 13px; }
+  #top-bar { gap: 4px; padding: 4px 6px; }
+  #top-bar .btn-sm { padding: 4px 5px; }
+  .phase-badge { padding: 3px 6px; letter-spacing: 0.5px; }
   #top-bar span { font-size: 10px; }
   .tab-btn { font-size: 10px; }
-  #right-panel { max-height: 140px; }
+}
+
+/* ── Short portrait phones: one row of shop buttons leaves more room for the board ── */
+@media (max-width: 640px) and (max-height: 700px) and (orientation: portrait) {
+  #shop-controls { grid-template-columns: 1fr 1fr 1.3fr; }
+  #shop-controls #btn-battle { grid-column: auto; }
+  #shop-controls .btn { padding: 6px 4px; }
 }
 
 /* ── Landscape phones ──────────────────────────────────────────────────────── */
 @media (max-height: 500px) and (orientation: landscape) {
-  html, body { overflow: auto; overscroll-behavior: none; }
-
-  #screen-game {
-    overflow-y: auto; overflow-x: hidden;
-    height: auto; min-height: 100vh; min-height: 100svh;
-  }
-
-  /* Side-by-side: grid dominant, panel secondary */
-  #layout { flex-direction: row; overflow: visible; flex-wrap: nowrap; }
+  /* Side-by-side: grid dominant, panel secondary and scrolling on its own */
+  #layout { flex-direction: row; overflow: hidden; flex-wrap: nowrap; min-height: 0; }
 
   /* Grid takes majority of space */
-  #grid-area { flex: 1; padding: 4px; overflow: visible; min-width: 0; }
+  #grid-area { flex: 1; padding: 4px; overflow: hidden; min-width: 0; }
   #grid-container { gap: 2px; padding: 3px; }
-  .unit-canvas { width: 36px; height: 36px; }
   #grid-labels-left, #grid-labels-right { display: none; }
 
-  /* Right panel — capped width, scrollable */
+  /* Right panel — capped width */
   #right-panel {
     flex: 0 0 auto; width: clamp(140px, 28vw, 220px);
-    min-width: 0; max-height: none;
+    min-width: 0; overflow: hidden;
     border-left: 2px solid var(--border); border-top: none;
-    overflow-y: auto;
   }
+  .tab-content { overflow-y: auto; }
 
   /* Compact top bar */
   #top-bar { height: auto; min-height: 28px; padding: 2px 8px; gap: 6px; flex-wrap: wrap; }
@@ -1802,7 +1814,9 @@ html, body {
   .phase-badge { padding: 2px 8px; font-size: 9px; }
 
   /* Compact bottom bar */
-  #bottom-bar { padding: 4px 6px; min-height: 0; max-height: 90px; }
+  #bottom-bar { padding: 4px 6px; min-height: 0; max-height: none; }
+  #shop-area { flex-direction: row; gap: 6px; }
+  #shop-controls { width: auto; min-width: 0; max-width: 46%; flex: 0 1 auto; }
   #shop-units { gap: 4px; }
   .shop-card { min-width: 90px; max-width: 130px; }
   .shop-card .card-name { font-size: 10px; }
@@ -1820,10 +1834,20 @@ html, body {
   .glossary-box { width: 95%; max-height: 90vh; max-height: 90svh; }
 
   /* Title screen */
-  #screen-title { overflow-y: auto; }
   .title-content { padding: 10px 8px; }
   .game-title { font-size: 28px; }
   .game-subtitle { font-size: 10px; }
+}
+
+/* ── Phones and tablets: keep the chat button off the shop ─────────────────── */
+@media (max-width: 1024px), (max-height: 500px) and (orientation: landscape) {
+  .chat-panel { left: 6px; bottom: calc(4px + env(safe-area-inset-bottom, 0px)); }
+  .chat-toggle { padding: 5px 10px; }
+  .chat-toggle-label { display: none; }
+  .chat-body { width: min(280px, calc(100vw - 12px)); max-height: min(360px, 60svh); }
+  /* The message bar reserves the corner the chat button sits in. */
+  #message-bar { min-height: 30px; padding-left: 48px; display: flex; align-items: center; }
+  #bottom-bar { max-height: none; }
 }
 
 /* ── Sell Confirmation Popup ─────────────────────────────────────────────────── */
@@ -1889,7 +1913,183 @@ html, body {
 #grid-area.void-campaign .tile.enemy-zone {
   background: rgba(50,15,60,0.5);
 }
-#grid-area.void-campaign #grid-container {\n  background: rgba(20,10,40,0.4);\n  border-color: rgba(100,50,160,0.3);\n}
+#grid-area.void-campaign #grid-container {
+  background: rgba(20,10,40,0.4);
+  border-color: rgba(100,50,160,0.3);
+}
+
+/* ── Unlockable Grid Styles ───────────────────────────────────────────────── */
+#grid-area.grid-style-glowing {
+  background:
+    radial-gradient(ellipse at 12% 18%, rgba(255,45,165,0.18), transparent 44%),
+    radial-gradient(ellipse at 88% 82%, rgba(30,220,255,0.20), transparent 48%),
+    linear-gradient(145deg, #130d2b 0%, #091a2b 55%, #10102b 100%);
+  border-color: rgba(100,220,255,0.55);
+}
+#grid-area.grid-style-glowing #grid-container {
+  background: linear-gradient(135deg, rgba(22,12,42,0.82), rgba(8,28,44,0.86));
+  border-color: rgba(130,100,255,0.75);
+  box-shadow:
+    0 0 12px rgba(90,80,255,0.32),
+    0 0 30px rgba(35,210,255,0.20),
+    inset 0 0 34px rgba(180,60,255,0.12);
+}
+#grid-area.grid-style-glowing .tile.zone-enemy {
+  background: linear-gradient(135deg, rgba(255,48,150,0.25), rgba(125,40,255,0.18));
+  border-color: rgba(255,100,190,0.62);
+  box-shadow: inset 0 0 12px rgba(255,50,160,0.12), 0 0 7px rgba(255,50,160,0.16);
+}
+#grid-area.grid-style-glowing .tile.zone-battle {
+  background: linear-gradient(135deg, rgba(255,195,55,0.25), rgba(255,105,155,0.18));
+  border-color: rgba(255,215,100,0.72);
+  box-shadow: inset 0 0 12px rgba(255,190,55,0.12), 0 0 8px rgba(255,155,55,0.20);
+}
+#grid-area.grid-style-glowing .tile.zone-player {
+  background: linear-gradient(135deg, rgba(40,200,255,0.25), rgba(95,80,255,0.20));
+  border-color: rgba(85,220,255,0.65);
+  box-shadow: inset 0 0 12px rgba(40,200,255,0.12), 0 0 7px rgba(40,200,255,0.17);
+}
+#grid-area.grid-style-glowing .tile:hover {
+  filter: brightness(1.3);
+  box-shadow: 0 0 16px rgba(90,220,255,0.42), inset 0 0 14px rgba(170,110,255,0.25);
+}
+.grid-fx-canvas { position: absolute; pointer-events: none; }
+
+/* ── Local dev tools (localhost with ?dev=1 only) ─────────────────────────── */
+#dev-tools {
+  position: fixed; top: 6px; left: 50%; transform: translateX(-50%); z-index: 200;
+  width: max-content; max-width: min(300px, calc(100vw - 16px)); font-size: 12px;
+}
+.dev-tools-panel {
+  background: rgba(10,14,22,0.94); border: 1px solid var(--border-l); border-radius: 10px;
+  color: var(--text); box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+}
+.dev-tools-panel summary { cursor: pointer; padding: 6px 12px; font-weight: 700; text-align: center; }
+.dev-tools-content { display: flex; flex-direction: column; gap: 8px; padding: 2px 10px 10px; }
+.dev-tools-actions, .dev-tools-speeds { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+#dev-tools button {
+  padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border-l);
+  background: rgba(30,42,60,0.9); color: var(--text-bright); font: inherit; cursor: pointer;
+}
+#dev-tools button:hover { background: rgba(45,62,88,0.95); }
+.dev-tools-note, .dev-tools-status { color: var(--text-dim); }
+#grid-area.grid-style-ice #grid-container {
+  background: linear-gradient(160deg, rgba(14,34,58,0.78), rgba(8,22,42,0.84));
+  border-color: rgba(170,230,255,0.8);
+  box-shadow: 0 0 14px rgba(120,210,255,0.4), 0 0 34px rgba(90,170,255,0.2), inset 0 0 30px rgba(150,220,255,0.12);
+}
+#grid-area.grid-style-ice .tile.zone-enemy {
+  background: linear-gradient(135deg, rgba(150,120,235,0.24), rgba(90,80,190,0.16));
+  border-color: rgba(185,165,255,0.58);
+}
+#grid-area.grid-style-ice .tile.zone-battle {
+  background: linear-gradient(135deg, rgba(225,245,255,0.24), rgba(150,205,240,0.14));
+  border-color: rgba(225,245,255,0.7);
+}
+#grid-area.grid-style-ice .tile.zone-player {
+  background: linear-gradient(135deg, rgba(70,180,240,0.26), rgba(40,115,200,0.16));
+  border-color: rgba(120,210,255,0.62);
+}
+#grid-area.grid-style-ice .tile { box-shadow: inset 0 0 12px rgba(190,235,255,0.1); }
+#grid-area.grid-style-flames #grid-container {
+  isolation: isolate;
+  border-color: rgba(255,130,35,0.72);
+  box-shadow: 0 0 16px rgba(255,75,10,0.28), inset 0 0 34px rgba(255,90,10,0.08);
+}
+#grid-area.grid-style-flames #grid-container::before,
+#grid-area.grid-style-flames #grid-container::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  z-index: -1;
+  padding: 8px;
+  border-radius: 26px;
+  pointer-events: none;
+  background: linear-gradient(180deg, #ffd768, #ff7114 35%, #c22a00 70%, #7c1000);
+  animation: flameBorderFlicker 1.1s ease-in-out infinite alternate;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+#grid-area.grid-style-flames #grid-container::after {
+  filter: blur(7px);
+  opacity: 0.68;
+}
+@keyframes flameBorderFlicker {
+  40% { filter: brightness(0.82); }
+  to { filter: brightness(1.25); }
+}
+#grid-area.grid-style-flames .tile.zone-enemy {
+  border-color: rgba(255,95,40,0.52);
+  box-shadow: inset 0 0 10px rgba(255,65,10,0.1);
+}
+#grid-area.grid-style-flames .tile.zone-battle {
+  border-color: rgba(255,190,75,0.62);
+  box-shadow: inset 0 0 12px rgba(255,130,20,0.13);
+}
+#grid-area.grid-style-flames .tile.zone-player {
+  border-color: rgba(255,125,45,0.48);
+  box-shadow: inset 0 0 10px rgba(255,65,10,0.08);
+}
+.grid-styles-box { max-width: 700px; }
+.grid-styles-intro { margin: -4px 0 0; color: var(--text-dim); }
+.grid-styles-grid { display: grid; gap: 12px; }
+.grid-style-card {
+  display: flex; align-items: center; gap: 18px; width: 100%; padding: 14px;
+  color: var(--text); text-align: left; background: rgba(25,35,55,0.72);
+  border: 1px solid rgba(120,150,200,0.3); border-radius: 12px; cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.grid-style-card:not(:disabled):hover { transform: translateY(-1px); border-color: #77ddff; }
+.grid-style-card.selected { border-color: #77ddff; box-shadow: 0 0 16px rgba(75,200,255,0.22); }
+.grid-style-card.locked { opacity: 0.68; cursor: not-allowed; }
+.grid-style-preview {
+  flex: 0 0 148px; display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 3px; padding: 5px; border: 1px solid rgba(130,150,190,0.4);
+  border-radius: 8px; background: rgba(10,15,25,0.7);
+}
+.grid-style-preview-tile { aspect-ratio: 1; border: 1px solid transparent; border-radius: 3px; }
+.grid-style-preview-tile.enemy { background: linear-gradient(135deg, rgba(200,50,50,0.35), rgba(160,30,30,0.2)); border-color: rgba(200,60,50,0.5); }
+.grid-style-preview-tile.battle { background: linear-gradient(135deg, rgba(200,160,40,0.35), rgba(180,140,30,0.2)); border-color: rgba(200,160,50,0.5); }
+.grid-style-preview-tile.player { background: linear-gradient(135deg, rgba(40,100,200,0.35), rgba(30,80,170,0.2)); border-color: rgba(50,100,200,0.5); }
+.grid-style-preview[data-style="glowing"] { border-color: rgba(130,100,255,0.8); box-shadow: 0 0 12px rgba(60,200,255,0.25); }
+.grid-style-preview[data-style="glowing"] .grid-style-preview-tile.enemy { background: linear-gradient(135deg, rgba(255,48,150,0.48), rgba(125,40,255,0.34)); border-color: rgba(255,100,190,0.75); }
+.grid-style-preview[data-style="glowing"] .grid-style-preview-tile.battle { background: linear-gradient(135deg, rgba(255,195,55,0.5), rgba(255,105,155,0.3)); border-color: rgba(255,215,100,0.8); }
+.grid-style-preview[data-style="glowing"] .grid-style-preview-tile.player { background: linear-gradient(135deg, rgba(40,200,255,0.48), rgba(95,80,255,0.34)); border-color: rgba(85,220,255,0.75); }
+.grid-style-preview[data-style="flames"] {
+  border-color: #ff7b1a;
+  background: linear-gradient(145deg, rgba(60,12,4,0.85), rgba(25,15,12,0.9));
+  box-shadow: 0 0 10px rgba(255,75,10,0.48), inset 0 0 10px rgba(255,110,20,0.22);
+  animation: flamePreviewPulse 1.5s ease-in-out infinite alternate;
+}
+.grid-style-preview[data-style="flames"] .grid-style-preview-tile.enemy { background: linear-gradient(135deg, rgba(255,65,15,0.48), rgba(120,25,10,0.34)); border-color: rgba(255,115,45,0.78); }
+.grid-style-preview[data-style="flames"] .grid-style-preview-tile.battle { background: linear-gradient(135deg, rgba(255,190,55,0.52), rgba(190,55,10,0.32)); border-color: rgba(255,200,90,0.82); }
+.grid-style-preview[data-style="flames"] .grid-style-preview-tile.player { background: linear-gradient(135deg, rgba(200,70,20,0.42), rgba(75,25,12,0.36)); border-color: rgba(255,120,55,0.68); }
+.grid-style-preview[data-style="ice"] {
+  border-color: #aee6ff;
+  background: linear-gradient(160deg, rgba(14,34,58,0.9), rgba(8,22,42,0.92));
+  box-shadow: 0 0 10px rgba(120,210,255,0.45), inset 0 0 10px rgba(170,230,255,0.2);
+}
+.grid-style-preview[data-style="ice"] .grid-style-preview-tile.enemy { background: linear-gradient(135deg, rgba(150,120,235,0.45), rgba(90,80,190,0.3)); border-color: rgba(185,165,255,0.75); }
+.grid-style-preview[data-style="ice"] .grid-style-preview-tile.battle { background: linear-gradient(135deg, rgba(225,245,255,0.45), rgba(150,205,240,0.28)); border-color: rgba(225,245,255,0.85); }
+.grid-style-preview[data-style="ice"] .grid-style-preview-tile.player { background: linear-gradient(135deg, rgba(70,180,240,0.48), rgba(40,115,200,0.32)); border-color: rgba(120,210,255,0.78); }
+@keyframes flamePreviewPulse {
+  to { filter: brightness(1.3); }
+}
+.grid-style-copy { display: flex; flex-direction: column; gap: 5px; }
+.grid-style-copy strong { font-size: 16px; }
+.grid-style-copy small { color: #77ddff; }
+.grid-style-card.locked .grid-style-copy small { color: var(--text-dim); }
+.win-unlock-notice { color: #8cecff; font-weight: 700; text-shadow: 0 0 12px rgba(60,210,255,0.45); }
+.unlock-badge.grid { background: rgba(20,70,90,0.55); color: #8cecff; border-color: rgba(80,210,255,0.5); }
+@media (prefers-reduced-motion: reduce) {
+  #grid-area.grid-style-flames #grid-container::before,
+  #grid-area.grid-style-flames #grid-container::after,
+  .grid-style-preview[data-style="flames"] {
+    animation: none;
+  }
+}
 
 /* Void win overlay */
 .overlay-box.win-box { transition: background 0.3s, border-color 0.3s; }
@@ -2788,4 +2988,3 @@ html, body {
   /* Debug overlay — hide on small screens */
   #mp-debug-overlay { display: none !important; }
 }
-

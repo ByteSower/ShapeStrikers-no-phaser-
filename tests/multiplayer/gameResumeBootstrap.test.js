@@ -6,6 +6,7 @@ const path = require('path');
 const vm = require('vm');
 
 const GAME_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/game.js'), 'utf8');
+const GRID_STYLES_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/gridStyles.js'), 'utf8');
 
 async function test(name, fn) {
   try {
@@ -911,6 +912,7 @@ function loadGameContext({
   context.self = context;
 
   vm.createContext(context);
+  vm.runInContext(GRID_STYLES_SOURCE, context, { filename: 'gridStyles.js' });
   vm.runInContext(GAME_SOURCE, context, { filename: 'game.js' });
 
   return {

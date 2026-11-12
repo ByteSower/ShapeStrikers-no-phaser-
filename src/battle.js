@@ -431,8 +431,9 @@ class BattleSystem {
     const hasAbilityTarget = this._canUseAbility(unit, targets);
     const supportAllies = unit.isEnemy ? enemies : players;
 
-    // Healers should only use ability when an ally is actually damaged
-    const isAllySupportAbility = unit.definition.ability?.healAmount > 0;
+    // Support abilities should only be used when an ally needs their effect.
+    const isAllySupportAbility = unit.definition.ability?.healAmount > 0
+      || unit.definition.ability?.support === 'allies';
     const allyNeedsSupport = isAllySupportAbility
       ? this._allySupportAbilityNeedsCast(unit, supportAllies)
       : true;
@@ -503,6 +504,11 @@ class BattleSystem {
   _useAbility(unit, enemies, allies) {
     const ab = unit.definition.ability;
     const uid = unit.definition.id;
+    const supportTargetOrder = (left, right) => {
+      const hpDiff = left.hp - right.hp;
+      if (hpDiff !== 0) return hpDiff;
+      return String(left.id) < String(right.id) ? -1 : String(left.id) > String(right.id) ? 1 : 0;
+    };
     this._log(`✨ ${this._n(unit)} uses ${ab.name}!`, 'ability', this._side(unit));
     this._emitAbilityUsed(unit, ab.name);
 
@@ -623,11 +629,6 @@ class BattleSystem {
         break;
       case 'arcane_priest':  // Arcane Restoration: heal lowest 25 HP + shield same target
         {
-          const supportTargetOrder = (left, right) => {
-            const hpDiff = left.hp - right.hp;
-            if (hpDiff !== 0) return hpDiff;
-            return String(left.id) < String(right.id) ? -1 : String(left.id) > String(right.id) ? 1 : 0;
-          };
           const injuredAllies = aliveAllies.filter(target => target.hp > 0 && target.hp < target.maxHp);
           const unshieldedAllies = aliveAllies.filter(target => target.hp > 0 && !target.statusEffects.find(effect => effect.type === 'shield'));
           const healTarget = (injuredAllies.length > 0 ? injuredAllies : unshieldedAllies).sort(supportTargetOrder)[0];
@@ -635,6 +636,21 @@ class BattleSystem {
             this._healAllies(unit, [healTarget], ab.healAmount || 25, true);
             this._addStatus(healTarget, 'shield', 2, 10);
           } }
+        break;
+      case 'arcane_prism_warden': // Refracted Ward: shield two allies and protect the most vulnerable
+        {
+          const shieldTargets = aliveAllies
+            .filter(target => !target.statusEffects.find(effect => effect.type === 'shield'))
+            .sort(supportTargetOrder)
+            .slice(0, 2);
+          for (const target of shieldTargets) this._addStatus(target, 'shield', 2, 10);
+
+          const barrierTarget = aliveAllies
+            .filter(target => !target.statusEffects.find(effect => effect.type === 'barrier'))
+            .sort(supportTargetOrder)[0];
+          if (barrierTarget) this._addStatus(barrierTarget, 'barrier', 2);
+          this._log(`🛡️ ${this._n(unit)} raises a Refracted Ward!`, 'ability');
+        }
         break;
       case 'blood_knight':   // Crimson Cleave: 1.2× to up to 3 + 30% lifesteal
         this._abilityDamage(unit, aliveEnemies.slice(0, 3), 1.2, true, 0.3, true);
@@ -976,13 +992,18 @@ class BattleSystem {
 
   _allySupportAbilityNeedsCast(unit, allies) {
     const aliveAllies = allies.filter(target => target.hp > 0);
-    if (aliveAllies.some(target => target.hp < target.maxHp)) return true;
+    if (unit.definition.ability?.healAmount > 0 && aliveAllies.some(target => target.hp < target.maxHp)) return true;
 
     switch (unit.definition.id) {
       case 'life_guardian':
         return aliveAllies.some(target => !target.statusEffects.find(effect => effect.type === 'barrier'));
       case 'arcane_priest':
         return aliveAllies.some(target => !target.statusEffects.find(effect => effect.type === 'shield'));
+      case 'arcane_prism_warden':
+        return aliveAllies.some(target =>
+          !target.statusEffects.find(effect => effect.type === 'shield') ||
+          !target.statusEffects.find(effect => effect.type === 'barrier')
+        );
       default:
         return false;
     }

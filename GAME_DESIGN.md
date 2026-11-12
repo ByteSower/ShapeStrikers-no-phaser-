@@ -36,7 +36,7 @@ Shape Strikers is a **lane-based auto-battler** where players buy and place proc
 
 **Key Features:**
 - 8 elements with synergy bonuses
-- 44 unique units (39 playable + 5 bosses) across 4 tiers
+- 45 unique units (40 playable + 5 bosses) across 4 tiers
 - 5 boss fights with multi-phase mechanics (Waves 5, 10, 15, 20, 25)
 - 2 campaign modes: Normal (15 waves) and Void Campaign (25 waves)
 - Hard mode stat scaling for waves 16–25
@@ -241,6 +241,7 @@ Each unit has one ability with a **cooldown** (number of rounds between uses). W
 | Arcane Assassin | Shadow Strike | 1.5–2.5× | 50% chance for 2.5× crit |
 | Nature Spirit | Rejuvenate | — | Heals ALL allies 15 HP |
 | Arcane Priest | Arcane Restoration | — | Heals lowest ally 25 HP + shield |
+| Prism Warden Miri | Refracted Ward | — | Shields the 2 lowest-HP unshielded allies (+10 DEF, 2 turns) and grants the lowest-HP unbarriered ally Barrier (2 turns) |
 | Blood Knight | Crimson Cleave | 1.2× | Up to 3 targets + 30% lifesteal |
 | Konji Shaman | Plague Cloud | 0.3× | Poisons ALL enemies (2 turns, 8 dmg) |
 | Void Knight | Corruption Strike | 1.4× | + Weaken (2 turns) |
@@ -407,6 +408,7 @@ Synergies activate when you have **2 or more** units of the same element. Only t
 | Arcane Shadow | ✨ | 3 | Skirmisher | 85 | 35 | 4 | 11 | 1 |
 | Shape Spirit Runi | 🌍 | 4 | Healer | 120 | 10 | 12 | 5 | 2 |
 | Arcane Sorcerer | ✨ | 4 | Healer | 100 | 15 | 8 | 6 | 3 |
+| Prism Warden Miri | ✨ | 4 | Tank | 150 | 15 | 14 | 4 | 1 |
 | Vamp General Parasect | 🔥 | 4 | Tank | 170 | 24 | 10 | 6 | 1 |
 | Plague Caster Fuu | 🌍 | 4 | Caster | 130 | 18 | 9 | 5 | 2 |
 | Void Berserker Zeku | 🕳️ | 3 | Tank | 180 | 28 | 10 | 6 | 1 |
@@ -614,6 +616,17 @@ Each non-boss wave has 2–3 template variants with difficulty ratings. The gene
 
 Void Campaign includes all 15 Normal waves plus 10 additional waves (16–25) with **hard mode scaling**.
 
+Completing either campaign unlocks three selectable battlefield cosmetics. Earlier campaign clears are honored automatically. Select unlocked grid styles from **Grid Styles** on the title screen; the Classic Grid remains available.
+
+| Grid style | Look |
+|------------|------|
+| Classic Grid | The original battlefield (always available) |
+| Glowing Grid | Neon gradients on each battle zone |
+| Flamebound Grid | Live flames and sparks rising from the grid border |
+| Frostbound Grid | Falling snow and gusting icy wind across the battlefield |
+
+Grid styles are cosmetic only and never affect battle results. Animated styles stop animating when the player's device asks for reduced motion.
+
 ### Hard Mode Scaling (Waves 16–25)
 
 Enemy stats are multiplied based on wave number:
@@ -808,7 +821,12 @@ index.html          Entry point, all screens & overlays
 style.css           All styling, animations, responsive layout, themes
 src/config.js       Unit definitions, synergies, upgrades, wave templates, scaling, patch notes
 src/battle.js       BattleSystem class — pure logic, no DOM
-src/grid.js         Grid controller — tile management, canvas rendering, animations
+src/grid.js         Grid controller — tile management, canvas rendering, animations, tile sizing
+src/gridStyles.js   Unlockable grid cosmetics — definitions, unlocks, selection
+src/gridFx.js       Animated grid effects on Canvas 2D (flames, snow)
+src/gridFxGl.js     Optional WebGL shader versions of grid effects
+src/devTools.js     Local-only development panel (localhost with ?dev=1)
+src/draggable.js    Drag-to-reposition for floating UI (chat button, dev tools), with saved positions
 src/vfx.js          CSS particle VFX engine — pooled effects, shockwaves, projectiles
 src/ui.js           UI controller — shop, glossary, logs, overlays
 src/audio.js        Sound pool management

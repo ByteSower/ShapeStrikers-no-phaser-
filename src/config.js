@@ -206,6 +206,12 @@ const UNIT_DEFINITIONS = [
     ability: { name: 'Arcane Restoration', description: 'Heals an ally 25 HP + shield (+10 DEF, 2 turns)', cooldown: 2, healAmount: 25 },
   },
   {
+    id: 'arcane_prism_warden', name: 'Prism Warden Miri', element: 'arcane', cost: 4, tier: 2, role: 'tank',
+    visual: { color: 'purple', shape: 'squircle' },
+    stats: { hp: 150, maxHp: 150, attack: 15, defense: 14, speed: 4, range: 1 },
+    ability: { name: 'Refracted Ward', description: 'Shields the 2 lowest-HP unshielded allies (+10 DEF, 2 turns) and grants the lowest-HP unbarriered ally Barrier (2 turns)', cooldown: 4, support: 'allies' },
+  },
+  {
     id: 'blood_knight', name: 'Vamp General Parasect', element: 'blood', cost: 4, tier: 2, role: 'tank', trait: 'vampire',
     visual: { color: 'pink', shape: 'squircle' },
     stats: { hp: 170, maxHp: 170, attack: 24, defense: 10, speed: 6, range: 1 },
@@ -397,6 +403,7 @@ const GOOD_FACES = {
   fire_imp: 'l',        ice_slime: 'k',        earth_golem: 'h',     lightning_sprite: 'k',
   earth_archer: 'f',    fire_scout: 'l',        fire_warrior: 'h',    ice_archer: 'f',
   arcane_mage: 'f',     lightning_knight: 'h',  ice_guardian: 'h',    arcane_assassin: 'l',
+  arcane_prism_warden: 'h',
   fire_demon: 'f',      martial_master: 'h',    lightning_lord: 'h',  ice_empress: 'f',
   frost_fairy: 'k',     nature_spirit: 'k',     arcane_priest: 'k',   life_guardian: 'h',
   void_shade: 'l',      void_knight: 'h',       void_horror: 'f',     void_blighter: 'l',
@@ -415,6 +422,7 @@ const EVIL_FACES = {
   fire_imp: 'b',        ice_slime: 'i',         earth_golem: 'i',     lightning_sprite: 'g',
   earth_archer: 'b',    fire_scout: 'd',         fire_warrior: 'b',    ice_archer: 'd',
   arcane_mage: 'd',     lightning_knight: 'b',   ice_guardian: 'i',    arcane_assassin: 'g',
+  arcane_prism_warden: 'g',
   fire_demon: 'g',      martial_master: 'b',     lightning_lord: 'g',  ice_empress: 'i',
   frost_fairy: 'c',     nature_spirit: 'i',      arcane_priest: 'd',   life_guardian: 'i',
   void_shade: 'g',      void_knight: 'b',        void_horror: 'g',     void_blighter: 'g',
@@ -1083,6 +1091,19 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // ─── Patch Notes ──────────────────────────────────────────────────────────────
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
+  {
+    version: '1.0.25',
+    date: 'November 9, 2026',
+    title: '🌈 Grid Styles, Prism Warden & Mobile Fixes',
+    notes: [
+      '🏆 Complete a campaign to unlock three selectable grids: Glowing, Flamebound and Frostbound; earlier campaign clears unlock them automatically',
+      '🔥 Flamebound Grid has live flames on its border, and ❄️ Frostbound Grid has falling snow and icy wind',
+      '✨ Meet Prism Warden Miri, whose Refracted Ward shields allies and grants Barrier',
+      '📱 Fixed the title menu being cut off on phones, the board sliding off-screen in landscape, and the chat button covering shop buttons',
+      '📐 The board now resizes to fit any screen and refits when you rotate your device',
+      '✋ Drag the chat button anywhere on screen; it remembers where you left it',
+    ],
+  },
   {
     version: '1.0.24',
     date: 'June 21, 2026',

@@ -435,6 +435,66 @@ const UI = (() => {
     }
   }
 
+  // ── Grid Style Selection ──────────────────────────────────────────────────
+
+  function showGridStyles() {
+    const overlay = document.getElementById('overlay-grid-styles');
+    if (!overlay) return;
+    _renderGridStyles();
+    overlay.classList.remove('hidden');
+  }
+
+  function hideGridStyles() {
+    document.getElementById('overlay-grid-styles')?.classList.add('hidden');
+  }
+
+  function _renderGridStyles() {
+    const container = document.getElementById('grid-styles-grid');
+    if (!container) return;
+    container.innerHTML = '';
+
+    for (const style of GridStyles.getOptions()) {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = `grid-style-card${style.selected ? ' selected' : ''}${style.unlocked ? '' : ' locked'}`;
+      card.disabled = !style.unlocked;
+      card.setAttribute('aria-pressed', String(style.selected));
+
+      const preview = document.createElement('span');
+      preview.className = 'grid-style-preview';
+      preview.dataset.style = style.id;
+      preview.setAttribute('aria-hidden', 'true');
+      for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 4; col++) {
+          const tile = document.createElement('span');
+          const zone = row === 0 ? 'enemy' : row === 1 ? 'battle' : 'player';
+          tile.className = `grid-style-preview-tile ${zone}`;
+          preview.appendChild(tile);
+        }
+      }
+
+      const copy = document.createElement('span');
+      copy.className = 'grid-style-copy';
+      const title = document.createElement('strong');
+      title.textContent = `${style.icon} ${style.name}`;
+      const description = document.createElement('span');
+      description.textContent = style.description;
+      const status = document.createElement('small');
+      status.textContent = style.unlocked
+        ? (style.selected ? '✓ Currently selected' : 'Select this grid')
+        : '🔒 Complete a campaign to unlock';
+      copy.append(title, description, status);
+      card.append(preview, copy);
+
+      if (style.unlocked) {
+        card.addEventListener('click', () => {
+          if (GridStyles.select(style.id)) _renderGridStyles();
+        });
+      }
+      container.appendChild(card);
+    }
+  }
+
   // ── Battle Result Overlay ─────────────────────────────────────────────────
 
   function showResult(won, wave, goldEarned, goldBreakdown) {
@@ -469,7 +529,7 @@ const UI = (() => {
     document.getElementById('gameover-score').textContent = `Score: ${score}`;
   }
 
-  function showWin(score, title, campaignMode) {
+  function showWin(score, title, campaignMode, newlyUnlockedGridStyles = []) {
     const overlay = document.getElementById('overlay-win');
     overlay.classList.remove('hidden');
     document.getElementById('win-score').textContent = `Final Score: ${score}`;
@@ -480,6 +540,16 @@ const UI = (() => {
       subtitleEl.textContent = campaignMode === 'void'
         ? 'You have conquered the Void Abyss!'
         : 'You defeated the Void Supreme!';
+    }
+    const unlockNotice = document.getElementById('win-unlock-notice');
+    if (unlockNotice) {
+      const styleNames = newlyUnlockedGridStyles
+        .map(styleId => GridStyles.getOptions().find(style => style.id === styleId)?.name)
+        .filter(Boolean);
+      unlockNotice.textContent = styleNames.length
+        ? `🎨 New grid style${styleNames.length > 1 ? 's' : ''} unlocked: ${styleNames.join(', ')}! Choose one from the title screen.`
+        : '';
+      unlockNotice.classList.toggle('hidden', styleNames.length === 0);
     }
     if (campaignMode === 'void') {
       overlay.classList.add('void-win');
@@ -542,6 +612,8 @@ const UI = (() => {
     showGlossary,
     hideGlossary,
     filterGlossary,
+    showGridStyles,
+    hideGridStyles,
     showResult,
     hideResult,
     showGameOver,
