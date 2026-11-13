@@ -12,6 +12,7 @@ const DevTools = (() => {
     'shape_strikers_grid_glowing_unlocked',
     'shape_strikers_grid_flames_unlocked',
     'shape_strikers_grid_ice_unlocked',
+    'shape_strikers_grid_ice_streak',
     'shape_strikers_best_score_normal',
     'shape_strikers_best_score_void',
     'shape_strikers_daily_challenge',
@@ -33,7 +34,10 @@ const DevTools = (() => {
     localStorage.setItem('shape_strikers_arcane_unlocked', '1');
     localStorage.setItem('shape_strikers_void_unlocked', '1');
     localStorage.setItem('shape_strikers_void_campaign_cleared', '1');
-    if (typeof GridStyles !== 'undefined') GridStyles.syncCampaignProgress();
+    if (typeof GridStyles !== 'undefined') {
+      GridStyles.syncCampaignProgress();
+      for (const style of GridStyles.getOptions()) GridStyles.unlock(style.id);
+    }
     _refreshProgressionUI();
     return true;
   }

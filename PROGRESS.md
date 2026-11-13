@@ -142,7 +142,7 @@
 - [x] Chat panel repositioned bottom-left to avoid overlapping in-game speed controls
 
 ### Phase 10 — Grid Styles, Prism Warden & Mobile v3 ✨ LATEST
-- [x] Unlockable grid cosmetics (`gridStyles.js`) — Glowing, Flamebound and Frostbound grids unlock on any campaign win; earlier clears are honored; selection persists
+- [x] Unlockable grid cosmetics (`gridStyles.js`) — Glowing unlocks on any campaign win; Flamebound requires 10 Fire purchases in one victorious run; Frostbound requires consecutive Normal/Void wins in either order, each with three living Tier 3 Ice units. Legacy luxury unlocks reset once; selection persists
 - [x] Grid Styles picker on the title screen with previews, and a win-screen notice listing newly unlocked styles
 - [x] Animated grid effects (`gridFx.js`) — data-driven Canvas 2D particles: flames and sparks along the grid border, falling snow and wind streaks; off under reduced motion
 - [x] Optional WebGL renderer (`gridFxGl.js`) — built-in WebGL, no library; adds layered snow, mist and a frost rim to Frostbound; Canvas 2D stays the default and the fallback
@@ -313,8 +313,10 @@
 | `shape_strikers_tips_enabled` | In-Game Tips toggle preference | Toggle in title |
 | `shape_strikers_mp_desync_log` | JSON array of MP battle hash mismatches (last 10) | On MP battle desync |
 | `shape_strikers_grid_glowing_unlocked` | Unlock the Glowing Grid | Any campaign win |
-| `shape_strikers_grid_flames_unlocked` | Unlock the Flamebound Grid | Any campaign win |
-| `shape_strikers_grid_ice_unlocked` | Unlock the Frostbound Grid | Any campaign win |
+| `shape_strikers_grid_flames_unlocked` | Unlock the Flamebound Grid | Campaign victory with at least 10 Fire purchases that run |
+| `shape_strikers_grid_ice_unlocked` | Unlock the Frostbound Grid | Consecutive Normal/Void victories with three living Tier 3 Ice units each |
+| `shape_strikers_grid_unlock_rules` | Luxury unlock migration version (`2`) | One-time reset of legacy Flamebound/Frostbound unlocks |
+| `shape_strikers_grid_ice_streak` | Last qualifying campaign (`normal` or `void`) | Consumed at the start of the next run; challenges, multiplayer, losses, and abandonment break the streak |
 | `shape_strikers_selected_grid_style` | Selected grid style id | Choosing a grid style |
 | `shape_strikers_grid_renderer` | `canvas` (default) or `webgl` for grid effects | Dev tools renderer switch |
 | `shape_strikers_ui_pos_chat` | JSON: docked corner and offset of the chat button | Dragging the chat button |

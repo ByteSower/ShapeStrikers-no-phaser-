@@ -262,6 +262,7 @@ function loadGameContext({
   const intervals = [];
   const uiMessages = [];
   const resultCalls = [];
+  const winCalls = [];
   const screenCalls = [];
   const shopRenderCalls = [];
   const gridCalls = {
@@ -377,6 +378,7 @@ function loadGameContext({
     },
     Element: {
       FIRE: 'fire',
+      ICE: 'ice',
       EARTH: 'earth',
       LIGHTNING: 'lightning',
       ARCANE: 'arcane',
@@ -504,6 +506,7 @@ function loadGameContext({
     },
     Backend: {
       init() {},
+      isReady() { return false; },
       getPlayerName() { return 'Test Player'; },
       getUserId() { return 'player-123'; },
       setPlayerName() { return true; },
@@ -634,6 +637,9 @@ function loadGameContext({
       showPhaseBanner() {},
       updateHUD() {},
       hideResult() {},
+      showWin(score, title, mode, rewards) {
+        winCalls.push({ mode, rewards: plain(rewards) });
+      },
       showResult(playerWon, wave, earnedGold, breakdown = {}) {
         resultCalls.push({ playerWon, wave, earnedGold, breakdown: plain(breakdown) });
       },
@@ -917,6 +923,7 @@ function loadGameContext({
 
   return {
     Game: vm.runInContext('Game', context),
+    GridStyles: vm.runInContext('GridStyles', context),
     document,
     clickShop(index) {
       const last = shopRenderCalls.at(-1);
@@ -944,6 +951,7 @@ function loadGameContext({
     },
     uiMessages,
     resultCalls,
+    winCalls,
     timeouts,
     intervals,
     screenCalls,
@@ -2070,6 +2078,82 @@ await test('Pending shop purchases recheck affordability before placement after 
   assert.equal(Game.state.gold, goldBeforeUpgrade - 5, 'Placement should recheck affordability and avoid overspending');
   assert.equal(Game.state.playerUnits.length, 0, 'Unaffordable pending purchase should not place a unit');
   assert.equal(Game.state.shopUnits[0].cost, 8, 'Failed placement should leave the shop card available');
+  assert.equal(Game.state.fireUnitsPurchased, 0, 'Canceled and unaffordable purchases must not count toward Flamebound');
+});
+
+await test('Luxury grid purchase tracking counts only paid Fire placements and resets on restart', () => {
+  const { Game, clickShop, clickTile } = loadGameContext({
+    savedSession: null,
+    domElementIds: ['screen-game', 'btn-battle', 'btn-refresh'],
+  });
+  Game.init();
+  Game.startGame('normal');
+  const fire = plain(Game.state.shopUnits[0]);
+  fire.element = 'fire';
+  fire.cost = 1;
+  Game.state.gold = 100;
+  Game.state.shopUnits[0] = fire;
+  clickShop(0);
+  assert.equal(Game.state.fireUnitsPurchased, 0, 'Previewing a unit is not a purchase');
+  clickTile(0, 0);
+  assert.equal(Game.state.fireUnitsPurchased, 0, 'Invalid placement is not a purchase');
+  clickShop(0);
+  clickTile(3, 0);
+  assert.equal(Game.state.fireUnitsPurchased, 1);
+  Game.state.shopUnits[0] = { ...fire, element: 'ice' };
+  clickShop(0);
+  clickTile(3, 1);
+  assert.equal(Game.state.fireUnitsPurchased, 1, 'Other elements must not count');
+  Game.startGame('void');
+  assert.equal(Game.state.fireUnitsPurchased, 0, 'A new campaign starts with no purchases');
+});
+
+await test('Campaign victory passes run purchases and consecutive Ice survivors to grid rewards', () => {
+  const { Game, GridStyles, winCalls } = loadGameContext({
+    savedSession: null,
+    domElementIds: ['screen-game', 'btn-battle', 'btn-refresh'],
+  });
+  Game.init();
+  for (const mode of ['normal', 'void']) {
+    Game.startGame(mode);
+    Game.state.fireUnitsPurchased = 10;
+    Game.state.playerUnits = Array.from({ length: 3 }, (_, id) => ({
+      id, hp: 10, isEnemy: false, definition: { element: 'ice', tier: 3 },
+    }));
+    Game.state.wave = mode === 'void' ? 25 : 15;
+    Game.nextWave();
+  }
+  assert.deepEqual(winCalls, [
+    { mode: 'normal', rewards: ['glowing', 'flames'] },
+    { mode: 'void', rewards: ['ice'] },
+  ]);
+  assert.equal(GridStyles.isUnlocked('ice'), true);
+});
+
+await test('A daily challenge consumes the Ice streak and cannot award campaign grid rewards', () => {
+  const { Game, GridStyles, winCalls } = loadGameContext({
+    savedSession: null,
+    domElementIds: ['screen-game', 'btn-battle', 'btn-refresh'],
+  });
+  Game.init();
+  Game.startGame('normal');
+  Game.state.playerUnits = Array.from({ length: 3 }, () => ({
+    hp: 10, definition: { element: 'ice', tier: 3 },
+  }));
+  Game.state.wave = 15;
+  Game.nextWave();
+  Game.startChallenge('daily');
+  assert.equal(Game.state.previousIceCampaign, 'normal');
+  Game.state.fireUnitsPurchased = 10;
+  Game.state.playerUnits = Array.from({ length: 3 }, () => ({
+    hp: 10, definition: { element: 'ice', tier: 3 },
+  }));
+  Game.state.wave = 15;
+  Game.nextWave();
+  assert.deepEqual(winCalls.at(-1).rewards, []);
+  assert.equal(GridStyles.isUnlocked('flames'), false);
+  assert.equal(GridStyles.isUnlocked('ice'), false);
+  assert.equal(GridStyles.beginRun(), null, 'Challenge victory must not restore the consumed streak');
 });
 
 await test('Upgrade purchases clear any stale pending shop detail panel state', () => {

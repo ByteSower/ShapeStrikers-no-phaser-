@@ -616,14 +616,16 @@ Each non-boss wave has 2–3 template variants with difficulty ratings. The gene
 
 Void Campaign includes all 15 Normal waves plus 10 additional waves (16–25) with **hard mode scaling**.
 
-Completing either campaign unlocks three selectable battlefield cosmetics. Earlier campaign clears are honored automatically. Select unlocked grid styles from **Grid Styles** on the title screen; the Classic Grid remains available.
+Grid styles are luxury cosmetic goals intended to reward demanding repeat runs. Select unlocked styles from **Grid Styles** on the title screen; the Classic Grid remains available. Glowing honors earlier campaign clears, but legacy Flamebound and Frostbound unlocks are reset once when these requirements are introduced.
 
-| Grid style | Look |
-|------------|------|
-| Classic Grid | The original battlefield (always available) |
-| Glowing Grid | Neon gradients on each battle zone |
-| Flamebound Grid | Live flames and sparks rising from the grid border |
-| Frostbound Grid | Falling snow and gusting icy wind across the battlefield |
+| Grid style | Look | Unlock requirement |
+|------------|------|--------------------|
+| Classic Grid | The original battlefield | Always available |
+| Glowing Grid | Neon gradients on each battle zone | Win either campaign |
+| Flamebound Grid | Live flames and sparks rising from the grid border | Win either campaign after purchasing at least 10 Fire units in that run |
+| Frostbound Grid | Falling snow and gusting icy wind | Win Normal and Void consecutively, in either order, with at least three living 3-star (Tier 3) Ice units on the field at each victory |
+
+Fire purchases count only after payment and placement; selling a purchased unit does not subtract it. Counts reset each run. Frostbound records the last qualifying campaign victory locally and consumes it when the next run starts, so losses, abandonment (including reload), challenges, and multiplayer break the streak. Repeating the same campaign can start a new pair but does not complete it. Challenge victories do not unlock grid styles. Earned styles remain unlocked after later losses. Run History is deferred to a separate planning task.
 
 Grid styles are cosmetic only and never affect battle results. Animated styles stop animating when the player's device asks for reduced motion.
 
