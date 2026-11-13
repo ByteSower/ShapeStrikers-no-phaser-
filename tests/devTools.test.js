@@ -28,9 +28,9 @@ global.GridStyles = {
   syncCampaignProgress() {
     campaignSyncCount++;
     storage.set('shape_strikers_grid_glowing_unlocked', '1');
-    storage.set('shape_strikers_grid_flames_unlocked', '1');
-    storage.set('shape_strikers_grid_ice_unlocked', '1');
   },
+  getOptions: () => ['glowing', 'flames', 'ice'].map(id => ({ id })),
+  unlock: id => storage.set(`shape_strikers_grid_${id}_unlocked`, '1'),
 };
 
 const source = fs.readFileSync(path.resolve(__dirname, '../src/devTools.js'), 'utf8');
@@ -64,7 +64,9 @@ assert.equal(DevTools.resetProgression(), false, 'declining confirmation must pr
 assert.equal(storage.get('shape_strikers_void_unlocked'), '1');
 
 window.confirm = () => true;
+storage.set('shape_strikers_grid_ice_streak', 'normal');
 assert.equal(DevTools.resetProgression(), true);
+assert.equal(storage.has('shape_strikers_grid_ice_streak'), false);
 assert.equal(storage.has('shape_strikers_void_unlocked'), false);
 assert.equal(storage.has('shape_strikers_achievements'), false);
 assert.equal(storage.has('shape_strikers_grid_glowing_unlocked'), false);

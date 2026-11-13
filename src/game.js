@@ -110,6 +110,8 @@ const Game = (() => {
       selectedUnit:   null,     // live unit on the board selected for move/sell
       upgradeLevels:  {},       // { upgradeId: level }
       refreshesLeft:  GAME_CONFIG.maxRefreshesPerRound || 1,
+      fireUnitsPurchased: 0,
+      previousIceCampaign: null,
     };
   }
 
@@ -1302,6 +1304,7 @@ const Game = (() => {
 
       // Deduct gold NOW on actual placement
       state.gold -= def.cost;
+      if (def.element === Element.FIRE) state.fireUnitsPurchased++;
       const unit = _mkUnit(def, targetRow, col);
       _applyUpgradeBuffsToUnit(unit);
       state.playerUnits.push(unit);
@@ -2701,7 +2704,12 @@ const Game = (() => {
         Audio.play('newHighScore');
       }
     }
-    const newlyUnlockedGridStyles = _challengeMode ? [] : GridStyles.unlockForCampaignWin();
+    const newlyUnlockedGridStyles = _challengeMode ? [] : GridStyles.unlockForCampaignWin({
+      campaignMode: _campaignMode,
+      fireUnitsPurchased: state.fireUnitsPurchased,
+      playerUnits: state.playerUnits,
+      previousIceCampaign: state.previousIceCampaign,
+    });
     if (!_challengeMode) {
       localStorage.setItem('shape_strikers_void_unlocked', '1');
       localStorage.setItem('shape_strikers_arcane_unlocked', '1');
@@ -2859,6 +2867,7 @@ const Game = (() => {
     }
 
     state = _freshState();
+    state.previousIceCampaign = GridStyles.beginRun();
     _initGameStats();
     _totalUpgradesBought = 0;
     _unitsLostThisRun = 0;
@@ -4211,6 +4220,7 @@ const Game = (() => {
   // ── Enter multiplayer battle-prep mode ────────────────────────────────
   function _mpEnterBattleMode() {
     _mpMode = true;
+    GridStyles.beginRun();
 
     // Multiplayer bypasses startGame(), so switch away from the title track here.
     Audio.stopMusic();

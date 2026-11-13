@@ -482,7 +482,7 @@ const UI = (() => {
       const status = document.createElement('small');
       status.textContent = style.unlocked
         ? (style.selected ? '✓ Currently selected' : 'Select this grid')
-        : '🔒 Complete a campaign to unlock';
+        : `🔒 ${style.unlockText}`;
       copy.append(title, description, status);
       card.append(preview, copy);
 

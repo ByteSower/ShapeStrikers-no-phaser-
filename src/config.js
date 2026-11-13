@@ -1092,6 +1092,16 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.26',
+    date: 'November 13, 2026',
+    title: 'Luxury Grid Challenges',
+    notes: [
+      'Flamebound: win a campaign after purchasing at least 10 Fire units in that run.',
+      'Frostbound: win Normal and Void consecutively in either order, each with at least three living 3-star Ice units. Losses, abandoned runs, challenges, and multiplayer break the streak.',
+      'Existing Flamebound and Frostbound unlocks reset once so everyone can earn these luxury rewards. Glowing and campaign progression are kept.',
+    ],
+  },
+  {
     version: '1.0.25',
     date: 'November 9, 2026',
     title: '🌈 Grid Styles, Prism Warden & Mobile Fixes',

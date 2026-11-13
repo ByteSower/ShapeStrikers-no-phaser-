@@ -28,7 +28,7 @@ Shape Strikers is a rogue-like auto-battler where you buy, place, and upgrade sh
 - **Unit glossary & guidebook** — learn every unit and mechanic in-game
 - **Procedural shape-drawn units** — no sprite assets needed for characters
 - **Dark mode** and **mobile layout** support — phone, tablet, portrait and landscape
-- **Unlockable grid cosmetics** — complete a campaign to unlock the Glowing, Flamebound (animated fire border) and Frostbound (snow and icy wind) grids
+- **Unlockable grid cosmetics** — Glowing rewards a campaign win; luxury Flamebound requires 10 Fire purchases in a victorious run, and Frostbound requires consecutive Normal/Void victories (either order), each with three living 3-star Ice units
 
 ### Elements
 
