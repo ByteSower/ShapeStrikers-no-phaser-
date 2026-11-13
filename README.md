@@ -74,6 +74,8 @@ npx serve .
 
 Then open `http://localhost:8000` in your browser.
 
+Multiplayer identifiers require Web Crypto in a supported browser. Use HTTPS when hosting, or localhost for development. If secure identifiers are unavailable, new room joins fail with an explanatory message and telemetry recording/upload is disabled without preventing the game from loading.
+
 ### Tests
 
 There is no build step or package manifest. Run the tests directly with Node 22 or newer:

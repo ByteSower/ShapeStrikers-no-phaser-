@@ -4,7 +4,9 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { webcrypto } = require('node:crypto');
 
+const SECURE_IDS_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/utils/secureIds.js'), 'utf8');
 const TELEMETRY_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/multiplayerTelemetry.js'), 'utf8');
 
 const pendingTests = [];
@@ -39,8 +41,10 @@ function createLocalStorage() {
 
 function loadTelemetryContext(options = {}) {
   const inserts = [];
+  const warnings = [];
   const context = {
-    console,
+    console: { ...console, warn: (...args) => warnings.push(args) },
+    crypto: 'crypto' in options ? options.crypto : webcrypto,
     JSON,
     Math,
     Date,
@@ -97,15 +101,42 @@ function loadTelemetryContext(options = {}) {
   context.global = context;
 
   vm.createContext(context);
+  vm.runInContext(SECURE_IDS_SOURCE, context, { filename: 'secureIds.js' });
   vm.runInContext(TELEMETRY_SOURCE, context, { filename: 'multiplayerTelemetry.js' });
 
   return {
     Telemetry: vm.runInContext('MultiplayerTelemetry', context),
     inserts,
+    warnings,
   };
 }
 
 console.log('\nMultiplayer telemetry tests\n');
+
+test('telemetry event and session identifiers use secure UUID fallback', async () => {
+  const { Telemetry, inserts } = loadTelemetryContext({
+    crypto: { getRandomValues: bytes => webcrypto.getRandomValues(bytes) },
+  });
+  const entry = Telemetry.record('room.lifecycle');
+  await Telemetry.flush();
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  assert.match(entry.id, uuid);
+  assert.match(inserts[0].row.session_id, uuid);
+  assert.equal(inserts[0].row.id, entry.id);
+  assert.notEqual(inserts[0].row.session_id, entry.id);
+});
+
+test('missing crypto leaves telemetry loadable but explicitly disables recording and upload', async () => {
+  const { Telemetry, inserts, warnings } = loadTelemetryContext({ crypto: undefined });
+  assert.equal(Telemetry.record('room.lifecycle'), null);
+  assert.equal(Telemetry.list().length, 0);
+  const result = await Telemetry.flush();
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'Secure identifiers unavailable');
+  assert.equal(inserts.length, 0);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0][0], /Cannot create a secure identifier/);
+});
 
 test('record persists structured entries and clones details', () => {
   const { Telemetry } = loadTelemetryContext();

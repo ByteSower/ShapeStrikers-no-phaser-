@@ -10,7 +10,7 @@ const MultiplayerTelemetry = (() => {
   let _memoryEntries = [];
   let _flushTimer = null;
   let _flushPromise = null;
-  let _sessionId = _createId('mp-telemetry-session');
+  const _sessionId = _createId();
 
   function _cloneSerializable(value) {
     if (value === null || value === undefined) return value;
@@ -18,9 +18,13 @@ const MultiplayerTelemetry = (() => {
     return JSON.parse(JSON.stringify(value));
   }
 
-  function _createId(prefix = 'mp-telemetry') {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  function _createId() {
+    try {
+      return SecureIds.create();
+    } catch (error) {
+      console.warn('[MultiplayerTelemetry] Cannot create a secure identifier; telemetry recording/upload is unavailable:', error);
+      return null;
+    }
   }
 
   function _getStorage() {
@@ -45,7 +49,8 @@ const MultiplayerTelemetry = (() => {
         uploadedAt: Number(entry.uploadedAt) || 0,
         uploadAttempts: Math.max(0, Number(entry.uploadAttempts) || 0),
         lastUploadError: typeof entry.lastUploadError === 'string' && entry.lastUploadError ? entry.lastUploadError : null,
-      }));
+      }))
+      .filter(entry => entry.id);
   }
 
   function _getClient() {
@@ -183,9 +188,12 @@ const MultiplayerTelemetry = (() => {
 
   function record(type, details = {}, options = {}) {
     if (typeof type !== 'string' || !type.trim()) return null;
+    if (!_sessionId) return null;
 
+    const id = _createId();
+    if (!id) return null;
     const entry = {
-      id: _createId(),
+      id,
       type: type.trim(),
       level: typeof options.level === 'string' && options.level ? options.level : 'info',
       at: Date.now(),
@@ -215,6 +223,14 @@ const MultiplayerTelemetry = (() => {
 
   async function flush() {
     if (_flushPromise) return _flushPromise;
+    if (!_sessionId) {
+      return {
+        ok: false,
+        uploaded: 0,
+        pending: _readEntries().filter(entry => !entry.uploadedAt).length,
+        error: 'Secure identifiers unavailable',
+      };
+    }
 
     const client = _getClient();
     const userId = _getUserId();

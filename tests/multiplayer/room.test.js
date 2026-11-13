@@ -100,6 +100,7 @@ function loadModule(rel) {
   vm.runInThisContext(code, { filename: rel });
 }
 
+loadModule('utils/secureIds.js');
 loadModule('room.js');
 
 // ── Sequential test runner ────────────────────────────────────────────────────

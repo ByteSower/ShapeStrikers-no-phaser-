@@ -832,6 +832,7 @@ src/draggable.js    Drag-to-reposition for floating UI (chat button, dev tools),
 src/vfx.js          CSS particle VFX engine — pooled effects, shockwaves, projectiles
 src/ui.js           UI controller — shop, glossary, logs, overlays
 src/audio.js        Sound pool management
+src/utils/secureIds.js Shared Web Crypto UUID generation for room and telemetry identifiers
 src/backend.js      Supabase client, authentication, leaderboard API
 src/game.js         Game controller — state machine, shop, battle wiring, leaderboard, tutorial
 ```
