@@ -26,7 +26,7 @@
  *   battle_result  (host)  { winner, roundScores, goldBonus }
  *
  * Public API:
- *   Room.join(roomId, isHost)           → void
+ *   Room.join(roomId, isHost)           → boolean
  *   Room.leave()                        → void
  *   Room.syncState(key, value)          → Promise<{ ok, error? }>
  *   Room.applyState(key, value, from)   → void
@@ -51,7 +51,7 @@
  *   Room.reconnect()                   → boolean
  *   Room.destroy()                     → void
  *
- * Depends on: backend.js, supabaseClient.js
+ * Depends on: utils/secureIds.js, backend.js, supabaseClient.js
  * Load order: after matchmaking.js, before game.js
  */
 
@@ -112,15 +112,8 @@ const Room = (() => {
     if (_playerId) return _playerId;
     _playerId =
       (typeof Backend !== 'undefined' && Backend.getUserId()) ||
-      (typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `anon-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      SecureIds.create();
     return _playerId;
-  }
-
-  function _createOpaqueId(prefix = 'mp-room') {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
   function _buildSeatId(roomId = _roomId, host = _host, playerId = _getPlayerId()) {
@@ -713,26 +706,30 @@ const Room = (() => {
   function join(roomId, host, opponentId, options = null) {
     if (typeof SupabaseClient === 'undefined') {
       console.warn('[Room] SupabaseClient not loaded — room unavailable.');
-      return;
+      return false;
     }
     if (_roomId) {
       console.warn('[Room] Already in a room — call leave() first.');
-      return;
+      return false;
+    }
+
+    let playerId, sessionId, reconnectToken;
+    try {
+      playerId = (typeof options?.playerId === 'string' && options.playerId) || _getPlayerId();
+      sessionId = (typeof options?.sessionId === 'string' && options.sessionId) || SecureIds.create();
+      reconnectToken = (typeof options?.reconnectToken === 'string' && options.reconnectToken) || SecureIds.create();
+    } catch (error) {
+      console.error('[Room] Cannot join without secure identifiers:', error);
+      return false;
     }
 
     _roomId      = roomId;
     _host        = host;
-    if (options && typeof options.playerId === 'string' && options.playerId) {
-      _playerId = options.playerId;
-    }
+    _playerId    = playerId;
     _opponentId  = opponentId || null;
     _channelName = `room:${roomId}`;
-    _sessionId = (options && typeof options.sessionId === 'string' && options.sessionId)
-      ? options.sessionId
-      : _createOpaqueId('shape-strikers-room-session');
-    _reconnectToken = (options && typeof options.reconnectToken === 'string' && options.reconnectToken)
-      ? options.reconnectToken
-      : _createOpaqueId('shape-strikers-room-reconnect');
+    _sessionId = sessionId;
+    _reconnectToken = reconnectToken;
     _seatId = (options && typeof options.seatId === 'string' && options.seatId)
       ? options.seatId
       : _buildSeatId(roomId, host, _getPlayerId());
@@ -752,6 +749,7 @@ const Room = (() => {
 
     SupabaseClient.joinChannel(_channelName, _setupChannel, _onSubscribed);
     console.info(`[Room] Joining room: ${roomId.slice(0, 8)}… (isHost: ${host})`);
+    return true;
   }
 
   /**
@@ -945,14 +943,13 @@ const Room = (() => {
         return false;
       }
       console.info(`[Room] Restoring saved room session: ${saved.roomId.slice(0, 8)}…`);
-      join(saved.roomId, saved.isHost, saved.opponentId, {
+      return join(saved.roomId, saved.isHost, saved.opponentId, {
         playerId: saved.playerId || currentPlayerId || undefined,
         seatId: saved.seatId || expectedSeatId,
         sessionId: saved.sessionId || undefined,
         reconnectToken: saved.reconnectToken || undefined,
         resumeContext: saved.resumeContext || undefined,
       });
-      return true;
     }
     console.info(`[Room] Manual reconnect requested for ${_channelName}.`);
     _syncChannelStatus();

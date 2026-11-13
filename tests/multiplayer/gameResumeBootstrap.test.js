@@ -243,6 +243,7 @@ function createDocumentStub(elementIds = []) {
 function loadGameContext({
   roomGraceMs = 10_000,
   reconnectResult = true,
+  roomJoinResult = true,
   battleEndOverride = null,
   autoResolveBattle = false,
   savedSession = {
@@ -402,6 +403,7 @@ function loadGameContext({
     Room: {
       DISCONNECT_GRACE_MS: roomGraceMs,
       join(roomId, isHost, opponentId) {
+        if (!roomJoinResult) return false;
         roomStatus.roomId = roomId;
         roomStatus.isHost = !!isHost;
         roomStatus.opponentId = opponentId;
@@ -996,6 +998,20 @@ function loadGameContext({
 console.log('\nGame multiplayer lifecycle tests\n');
 
 (async () => {
+await test('Room join failure keeps the lobby open and reports a secure-browser requirement', () => {
+  const { Game, document, roomEvents, multiplayerEvents } = loadGameContext({
+    savedSession: null,
+    roomJoinResult: false,
+    domElementIds: ['mp-lobby-overlay', 'mp-status', 'btn-mp-find-match', 'btn-mp-cancel'],
+  });
+  Game.init();
+  roomEvents.matchFoundHandler({ roomId: 'room-secure', opponentId: 'opponent', isHost: true });
+  assert.equal(multiplayerEvents.startCalls.length, 0);
+  assert.equal(document.getElementById('mp-lobby-overlay').classList.contains('hidden'), false);
+  assert.match(document.getElementById('mp-status').textContent, /Cannot join securely/);
+  assert.equal(document.getElementById('btn-mp-find-match').style.display, '');
+});
+
 await test('Game.init resumes a saved guest session through the public boot path', () => {
   const { Game, document, uiMessages, timeouts, intervals, roomEvents, multiplayerEvents, stopMusicCalls, gameplayMusicCalls } = loadGameContext({
     domElementIds: ['splash-overlay', 'btn-splash-dismiss'],

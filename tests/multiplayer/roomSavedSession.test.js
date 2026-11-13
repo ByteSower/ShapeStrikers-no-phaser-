@@ -4,7 +4,9 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { webcrypto } = require('node:crypto');
 
+const SECURE_IDS_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/utils/secureIds.js'), 'utf8');
 const ROOM_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/room.js'), 'utf8');
 const ROOM_SESSION_KEY = 'shape_strikers_mp_room_session';
 
@@ -44,10 +46,12 @@ function loadRoomContext(storageSeed = {}, options = {}) {
     broadcasts: [],
   };
   const sessionStorage = createSessionStorage(storageSeed);
-  const backendPlayerId = options.backendPlayerId || 'player-self';
+  const backendPlayerId = options.backendPlayerId === undefined ? 'player-self' : options.backendPlayerId;
+  const errors = [];
 
   const context = {
-    console,
+    console: { ...console, error: (...args) => errors.push(args) },
+    crypto: 'crypto' in options ? options.crypto : webcrypto,
     setTimeout,
     clearTimeout,
     JSON,
@@ -91,16 +95,48 @@ function loadRoomContext(storageSeed = {}, options = {}) {
   context.window = context;
 
   vm.createContext(context);
+  vm.runInContext(SECURE_IDS_SOURCE, context, { filename: 'secureIds.js' });
   vm.runInContext(ROOM_SOURCE, context, { filename: 'room.js' });
 
   return {
     Room: vm.runInContext('Room', context),
     sessionStorage,
     calls,
+    errors,
   };
 }
 
 console.log('\nRoom saved-session tests\n');
+
+test('room identities use getRandomValues when randomUUID is unavailable', () => {
+  let draws = 0;
+  const { Room, sessionStorage } = loadRoomContext({}, {
+    backendPlayerId: null,
+    crypto: { getRandomValues: bytes => bytes.fill(++draws) },
+  });
+  assert.equal(Room.join('room-secure', true, 'opponent'), true);
+  const saved = JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY));
+  const ids = [saved.playerId, saved.sessionId, saved.reconnectToken];
+  for (const id of ids) assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.equal(new Set(ids).size, 3);
+  assert.equal(draws, 3);
+});
+
+test('missing crypto cannot partially join or persist a room, including legacy reconnect', () => {
+  const { Room, sessionStorage, calls, errors } = loadRoomContext({}, { crypto: undefined });
+  assert.equal(Room.join('room-insecure', true, 'opponent'), false);
+  assert.equal(Room.getRoomId(), null);
+  assert.equal(calls.joined.length, 0);
+  assert.equal(sessionStorage.getItem(ROOM_SESSION_KEY), null);
+  assert.equal(errors.length, 1);
+  const legacy = loadRoomContext({
+    [ROOM_SESSION_KEY]: JSON.stringify({ roomId: 'legacy', isHost: false, playerId: 'player-self' }),
+  }, { crypto: {} });
+  assert.equal(legacy.Room.reconnect(), false);
+  assert.equal(legacy.Room.getRoomId(), null);
+  assert.equal(legacy.calls.joined.length, 0);
+  assert.equal(legacy.errors.length, 1);
+});
 
 test('join persists room session metadata for reload resume', () => {
   const { Room, sessionStorage, calls } = loadRoomContext();

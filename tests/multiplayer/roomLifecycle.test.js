@@ -4,7 +4,9 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { webcrypto } = require('node:crypto');
 
+const SECURE_IDS_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/utils/secureIds.js'), 'utf8');
 const ROOM_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/room.js'), 'utf8');
 
 async function test(name, fn) {
@@ -129,6 +131,7 @@ function loadRoomContext() {
 
   const context = {
     console,
+    crypto: webcrypto,
     JSON,
     Math,
     Date: { now: timers.now },
@@ -169,6 +172,7 @@ function loadRoomContext() {
   context.window = context;
 
   vm.createContext(context);
+  vm.runInContext(SECURE_IDS_SOURCE, context, { filename: 'secureIds.js' });
   vm.runInContext(ROOM_SOURCE, context, { filename: 'room.js' });
 
   return {

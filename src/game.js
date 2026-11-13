@@ -4139,7 +4139,11 @@ const Game = (() => {
 
         // Join the room channel
         if (typeof Room !== 'undefined') {
-          Room.join(roomId, isHost, opponentId);
+          if (Room.join(roomId, isHost, opponentId) === false) {
+            _mpSetStatus('Cannot join securely. Use HTTPS or localhost in a supported browser.', 'error');
+            if (findBtn) findBtn.style.display = '';
+            return;
+          }
           _mpBindRoomLifecycleHandlers(isHost);
         }
 
