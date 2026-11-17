@@ -17,6 +17,7 @@ const Game = (() => {
   let _wavePreviewPinned = false;
   let _preBattlePositions = null; // saved player unit positions {id, row, col}
   let _battleParticipants = null; // snapshot of player units at battle start (for stats)
+  let _historyParticipants = [];
   let _inspectedUnit = null; // unit currently shown in detail panel during battle
   let _campaignMode = 'normal'; // 'normal' | 'void'
   let _challengeMode = null;     // null | 'daily' | 'weekly'
@@ -111,6 +112,7 @@ const Game = (() => {
       upgradeLevels:  {},       // { upgradeId: level }
       refreshesLeft:  GAME_CONFIG.maxRefreshesPerRound || 1,
       fireUnitsPurchased: 0,
+      unitsPurchased: 0,
       previousIceCampaign: null,
     };
   }
@@ -755,11 +757,56 @@ const Game = (() => {
   // ── Battle Stats Tracking ─────────────────────────────────────────────────
 
   function _initBattleStats() {
-    _battleStats = { damageDealt: {}, damageTaken: {}, kills: {}, healed: {} };
+    _battleStats = { damageDealt: {}, damageTaken: {}, kills: {}, healed: {}, accumulated: false, deadIds: new Set() };
   }
 
   function _initGameStats() {
-    _gameStats = { totalDamage: 0, totalKills: 0, totalHealed: 0, wavesCleared: 0, bossesKilled: 0, unitStats: {} };
+    _gameStats = { totalDamage: 0, totalKills: 0, totalHealed: 0, wavesCleared: 0, battlesResolved: 0, bossesKilled: 0, unitStats: Object.create(null) };
+  }
+
+  function _statsForDefinition(definition) {
+    if (!_gameStats.unitStats[definition.id]) {
+      _gameStats.unitStats[definition.id] = {
+        definitionId: definition.id, name: definition.name, tier: definition.tier, element: definition.element,
+        recruits: 0, damage: 0, healed: 0, kills: 0,
+      };
+    }
+    return _gameStats.unitStats[definition.id];
+  }
+
+  function _historySnapshot() {
+    return {
+      waveReached: state.wave, wavesCleared: _gameStats.wavesCleared,
+      battlesResolved: _gameStats.battlesResolved, score: state.score,
+      recruits: state.unitsPurchased, firePurchases: state.fireUnitsPurchased,
+      upgradesBought: _totalUpgradesBought, damage: _gameStats.totalDamage,
+      healed: _gameStats.totalHealed, kills: _gameStats.totalKills,
+      bossesDefeated: _gameStats.bossesKilled, playerLosses: _unitsLostThisRun,
+      iceSurvivors: state.playerUnits.filter(unit => !unit.isEnemy && unit.hp > 0
+        && unit.definition.element === Element.ICE && unit.definition.tier === 3).length,
+      unitStats: Object.values(_gameStats.unitStats), participants: _historyParticipants,
+    };
+  }
+
+  function _checkpointHistory() {
+    if (!_mpMode && state && _gameStats && typeof RunHistory !== 'undefined') RunHistory.checkpoint(_historySnapshot());
+  }
+
+  function _finishHistory(status) {
+    if (!_mpMode && state && _gameStats && typeof RunHistory !== 'undefined') RunHistory.finish(status, _historySnapshot());
+  }
+
+  function _captureHistoryParticipants() {
+    const living = new Map(state.playerUnits.map(unit => [unit.id, unit]));
+    _historyParticipants = (_battleParticipants || []).map(unit => {
+      const survivor = living.get(unit.id);
+      return {
+        unitId: String(unit.id), definitionId: unit.definition.id, name: unit.definition.name,
+        tier: unit.definition.tier, element: unit.definition.element,
+        hp: Math.max(0, survivor?.hp || 0), maxHp: survivor?.maxHp || unit.maxHp,
+        survived: Boolean(survivor && survivor.hp > 0),
+      };
+    });
   }
 
   function _trackDamage(unitId, dmg, isHealing) {
@@ -776,15 +823,27 @@ const Game = (() => {
     // Attribute to last attacker — we'll just track total enemy kills per unit
   }
 
-  function _accumulateGameStats() {
-    if (!_gameStats || !_battleStats) return;
-    const totalDmg = Object.values(_battleStats.damageDealt).reduce((s, v) => s + v, 0);
-    const totalHeal = Object.values(_battleStats.healed).reduce((s, v) => s + v, 0);
+  function _accumulateGameStats(playerWon) {
+    if (!_gameStats || !_battleStats || _battleStats.accumulated) return;
+    _battleStats.accumulated = true;
+    let totalDmg = 0;
+    let totalHeal = 0;
+    for (const unit of _battleParticipants || []) {
+      const damage = _battleStats.damageDealt[unit.id] || 0;
+      const healed = _battleStats.healed[unit.id] || 0;
+      const stats = _statsForDefinition(unit.definition);
+      stats.damage += damage;
+      stats.healed += healed;
+      stats.kills += _battleStats.kills[unit.id] || 0;
+      totalDmg += damage;
+      totalHeal += healed;
+    }
     _gameStats.totalDamage += totalDmg;
     _gameStats.totalHealed += totalHeal;
     _gameStats.totalKills += _battleStats.totalEnemyKills || 0;
     _gameStats.bossesKilled += _battleStats.bossKills || 0;
-    _gameStats.wavesCleared++;
+    _gameStats.battlesResolved++;
+    if (playerWon) _gameStats.wavesCleared++;
   }
 
   function _buildStatsHTML(battleStats, units, isFinalScreen) {
@@ -1308,6 +1367,9 @@ const Game = (() => {
       const unit = _mkUnit(def, targetRow, col);
       _applyUpgradeBuffsToUnit(unit);
       state.playerUnits.push(unit);
+      state.unitsPurchased++;
+      if (!_mpMode) _statsForDefinition(def).recruits++;
+      _checkpointHistory();
       state.shopUnits[state.selectedShopIdx] = null;
       state.selectedShopIdx = null;
       state.selectedUnit = unit;
@@ -1539,20 +1601,21 @@ const Game = (() => {
     _initBattleStats();
     // Snapshot all player units for stats (includes units that may die during battle)
     _battleParticipants = state.playerUnits.map(u => ({ id: u.id, definition: u.definition, maxHp: u.maxHp }));
-    battle.onUnitDeath   = _onUnitDeath;
-    battle.onBattleEnd   = _onBattleEnd;
-    battle.onLogMessage  = _onLogMsg;
-    battle.onPhaseChange = _onPhaseChange;
-    battle.onUnitAttack  = _onUnitAttack;
-    battle.onUnitHit     = _onUnitHit;
-    battle.onAbilityUsed = _onAbilityUsed;
-    battle.onScreenShake = _onScreenShake;
-    battle.onCriticalHit = _onCriticalHit;
-    battle.onUnitMove    = _onUnitMove;
-    battle.onStatusChange = _onStatusChange;
+    _captureHistoryParticipants();
+    _checkpointHistory();
+    const activeBattle = battle;
+    const callbacks = {
+      onUnitDeath: _onUnitDeath, onBattleEnd: _onBattleEnd, onLogMessage: _onLogMsg,
+      onPhaseChange: _onPhaseChange, onUnitAttack: _onUnitAttack, onUnitHit: _onUnitHit,
+      onAbilityUsed: _onAbilityUsed, onScreenShake: _onScreenShake,
+      onCriticalHit: _onCriticalHit, onUnitMove: _onUnitMove, onStatusChange: _onStatusChange,
+    };
+    for (const [name, callback] of Object.entries(callbacks)) {
+      activeBattle[name] = (...args) => { if (battle === activeBattle) callback(...args); };
+    }
     battle.onActionDone  = () => Grid.waitForAnimations();
     battle.onSynergyActivated = (element) => {
-      Grid.animateSynergyPulse(state.playerUnits, element);
+      if (battle === activeBattle) Grid.animateSynergyPulse(state.playerUnits, element);
     };
 
     const hasBoss = enemies.some(e => e.definition.isBoss);
@@ -1575,7 +1638,7 @@ const Game = (() => {
     const boss = enemies.find(e => e.definition.isBoss);
     if (boss) {
       _showBossIntro(boss, () => {
-        battle.start([...state.playerUnits], [...state.enemyUnits]);
+        if (battle === activeBattle) activeBattle.start([...state.playerUnits], [...state.enemyUnits]);
       });
     } else {
       battle.start([...state.playerUnits], [...state.enemyUnits]);
@@ -1756,6 +1819,10 @@ const Game = (() => {
   }
 
   function _onUnitDeath(unit, killer) {
+    if (!_mpMode && _battleStats) {
+      if (_battleStats.deadIds.has(unit.id)) return;
+      _battleStats.deadIds.add(unit.id);
+    }
     Audio.play(unit.isEnemy ? 'enemyDeath' : 'death');
     // Track kills for stats (enemy deaths = player kills)
     if (_battleStats && unit.isEnemy) {
@@ -1783,12 +1850,14 @@ const Game = (() => {
   }
 
   function _onBattleEnd(playerWon) {
+    if (!_mpMode && (!_battleStats || _battleStats.accumulated)) return;
     state.phase = 'result';
     _inspectedUnit = null;
     // Route to MP handler when in multiplayer mode.
     // NOTE: do NOT null `battle` yet — _mpHandleRoundEnd needs it to compute boardHash.
     if (_mpMode) { _mpHandleRoundEnd(playerWon); battle = null; return; }
     battle = null;
+    _accumulateGameStats(playerWon);
     // Upgrade stat buffs are permanent — no post-battle removal
 
     if (playerWon) {
@@ -1801,6 +1870,10 @@ const Game = (() => {
       state.gold += goldBase + victoryBonus + interest;
       const earnedGold = goldBase + interest + victoryBonus;
       state.score += state.wave * 100;
+      _captureHistoryParticipants();
+      const totalWaves = _campaignMode === 'void' ? 25 : (GAME_CONFIG.waveCount || 15);
+      if (state.wave >= totalWaves) _finishHistory('won');
+      else _checkpointHistory();
       _restorePlayerPositions();
       _cleanupBattleArtifacts();
       _healPlayerUnits();
@@ -1810,8 +1883,6 @@ const Game = (() => {
       // Populate post-battle stats
       const rsEl = document.getElementById('result-stats');
       if (rsEl && _battleStats) rsEl.innerHTML = _buildStatsHTML(_battleStats, state.playerUnits, false);
-      // Accumulate game-wide stats
-      _accumulateGameStats();
       // Check wave-end achievements
       _checkAchievementsOnWaveEnd(true);
       _updateUpgradeList();
@@ -1819,6 +1890,8 @@ const Game = (() => {
       _refreshSynergyIcons();
       _refreshHUD();
     } else {
+      _captureHistoryParticipants();
+      _finishHistory('lost');
       _handleGameOver();
     }
   }
@@ -2678,7 +2751,6 @@ const Game = (() => {
         Audio.play('newHighScore');
       }
     }
-    _accumulateGameStats();
     // Save challenge result
     if (_challengeMode) _saveChallengeResult(_challengeMode, state.score, false);
     UI.showGameOver(state.wave, state.score);
@@ -2717,7 +2789,6 @@ const Game = (() => {
         localStorage.setItem('shape_strikers_void_campaign_cleared', '1');
       }
     }
-    _accumulateGameStats();
     // Save challenge result
     if (_challengeMode) _saveChallengeResult(_challengeMode, state.score, true);
     // Check end-of-game achievements (not in challenge mode)
@@ -2762,6 +2833,7 @@ const Game = (() => {
     state.gold -= cost;
     state.upgradeLevels[id] = level + 1;
     _totalUpgradesBought++;
+    _checkpointHistory();
 
     // Immediate effects (match Phaser original)
     if (id === 'refresh_master') state.refreshesLeft += (upg.effect.value || 1);
@@ -2850,6 +2922,8 @@ const Game = (() => {
   }
 
   function startGame(campaignMode) {
+    _finishHistory('abandoned');
+    if (battle) battle.stop();
     // Remove splash if still visible
     const splashEl = document.getElementById('splash-overlay');
     if (splashEl) splashEl.remove();
@@ -2871,6 +2945,18 @@ const Game = (() => {
     _initGameStats();
     _totalUpgradesBought = 0;
     _unitsLostThisRun = 0;
+    _battleStats = null;
+    _battleParticipants = null;
+    _historyParticipants = [];
+    if (!_mpMode && typeof RunHistory !== 'undefined') {
+      RunHistory.start({
+        ..._historySnapshot(), campaignMode: _campaignMode, challengeType: _challengeMode,
+        challengeKey: _challengeMode === 'daily' ? _getDailyKey() : _challengeMode === 'weekly' ? _getWeeklyKey() : null,
+        modifierId: _challengeModifier?.id || null,
+        isTest: Boolean(window.SHAPE_STRIKERS_STAGING_CONFIG
+          || (typeof DevTools !== 'undefined' && DevTools.isEnabled())),
+      });
+    }
     _seenTips = {};          // reset contextual tips each run (display only)
     _tutorialStepsDone = localStorage.getItem('shape_strikers_tutorial_done') === '1';
     if (_tutorialStepsDone) _checkTutorialAchievement(); // retroactive unlock for returning players
@@ -2978,6 +3064,7 @@ const Game = (() => {
   }
 
   function _returnToTitle() {
+    _finishHistory('abandoned');
     if (battle) battle.stop();
     battle = null;
     _challengeMode = null;
@@ -3204,7 +3291,7 @@ const Game = (() => {
       campaignMode: _campaignMode,
       challengeType: _challengeMode || null,
       challengeKey: _challengeMode === 'daily' ? _getDailyKey() : _challengeMode === 'weekly' ? _getWeeklyKey() : null,
-      unitsUsed: state.playerUnits.length,
+      unitsUsed: state.unitsPurchased,
       won: state.phase === 'win',
     });
 
@@ -3593,6 +3680,7 @@ const Game = (() => {
         // Position the tutorial box near the target
         if (tutorialBox) {
           tutorialBox.removeAttribute('style');
+          if (window.innerWidth <= 640) target.scrollIntoView({ behavior: 'instant', block: 'center' });
           const rect = target.getBoundingClientRect();
           const pos = step.position || 'bottom';
           tutorialBox.dataset.position = pos;
@@ -3613,48 +3701,36 @@ const Game = (() => {
     const gap = 12;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const boxW = Math.min(400, vw - 16); // clamp to viewport
+    const boxW = Math.min(400, vw - 16);
     box.style.position = 'fixed';
     box.style.bottom = 'auto';
     box.style.left = 'auto';
     box.style.transform = 'none';
-    box.style.maxWidth = boxW + 'px';
+    box.style.width = boxW + 'px';
+    const boxH = box.offsetHeight;
+    const clampX = x => Math.max(8, Math.min(x, vw - boxW - 8));
+    const clampY = y => Math.max(8, Math.min(y, vh - boxH - 8));
+    const centered = vw <= 640 ? (vw - boxW) / 2 : rect.left + rect.width / 2 - boxW / 2;
+    const positions = {
+      right: { left: rect.right + gap, top: clampY(rect.top) },
+      left: { left: rect.left - boxW - gap, top: clampY(rect.top) },
+      top: { left: clampX(centered), top: rect.top - boxH - gap },
+      bottom: { left: clampX(centered), top: rect.bottom + gap },
+    };
+    const choices = vw <= 640 ? ['bottom', 'top'] : [pos, 'bottom', 'top', 'right', 'left'];
+    const placement = choices.map(side => positions[side]).find(candidate => candidate
+      && candidate.left >= 8 && candidate.left + boxW <= vw - 8
+      && candidate.top >= 8 && candidate.top + boxH <= vh - 8) || positions.bottom;
+    box.style.left = clampX(placement.left) + 'px';
+    box.style.top = clampY(placement.top) + 'px';
+  }
 
-    // On small screens, always center horizontally and place below or above target
-    if (vw <= 640) {
-      const centerLeft = Math.max(8, (vw - boxW) / 2);
-      box.style.left = centerLeft + 'px';
-      // Scroll the target into view first so the user can see it
-      const target = document.querySelector('.tutorial-spotlight');
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Try below target; if no room, go above
-      if (rect.bottom + gap + 120 < vh) {
-        box.style.top = (rect.bottom + gap) + 'px';
-      } else {
-        box.style.top = Math.max(8, rect.top - 140 - gap) + 'px';
-      }
-      return;
-    }
-
-    switch (pos) {
-      case 'right':
-        box.style.top = Math.max(8, rect.top) + 'px';
-        box.style.left = Math.min(rect.right + gap, vw - boxW - 8) + 'px';
-        break;
-      case 'left':
-        box.style.top = Math.max(8, rect.top) + 'px';
-        box.style.left = Math.max(8, rect.left - boxW - gap) + 'px';
-        break;
-      case 'top':
-        box.style.top = Math.max(8, rect.top - box.offsetHeight - gap) + 'px';
-        box.style.left = Math.min(Math.max(8, rect.left + rect.width / 2 - 200), vw - boxW - 8) + 'px';
-        break;
-      case 'bottom':
-      default:
-        box.style.top = (rect.bottom + gap) + 'px';
-        box.style.left = Math.min(Math.max(8, rect.left + rect.width / 2 - 200), vw - boxW - 8) + 'px';
-        break;
-    }
+  function _repositionTutorialBox() {
+    const overlay = document.getElementById('overlay-tutorial');
+    const box = document.getElementById('tutorial-box');
+    const target = document.querySelector('.tutorial-spotlight');
+    if (!overlay || overlay.classList.contains('hidden') || !box || !target) return;
+    _positionTutorialBox(box, target.getBoundingClientRect(), box.dataset.position);
   }
 
   function _nextTutorialStep() {
@@ -3779,6 +3855,7 @@ const Game = (() => {
         if (target && tutorialBox) {
           target.classList.add('tutorial-spotlight');
           tutorialBox.removeAttribute('style');
+          if (window.innerWidth <= 640) target.scrollIntoView({ behavior: 'instant', block: 'center' });
           const rect = target.getBoundingClientRect();
           const pos = tip.position || 'bottom';
           tutorialBox.dataset.position = pos;
@@ -4223,6 +4300,7 @@ const Game = (() => {
 
   // ── Enter multiplayer battle-prep mode ────────────────────────────────
   function _mpEnterBattleMode() {
+    _finishHistory('abandoned');
     _mpMode = true;
     GridStyles.beginRun();
 
@@ -6034,9 +6112,13 @@ const Game = (() => {
     preloadSlashSprites(); // melee slash animation frames
     Audio.init();
     Backend.init();       // fire-and-forget — leaderboards degrade gracefully
+    if (typeof RunHistory !== 'undefined') RunHistory.init();
+    if (typeof RunHistoryUI !== 'undefined') RunHistoryUI.init();
     _initMultiplayer();   // fire-and-forget — presence + chat degrade gracefully
     if (!_pageExitListenerBound) {
       window.addEventListener('pagehide', _releaseRealtimeOnPageHide);
+      window.addEventListener('resize', _repositionTutorialBox);
+      window.addEventListener('scroll', _repositionTutorialBox, true);
       _pageExitListenerBound = true;
     }
     _wireDOMButtons();

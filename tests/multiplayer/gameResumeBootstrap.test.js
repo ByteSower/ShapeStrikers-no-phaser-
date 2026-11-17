@@ -246,6 +246,7 @@ function loadGameContext({
   roomJoinResult = true,
   battleEndOverride = null,
   autoResolveBattle = false,
+  historySpy = null,
   savedSession = {
     roomId: 'room-abcdef12',
     isHost: false,
@@ -263,6 +264,7 @@ function loadGameContext({
   const intervals = [];
   const uiMessages = [];
   const resultCalls = [];
+  const battleInstances = [];
   const winCalls = [];
   const screenCalls = [];
   const shopRenderCalls = [];
@@ -494,6 +496,7 @@ function loadGameContext({
     Audio: {
       init() {},
       play() {},
+      playAfter() {},
       playMusic(track) {
         musicCalls.push(track);
       },
@@ -639,6 +642,7 @@ function loadGameContext({
       showPhaseBanner() {},
       updateHUD() {},
       hideResult() {},
+      showGameOver() {},
       showWin(score, title, mode, rewards) {
         winCalls.push({ mode, rewards: plain(rewards) });
       },
@@ -772,6 +776,7 @@ function loadGameContext({
         id: 'test_unit',
         name: 'Test Unit',
         element: 'fire',
+        tier: 1,
         cost: 1,
         stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
       },
@@ -781,6 +786,7 @@ function loadGameContext({
         id: 'test_unit',
         name: 'Test Unit',
         element: 'fire',
+        tier: 1,
         cost: 1,
         stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
       },
@@ -831,12 +837,14 @@ function loadGameContext({
       poisonCloud() {},
     },
     BattleSystem: function BattleSystem() {
+      battleInstances.push(this);
       this._playerUnits = [];
       this._enemyUnits = [];
       this._replayLog = { events: [] };
       this.setSeed = () => {};
       this.enableReplayRecording = () => {};
       this.setScheduler = () => {};
+      this.stop = () => {};
       this.start = (players, enemies) => {
         this._playerUnits = players.map((unit) => plain(unit));
         this._enemyUnits = enemies.map((unit) => plain(unit));
@@ -918,6 +926,7 @@ function loadGameContext({
   context.window = context;
   context.global = context;
   context.self = context;
+  if (historySpy) context.RunHistory = historySpy;
 
   vm.createContext(context);
   vm.runInContext(GRID_STYLES_SOURCE, context, { filename: 'gridStyles.js' });
@@ -953,6 +962,7 @@ function loadGameContext({
     },
     uiMessages,
     resultCalls,
+    battleInstances,
     winCalls,
     timeouts,
     intervals,
@@ -5546,4 +5556,83 @@ await test('Host drops older retained authoritative_state once a newer battle se
     'phase_event',
   ]);
 });
+await test('History records final-wave victory before Continue without accumulating it again', () => {
+  const records = [];
+  const historySpy = {
+    init() {},
+    start(data) { records.push({ status: 'started', ...plain(data) }); },
+    checkpoint(data) { records.push({ status: 'checkpointed', ...plain(data) }); },
+    finish(status, data) { records.push({ status, ...plain(data) }); },
+  };
+  const { Game, battleInstances, winCalls } = loadGameContext({
+    savedSession: null, historySpy, domElementIds: ['screen-game', 'btn-battle', 'btn-refresh'],
+  });
+  Game.init();
+  Game.startGame('normal');
+  const definition = { ...Game.state.shopUnits[0], tier: 1 };
+  const player = {
+    id: 'history-player', definition, hp: 1, maxHp: definition.stats.hp,
+    stats: { ...definition.stats }, statusEffects: [], row: 3, col: 0, isEnemy: false,
+  };
+  Game.state.playerUnits = [player];
+  Game.state.wave = 15;
+  Game.startBattle();
+  const battle = battleInstances.at(-1);
+  const enemy = { ...plain(player), id: 'history-enemy', row: 0, isEnemy: true };
+  battle.onUnitHit(enemy, 12, 'fire', player.id);
+  battle.onUnitHit(player, 90, 'fire', enemy.id);
+  battle.onBattleEnd(true);
+  const won = records.filter(row => row.status === 'won');
+  assert.equal(won.length, 1);
+  assert.equal(won[0].damage, 12, 'Enemy damage must not inflate player totals');
+  assert.equal(won[0].wavesCleared, 1);
+  assert.equal(won[0].battlesResolved, 1);
+  assert.equal(won[0].participants[0].hp, 1, 'History captures outcome HP before healing');
+  assert.equal(Game.state.phase, 'result');
+  assert.equal(winCalls.length, 0, 'History must not move victory-screen rewards earlier');
+  battle.onBattleEnd(true);
+  Game.nextWave();
+  assert.equal(records.filter(row => row.status === 'won').length, 1);
+  assert.equal(Game.state.phase, 'win');
+});
+
+await test('History counts successful placement, preserves dead recruits, and rejects duplicate/stale callbacks', () => {
+  const records = [];
+  const historySpy = {
+    init() {}, start() {},
+    checkpoint(data) { records.push({ status: 'checkpointed', ...plain(data) }); },
+    finish(status, data) { records.push({ status, ...plain(data) }); },
+  };
+  const { Game, clickShop, clickTile, battleInstances } = loadGameContext({
+    savedSession: null, historySpy, domElementIds: ['screen-game', 'btn-battle', 'btn-refresh'],
+  });
+  Game.init();
+  Game.startGame('normal');
+  Game.state.gold = 100;
+  clickShop(0);
+  assert.equal(Game.state.unitsPurchased, 0, 'Previewing a shop card is not recruitment');
+  clickTile(3, 0);
+  assert.equal(Game.state.unitsPurchased, 1);
+  const player = Game.state.playerUnits[0];
+  Game.startBattle();
+  const battle = battleInstances.at(-1);
+  battle.onUnitDeath(player);
+  battle.onUnitDeath(player);
+  battle.onBattleEnd(false);
+  const loss = records.find(row => row.status === 'lost');
+  assert.equal(loss.participants[0].unitId, String(player.id), 'Numeric gameplay IDs serialize as history text');
+  assert.equal(loss.recruits, 1);
+  assert.equal(loss.unitStats[0].recruits, 1, 'Dead recruits stay in per-definition history');
+  assert.equal(loss.playerLosses, 1);
+  assert.equal(loss.wavesCleared, 0);
+  assert.equal(loss.battlesResolved, 1);
+  Game.startGame('normal');
+  const before = records.length;
+  battle.onUnitDeath(player);
+  battle.onBattleEnd(false);
+  assert.equal(records.length, before, 'Old callbacks cannot alter a replacement run');
+  assert.equal(Game.state.unitsPurchased, 0);
+  assert.equal(Game.state.phase, 'prep');
+});
+
 })();

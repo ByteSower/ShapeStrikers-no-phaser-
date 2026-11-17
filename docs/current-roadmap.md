@@ -28,6 +28,21 @@ Purpose: this is the single source of truth for the active work order in `games/
 
 ## Active Roadmap
 
+### 0. Private Cloud Run History Before Commander Hub
+Status: implementation in isolated staging; not shipped
+
+- Verify accurate once-per-battle statistics and automatic Normal/Void/daily/weekly records without moving existing reward timing.
+- Keep private, source-owned IndexedDB queues and cloud records separate from public leaderboards and local cosmetics.
+- Automated staging/browser validation passes for paid roster uploads, exact queue limits, offline retry/cache, and cross-tab ownership isolation. Maintainer-reported staging guest linking and cross-browser email recovery pass without merging guest histories.
+- Incorrect-code handling, request rate limiting, cancellation/form reset, retry after cooldown, expired-code rejection, and fresh-code recovery are maintainer-verified; the original staging expiry was restored. Real-recipient delivery through Cloudflare Email Sending SMTP is maintainer-verified on staging.
+- The privacy migration is applied to staging. Maintainer checks passed JSON export, in-game history deletion, and support inbox delivery; automated staging checks passed owner-only erasure, stale-upload rejection, later-run saving, and privileged-function access restrictions. Privileged account erasure passed with disposable guest fixtures, related-data cleanup, control-account isolation, and deleted-account API rejection. Email ownership confirmation remains manual.
+- The staging deletion-generation repair replaces device-clock cutoffs; stale or unknown browser records require explicit restore or discard. Staging integration, deletion-helper regression, and browser queue/held-record checks passed; production schema and frontend remain separately gated.
+- Supported desktop/laptop UX passed, including the tutorial-resize fix, battle, and return to History. Latest local regression passed 163 tests (162 passed, opt-in cloud suite skipped), plus syntax and whitespace checks; prior validation reported 100 deterministic seeds and covered 24 tutorial viewport transitions plus battle start. Best-effort phone testing is deferred without LAN authorization. Reviewed production schema/auth/SMTP configuration and separately approved rollout remain.
+- Production preflight found custom SMTP disabled, link-only sign-in/email-change templates, and history schema not yet installed. The deletion helper's optional multiplayer-table compatibility is fixed and its scoped staging repair passed all four table-presence combinations plus isolation/privilege/error-rollback checks. Production settings, migrations, frontend enablement, and release remain separately gated.
+- Production sign-in and email-change code templates saved with separate explicit approvals and verified after reload. Maintainer privately entered the token and saved custom SMTP; enabled status and non-secret settings verified after reload. Read-only checks confirmed 30 emails/hour and 60 seconds between emails per user. Subsequently authorized production Auth-only smoke test passed real code delivery, guest email linking, recovery to the same tagged disposable account, and authenticated reload. Separately approved cleanup removed that production account and 10 tagged staging integration accounts (94 histories). After explicit confirmation that all remaining staging accounts were disposable, removed 26 more accounts and 27 histories. Staging now has zero accounts, identities, sessions, refresh tokens, histories, and erasure markers; schema/helper retained. History migrations and deployment remain separately gated. Continue asking before each production save.
+- Preserve current multiplayer/reconnect behavior; do not include multiplayer history or redesign the home screen yet.
+- Keep production schema/auth/frontend changes behind explicit authorization and normal PR review/check gates.
+
 ### 1. Multiplayer Hardening On The Current Architecture
 Status: active now
 

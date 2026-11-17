@@ -56,6 +56,7 @@
  */
 
 const Room = (() => {
+  let _accountSuspended = false;
 
   // ── State ─────────────────────────────────────────────────────────────────
 
@@ -299,6 +300,7 @@ const Room = (() => {
   }
 
   function _recordTelemetry(type, details = {}, level = 'info') {
+    if (_accountSuspended) return null;
     if (typeof MultiplayerTelemetry === 'undefined' || typeof MultiplayerTelemetry.record !== 'function') return null;
     return MultiplayerTelemetry.record(type, details, { level });
   }
@@ -316,7 +318,9 @@ const Room = (() => {
   function _clearSavedSession() {
     const storage = _getSessionStorage();
     if (!storage) return;
-    try { storage.removeItem(ROOM_SESSION_KEY); } catch (_) {}
+    try { storage.removeItem(ROOM_SESSION_KEY); } catch (error) {
+      console.warn('[Room] Failed to clear saved room session:', error);
+    }
   }
 
   function _getSavedSession() {
@@ -704,6 +708,7 @@ const Room = (() => {
    * @param {string} opponentId  The opponent's playerId.
    */
   function join(roomId, host, opponentId, options = null) {
+    if (_accountSuspended) return false;
     if (typeof SupabaseClient === 'undefined') {
       console.warn('[Room] SupabaseClient not loaded — room unavailable.');
       return false;
@@ -905,6 +910,7 @@ const Room = (() => {
 
   /** Force an immediate reconnect attempt for the current room channel. */
   function reconnect() {
+    if (_accountSuspended) return false;
     if (typeof SupabaseClient === 'undefined') return false;
     if (!_channelName) {
       const saved = _getSavedSession();
@@ -959,13 +965,25 @@ const Room = (() => {
     return SupabaseClient.reconnectChannel(_channelName);
   }
 
-  /** Alias for leave() — clean up all room state and listeners. */
-  function destroy() {
-    leave();
+  function _clearListeners() {
     _stateListeners      = [];
     _disconnectListeners = [];
     _reconnectListeners  = [];
     _lifecycleListeners  = [];
+  }
+
+  function suspendOutgoing() {
+    if (_accountSuspended) return;
+    _accountSuspended = true;
+    _clearListeners();
+    leave();
+    console.warn('[Room] Account changed; room recovery is paused until reload.');
+  }
+
+  /** Alias for leave() — clean up all room state and listeners. */
+  function destroy() {
+    leave();
+    _clearListeners();
     console.info('[Room] Destroyed.');
   }
 
@@ -995,6 +1013,8 @@ const Room = (() => {
     isHost,
     getOpponentId,
     getSavedSession,
+    clearSavedSession: _clearSavedSession,
+    suspendOutgoing,
     discardSavedSession,
     reconnect,
     destroy,

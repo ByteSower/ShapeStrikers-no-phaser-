@@ -57,6 +57,7 @@ const SupabaseClient = (() => {
   const _pending   = new Map();
 
   let _ready = false;
+  let _suspended = false;
 
   const MAX_RETRIES    = 6;
   const BASE_RETRY_MS  = 2000;   // first retry after 2 s; doubles each time, cap 30 s
@@ -65,7 +66,7 @@ const SupabaseClient = (() => {
 
   /** Returns the Supabase JS client singleton, or null if Backend not yet ready. */
   function getClient() {
-    return (typeof Backend !== 'undefined') ? Backend.getClient() : null;
+    return !_suspended && (typeof Backend !== 'undefined') ? Backend.getClient() : null;
   }
 
   // ── Connect / reconnect ───────────────────────────────────────────────────
@@ -137,12 +138,14 @@ const SupabaseClient = (() => {
    * is not ready yet the channel is queued and connected once init() completes.
    */
   async function init() {
+    if (_suspended) return false;
     if (_ready) return true;
 
     const MAX_WAIT_MS = 12_000;
     const POLL_MS     = 250;
     let waited = 0;
     while (waited < MAX_WAIT_MS) {
+      if (_suspended) return false;
       if (typeof Backend !== 'undefined' && Backend.isReady() && Backend.getClient()) {
         _ready = true;
         break;
@@ -177,6 +180,7 @@ const SupabaseClient = (() => {
    * @param {function} [onSubscribed]— Called with (channel) each time SUBSCRIBED fires
    */
   function joinChannel(name, setupFn, onSubscribed) {
+    if (_suspended) return;
     if (_channels.has(name)) return; // already tracked
     if (!_ready) {
       _pending.set(name, { setupFn, onSubscribed: onSubscribed || null });
@@ -204,6 +208,14 @@ const SupabaseClient = (() => {
   function leaveAll() {
     for (const name of [..._channels.keys()]) leaveChannel(name);
     _pending.clear();
+  }
+
+  function suspendOutgoing() {
+    if (_suspended) return;
+    _suspended = true;
+    _ready = false;
+    leaveAll();
+    console.warn('[SupabaseClient] Account changed; realtime is paused until reload.');
   }
 
   /**
@@ -251,6 +263,6 @@ const SupabaseClient = (() => {
     }
   }
 
-  return { init, getClient, joinChannel, leaveChannel, leaveAll, getChannel, getChannelStatus, reconnectChannel, broadcast };
+  return { init, getClient, joinChannel, leaveChannel, leaveAll, suspendOutgoing, getChannel, getChannelStatus, reconnectChannel, broadcast };
 
 })();
