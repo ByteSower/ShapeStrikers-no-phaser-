@@ -43,6 +43,8 @@
       <button class="btn btn-lg btn-secondary" id="btn-achievements">🏅 Achievements</button>
       <button class="btn btn-lg btn-challenge" id="btn-challenges">📅 Challenges</button>
       <button class="btn btn-lg btn-secondary" id="btn-leaderboard">🏆 Leaderboard</button>
+      <button class="btn btn-lg btn-secondary hidden" id="btn-run-history">Run History</button>
+      <button class="btn btn-lg btn-secondary hidden" id="btn-history-account">Account / Recovery</button>
       <button class="btn btn-lg btn-secondary" id="btn-patch-notes">📋 What's New</button>
       <button class="btn btn-lg btn-multiplayer" id="btn-find-match">⚔️ Find Match</button>
     </div>
@@ -53,6 +55,7 @@
       <label class="option-label"><input type="checkbox" id="opt-mute"> 🔇 Mute Audio</label>
     </div>
     <div class="title-unlocks" id="title-unlocks"></div>
+    <p id="history-title-status" class="history-note hidden" role="status"></p>
     <p class="online-count" id="online-count" aria-live="polite" aria-atomic="true">🟢 Players Online: —</p>
   </div>
 </div>
@@ -175,6 +178,7 @@
     <button class="btn btn-secondary btn-sm" id="btn-mute" title="Toggle Audio" aria-label="Toggle audio">🔊</button>
     <button class="btn btn-secondary btn-sm" id="btn-achievements-hud" title="Achievements" aria-label="Open achievements">🏅</button>
     <button class="btn btn-secondary btn-sm" id="btn-help" title="Help" aria-label="Open how to play">❓</button>
+    <p id="run-history-live-status" class="history-live-status hidden" role="status"></p>
   </div>
 
   <!-- MAIN LAYOUT -->
@@ -545,6 +549,90 @@
   </div>
 </div>
 
+<div id="history-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="history-heading">
+  <div class="overlay-box history-box">
+    <div class="overlay-header">
+      <h2 id="history-heading">Private Run History</h2>
+      <button class="btn btn-secondary btn-sm" id="history-close">Close</button>
+    </div>
+    <p class="history-note">Staging preview only. All staging runs are test records; enable Show test records to inspect them. These are client-reported personal records, not verified rankings or cosmetic entitlements.</p>
+    <nav class="history-controls" aria-label="History sections">
+      <button class="btn btn-secondary btn-sm" id="history-show-list" aria-pressed="true">History</button>
+      <button class="btn btn-secondary btn-sm" id="history-show-account" aria-pressed="false">Account / Recovery</button>
+    </nav>
+    <p id="history-sync-status" role="status" aria-live="polite"></p>
+    <p id="history-pending-counts"></p>
+    <div class="history-controls">
+      <button class="btn btn-secondary btn-sm" id="history-retry">Retry sync / Refresh</button>
+      <button class="btn btn-secondary btn-sm hidden" id="history-bind">Assign this guest flow's unassigned history</button>
+    </div>
+    <section id="history-held-section" class="hidden" aria-label="History awaiting review">
+      <h3>Browser records awaiting review</h3>
+      <p>These records may be from before a history deletion, or their deletion state is unknown. They will not upload unless you explicitly restore them.</p>
+      <ul id="history-held-records"></ul>
+    </section>
+    <section id="history-list-section" aria-label="Your run history">
+      <div class="history-controls">
+        <label for="history-mode">Mode</label>
+        <select id="history-mode">
+          <option value="all">All modes</option><option value="normal">Normal Campaign</option>
+          <option value="void">Void Campaign</option><option value="daily">Daily challenge</option>
+          <option value="weekly">Weekly challenge</option>
+        </select>
+        <label><input id="history-tests" type="checkbox"> Show test records</label>
+      </div>
+      <h3>All-account totals (ordinary completed runs only)</h3>
+      <p id="history-totals"></p>
+      <ul id="history-categories"></ul>
+      <p id="history-read-status" role="status"></p>
+      <div id="history-records"></div>
+      <button class="btn btn-secondary btn-sm hidden" id="history-more">Load next page</button>
+    </section>
+    <section id="history-account-section" class="hidden" aria-label="Account linking and recovery">
+      <p id="history-account-identity"></p>
+      <p>Guest history belongs to this account. Link a new email to preserve its identity. Signing into an existing account does not merge or transfer guest history. Pending records stay with their original account; switching reloads the game and clears cached multiplayer recovery. Local unlocks and cosmetics are not cloud-synced.</p>
+      <p>Codes are emailed to the address you enter. Never share codes, passwords, or credentials with anyone, including support.</p>
+      <form id="history-account-form" autocomplete="off">
+        <label for="history-account-kind">Action</label>
+        <select id="history-account-kind">
+          <option value="link">Link a new email to this guest</option>
+          <option value="existing">Sign in to an existing account</option>
+        </select>
+        <label for="history-account-email">Email</label>
+        <input id="history-account-email" type="email" required maxlength="254" autocomplete="email">
+        <label id="history-switch-warning" class="hidden">
+          <input id="history-switch-confirm" type="checkbox">
+          I understand this switches accounts without transferring guest history, including pending records.
+        </label>
+        <button class="btn btn-secondary btn-sm" id="history-request-code" type="submit">Request code</button>
+      </form>
+      <form id="history-code-form" class="hidden" autocomplete="off">
+        <label for="history-account-code">Verification code</label>
+        <input id="history-account-code" type="text" required inputmode="numeric" autocomplete="one-time-code" maxlength="16">
+        <button class="btn btn-secondary btn-sm" type="submit">Verify code</button>
+      </form>
+      <button class="btn btn-secondary btn-sm" id="history-account-cancel">Cancel / Clear inputs</button>
+      <p id="history-account-status" role="status" aria-live="polite"></p>
+      <section id="history-privacy" aria-labelledby="history-privacy-title">
+        <h3 id="history-privacy-title">Your data</h3>
+        <p class="history-note">Download a copy of this account's cloud run history, or permanently delete it. Deleting also removes this browser's earlier pending and cached copies. Runs started during deletion and other devices' unsynced records may be held for your review rather than automatically uploaded. Local unlocks, cosmetics, and leaderboard scores are not affected.</p>
+        <div class="history-controls">
+          <button class="btn btn-secondary btn-sm" id="history-export" type="button">Download my history (JSON)</button>
+        </div>
+        <label>
+          <input id="history-delete-confirm" type="checkbox">
+          I understand this permanently deletes this account's run history and cannot be undone.
+        </label>
+        <div class="history-controls">
+          <button class="btn btn-secondary btn-sm" id="history-delete" type="button" disabled>Delete my run history</button>
+        </div>
+        <p class="history-note">To delete your whole account, including its sign-in email and leaderboard scores, email <a href="mailto:support@shapestrikers.com">support@shapestrikers.com</a> from the email address linked to the account. We reply to that address to confirm before deleting anything. Guest accounts must link an email first. Never send codes or passwords.</p>
+        <p id="history-privacy-status" role="status" aria-live="polite"></p>
+      </section>
+    </section>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════════ GLOBAL CHAT PANEL ══ -->
 <div id="chat-panel" class="chat-panel collapsed" aria-label="Global chat">
   <button id="chat-toggle" class="chat-toggle" aria-expanded="false" aria-controls="chat-body">
@@ -589,6 +677,7 @@
 <script src="src/draggable.js"></script>
 <script src="src/ui.js"></script>
 <script src="src/backend.js"></script>
+<!-- History preview scripts are injected here by the isolated staging server until rollout is approved. -->
 <script src="src/supabaseClient.js"></script>
 <script src="src/presence.js"></script>
 <script src="src/globalChat.js"></script>

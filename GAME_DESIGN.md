@@ -26,7 +26,8 @@
 19. [Daily & Weekly Challenges](#daily--weekly-challenges)
 20. [Visual Indicators](#visual-indicators)
 21. [Leaderboards](#leaderboards)
-22. [Patch Notes](#patch-notes)
+22. [Private Run History Preview](#private-run-history-preview)
+23. [Patch Notes](#patch-notes)
 
 ---
 
@@ -779,7 +780,7 @@ Triggered after game-over or win. Player enters a display name (max 20 character
 | `campaign_mode` | text | `normal` or `void` |
 | `challenge_type` | text | `daily`, `weekly`, or `null` |
 | `challenge_key` | text | `YYYY-MM-DD` or `YYYY-WNN`, or `null` |
-| `units_used` | int | Total units placed during the run |
+| `units_used` | int | Successful paid unit recruitments, including units later lost or sold |
 | `won` | bool | Whether the player won |
 
 ### Leaderboard Tabs
@@ -797,6 +798,18 @@ If Supabase SDK fails to load, credentials are missing, or network is unavailabl
 - Game is fully playable without leaderboards
 - Leaderboard button shows "Backend not configured" message
 - Score submit UI is hidden from game-over/win overlays
+
+---
+
+## Private Run History Preview
+
+Isolated staging only; this is not yet a live feature. Automatically records new Normal/Void campaigns and daily/weekly challenges independently of optional score submission. Multiplayer, historical backfill, replays, save/resume, and cloud cosmetic migration are excluded.
+
+Battle statistics accumulate once at resolution: losses add no cleared wave, enemy-source damage/healing is excluded, actual enemy/boss deaths are counted once, and paid recruits remain counted after death/sale. Stale callbacks cannot modify a replacement run. Final-wave history is frozen before post-battle healing and Continue; existing campaign rewards and luxury-grid qualifications retain their current timing.
+
+Started/checkpointed attempts become won, lost, abandoned, or proven interrupted. Unknown nonterminal attempts are Unfinished / no result received. Interrupted summaries stop at the last checkpoint, not an invented close time or battle loss.
+
+The private list uses bounded keyset pages; all-account ordinary totals come from the complete eligible cloud set, not the displayed page. Test/unfinished/abandoned/interrupted categories remain separately visible. Guest email linking preserves ownership; switching to an existing account never transfers guest history. Compact roster/combat summaries are client-reported, not cheat-proof entitlement evidence. See [README.md](README.md#private-run-history-isolated-staging-preview) for storage, privacy, and rollout gates.
 
 ---
 
