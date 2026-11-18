@@ -30,7 +30,7 @@
 - [x] Revalidated guest battle recovery under forced one-way heartbeat loss; the guest resolved from the cached host result and advanced to the next prep round.
 - [x] Fixed and live-verified rematch acceptance so both clients return to title after both requests, without relying on a local room-state echo.
 - [x] Focused and full local regression passed: 163 tests, 162 passed, one opt-in staging test skipped.
-- [ ] Before closing the active multiplayer hardening gate, rerun fresh-build prep, battle-start, and result-show reload cases and confirm recovery events in centralized telemetry.
+- [x] Before closing the active multiplayer hardening gate, reran fresh-build prep, battle-start, and result-show reload cases and confirmed recovery events in centralized telemetry.
 
 ---
 
