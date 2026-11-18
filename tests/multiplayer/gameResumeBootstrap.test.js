@@ -247,6 +247,7 @@ function loadGameContext({
   battleEndOverride = null,
   autoResolveBattle = false,
   historySpy = null,
+  hostname = 'example.com',
   savedSession = {
     roomId: 'room-abcdef12',
     isHost: false,
@@ -341,7 +342,7 @@ function loadGameContext({
     Math,
     Date,
     location: {
-      hostname: 'example.com',
+      hostname,
     },
     performance: { now: () => 0 },
     Image: function Image() {},
@@ -1214,6 +1215,44 @@ await test('Host prep disconnect confirmation does not auto-award the round whil
   assert.equal(Game.state.gold, 25, 'prep disconnect wait should not fabricate a round win');
 });
 
+await test('Localhost multiplayer prep leaves the ready timer disabled for manual smoke testing', () => {
+  const {
+    Game,
+    document,
+    intervals,
+    roomEvents,
+    fireMultiplayerCallback,
+  } = loadGameContext({
+    savedSession: null,
+    hostname: '127.0.0.1',
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-refresh',
+      'btn-mp-ready',
+      'mp-ready-opp-status',
+      'mp-ready-timer',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-host-local-no-timer',
+    opponentId: 'guest-local-no-timer',
+    isHost: true,
+  });
+
+  const intervalCountBeforeRoundReady = intervals.length;
+
+  fireMultiplayerCallback('onRoundReady', 1, 25);
+
+  assert.equal(intervals.length, intervalCountBeforeRoundReady, 'Local smoke-test prep should not arm the multiplayer ready countdown interval');
+  assert.equal(document.getElementById('mp-ready-timer')?.textContent, 'off', 'Local smoke-test prep should show the multiplayer ready timer as disabled');
+  assert.equal(document.getElementById('btn-mp-ready')?.disabled, false, 'Disabling the local smoke-test timer should leave manual ready control available');
+});
+
 await test('Quit button ends the active match and clears the saved room session through the public flow', async () => {
   const {
     Game,
@@ -1257,6 +1296,123 @@ await test('Quit button ends the active match and clears the saved room session 
   assert.equal(roomEvents.destroyCalls, 1);
   assert.equal(getSavedSession(), null);
   assert.equal(screenCalls.at(-1), 'screen-title');
+  assert.deepEqual(musicCalls, ['ss_title_music_full.wav']);
+});
+
+await test('Match-end rematch initiator waits for the opponent and returns to title once the room confirms both agreed', async () => {
+  const {
+    Game,
+    document,
+    roomEvents,
+    multiplayerEvents,
+    screenCalls,
+    musicCalls,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'mp-match-end-overlay',
+      'mp-match-end-title',
+      'mp-match-end-score',
+      'mp-match-end-dots',
+      'btn-mp-rematch',
+      'btn-mp-return-lobby',
+      'mp-match-end-rematch-status',
+      'mp-round-result',
+      'mp-disconnect-notice',
+      'mp-reconnect-banner',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-rematch-init',
+    opponentId: 'opp-rematch-init',
+    isHost: false,
+  });
+
+  fireMultiplayerCallback('onMatchEnd', 'me', null);
+
+  const overlay = document.getElementById('mp-match-end-overlay');
+  const rematchBtn = document.getElementById('btn-mp-rematch');
+  const statusEl = document.getElementById('mp-match-end-rematch-status');
+
+  rematchBtn.click();
+  await Promise.resolve();
+
+  assert.equal(rematchBtn.disabled, true, 'Rematch should disable immediately after the local player requests it');
+  assert.equal(statusEl.textContent, 'Waiting for opponent…', 'Rematch should show the waiting status after the local request');
+  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'mp_rematch_request' && entry.value === true), true, 'Rematch should publish mp_rematch_request when the local player opts in');
+
+  emitRoomStateChange('mp_rematch_request', true);
+
+  assert.equal(overlay.classList.contains('hidden'), true, 'Rematch overlay should close once the room confirms the opponent agreed');
+  assert.equal(multiplayerEvents.destroyCalls, 1, 'Successful rematch agreement should tear down the ended match state');
+  assert.equal(roomEvents.destroyCalls, 1, 'Successful rematch agreement should destroy the room session before returning to title');
+  assert.equal(screenCalls.at(-1), 'screen-title', 'Successful rematch agreement should return to the title screen for a fresh queue');
+  assert.deepEqual(musicCalls, ['ss_title_music_full.wav']);
+});
+
+await test('Match-end rematch acceptor updates the CTA before agreeing and then returns to title on confirmation', async () => {
+  const {
+    Game,
+    document,
+    roomEvents,
+    multiplayerEvents,
+    screenCalls,
+    musicCalls,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'mp-match-end-overlay',
+      'mp-match-end-title',
+      'mp-match-end-score',
+      'mp-match-end-dots',
+      'btn-mp-rematch',
+      'btn-mp-return-lobby',
+      'mp-match-end-rematch-status',
+      'mp-round-result',
+      'mp-disconnect-notice',
+      'mp-reconnect-banner',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-rematch-accept',
+    opponentId: 'opp-rematch-accept',
+    isHost: true,
+  });
+
+  fireMultiplayerCallback('onMatchEnd', 'opponent', null);
+
+  const overlay = document.getElementById('mp-match-end-overlay');
+  const rematchBtn = document.getElementById('btn-mp-rematch');
+  const statusEl = document.getElementById('mp-match-end-rematch-status');
+
+  emitRoomStateChange('mp_rematch_request', true);
+
+  assert.equal(overlay.classList.contains('hidden'), false, 'Opponent rematch intent should keep the match-end overlay open for the local acceptance choice');
+  assert.equal(statusEl.textContent, 'Opponent wants a rematch!', 'Opponent rematch intent should surface the accept prompt');
+  assert.equal(rematchBtn.textContent, '🔁 Accept Rematch', 'Opponent rematch intent should retitle the CTA as an acceptance action');
+
+  rematchBtn.click();
+  await Promise.resolve();
+
+  assert.equal(rematchBtn.disabled, true, 'Accepting a rematch should disable the CTA immediately');
+  assert.equal(statusEl.textContent, 'Waiting for opponent…', 'Accepting a rematch should reuse the waiting status while the room confirms both players');
+  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'mp_rematch_request' && entry.value === true), true, 'Accepting a rematch should publish the local rematch agreement');
+  assert.equal(overlay.classList.contains('hidden'), true, 'Accepted rematch should close without relying on a local state-change echo');
+  assert.equal(multiplayerEvents.destroyCalls, 1, 'Accepted rematch should tear down the ended match state');
+  assert.equal(roomEvents.destroyCalls, 1, 'Accepted rematch should destroy the room session before returning to title');
+  assert.equal(screenCalls.at(-1), 'screen-title', 'Accepted rematch should return to the title screen for a fresh queue');
   assert.deepEqual(musicCalls, ['ss_title_music_full.wav']);
 });
 
@@ -4195,6 +4351,134 @@ await test('Guest reconnect prefers cached round_result over retained replay pay
   assert.equal(replayControls.plays.length, 0, 'Guest reconnect should not restart replay when a matching cached round_result already resolves the round');
   assert.equal(reconnectSyncs.filter((entry) => entry.key === 'round_result_ack' && entry.value.seq === 7).length, 1, 'Guest reconnect should still resend round_result_ack once when result cache is retained');
   assert.equal(reconnectSyncs.filter((entry) => entry.key === 'ready_to_continue' && entry.value.seq === 7).length, 1, 'Guest reconnect should still resend ready_to_continue once when result cache is retained');
+});
+
+await test('Guest late playback_paused yields to a matching cached round_result instead of staying paused', () => {
+  const {
+    Game,
+    roomEvents,
+    roomStatus,
+    multiplayerEvents,
+    replayControls,
+    fireMultiplayerCallback,
+    emitRoomStateChange,
+  } = loadGameContext({
+    savedSession: null,
+    roomConnectionState: 'SUBSCRIBED',
+    roomLifecycleState: 'ACTIVE',
+    domElementIds: [
+      'mp-lobby-overlay',
+      'screen-game',
+      'btn-battle',
+      'btn-refresh',
+      'btn-mp-ready',
+      'mp-ready-opp-status',
+      'mp-ready-timer',
+      'mp-disconnect-notice',
+      'mp-disconnect-msg',
+      'mp-disconnect-timer',
+      'mp-reconnect-banner',
+      'btn-mp-quit',
+    ],
+  });
+
+  Game.init();
+  roomEvents.matchFoundHandler({
+    roomId: 'room-guest-paused-result-priority',
+    opponentId: 'host-paused-result-priority',
+    isHost: false,
+  });
+
+  fireMultiplayerCallback('onRoundReady', 1, 30);
+  Game.state.playerUnits = [{
+    id: 'guest-paused-result-priority-unit',
+    name: 'Guest Paused Result Priority Unit',
+    definition: {
+      id: 'test_unit',
+      name: 'Test Unit',
+      element: 'fire',
+      stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    },
+    hp: 12,
+    maxHp: 12,
+    stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+    statusEffects: [],
+    abilityCooldown: 0,
+    isEnemy: false,
+    row: 4,
+    col: 0,
+  }];
+
+  fireMultiplayerCallback('onBothReady');
+
+  emitRoomStateChange('battle_replay', {
+    roundNumber: 1,
+    boardHash: 'paused-result-priority-hash',
+    hostWon: true,
+    replayLog: {
+      events: [
+        {
+          type: 'battle_start',
+          seq: 1,
+          turn: 0,
+          playerUnits: [
+            {
+              id: 'guest-paused-result-priority-unit',
+              row: 4,
+              col: 0,
+              name: 'Guest Paused Result Priority Unit',
+              isEnemy: false,
+              stats: { hp: 12, attack: 4, defense: 2, speed: 1, range: 1 },
+            },
+          ],
+          enemyUnits: [],
+        },
+        { type: 'turn_start', seq: 1, turn: 1 },
+        {
+          type: 'battle_end',
+          seq: 3,
+          turn: 1,
+          playerWon: false,
+          playerUnits: [],
+          enemyUnits: [],
+        },
+      ],
+    },
+  });
+  emitRoomStateChange('phase_event', {
+    type: 'playback_start',
+    roundNumber: 1,
+    checkpointSeq: 1,
+    checkpointTurn: 0,
+    boardHash: 'paused-result-priority-hash',
+  });
+  emitRoomStateChange('playback_checkpoint', {
+    roundNumber: 1,
+    seq: 2,
+    turn: 1,
+    boardHash: 'paused-result-priority-hash',
+  });
+
+  roomStatus.state.round_result = {
+    hostWon: true,
+    roundNumber: 1,
+    seq: 7,
+    boardHash: 'paused-result-priority-hash',
+  };
+
+  emitRoomStateChange('phase_event', {
+    type: 'playback_paused',
+    roundNumber: 1,
+    checkpointSeq: 2,
+    checkpointTurn: 1,
+    boardHash: 'paused-result-priority-hash',
+  });
+
+  assert.equal(replayControls.plays.length, 1, 'Guest should have started replay before the late pause arrives');
+  assert.equal(Game.state.phase, 'result', 'Guest should resolve into the result phase when a matching cached round_result already exists');
+  assert.equal(multiplayerEvents.endRoundCalls.at(-1)?.[0], false, 'Cached host round_result should still resolve as a guest loss');
+  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'round_result_ack' && entry.value.seq === 7), true, 'Guest should acknowledge the cached round_result when the late pause arrives');
+  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'ready_to_continue' && entry.value.seq === 7), true, 'Guest should still send ready_to_continue when the cached round_result resolves the paused replay');
 });
 
 await test('Guest ignores replay rebroadcasts when room cache already has a matching round_result', () => {

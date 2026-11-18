@@ -1,6 +1,6 @@
 # Shape Strikers — Current Roadmap
 
-Last updated: 2026-11-09
+Last updated: 2026-11-17
 
 Purpose: this is the single source of truth for the active work order in `games/shape_strikers_web/`.
 
@@ -17,6 +17,7 @@ Purpose: this is the single source of truth for the active work order in `games/
 - Single-player, challenges, leaderboards, presence/chat, and live 1v1 multiplayer are shipped.
 - Multiplayer authoritative replay is live.
 - Guest reload/reconnect hardening for battle-start, result-show, and older retained-round recovery was recently stabilized with focused tests and live browser validation.
+- The November 17 live audit revalidated battle recovery after forced heartbeat loss, fixed a guest late-result pause race, and verified the two-client rematch request/accept flow returns both players to title.
 - A best-effort centralized multiplayer telemetry upload path is now live: the `mp_telemetry_events` schema is applied in Supabase and a browser-backed insert was verified end to end.
 - Multiplayer round-reset roster rules are now covered by focused multiplayer tests: owned units persist between rounds and reset to their prep-phase HP, positions, and cleared battle state.
 - Multiplayer-only upgrade rules are now enforced in the live prep flow: economy/scouting upgrades are hidden in multiplayer and round-sensitive buffs clear between prep rounds.
@@ -110,6 +111,7 @@ Revisit triggers:
 
 ## Immediate Next Actions
 
-1. Keep future live passes focused on host-loss and confirmed disconnect cases now that the near-term terminal host-loss policy is explicit.
-2. Reopen the stronger authoritative service decision when ranked, spectate, or broader release targets enter scope, or when live telemetry shows the current policy is not enough.
-3. Reopen audio/mobile polish only if the next live multiplayer pass shows a real regression.
+1. Re-run fresh-build prep, battle-start, and result-show reload cases and confirm their recovery events in centralized telemetry before closing active multiplayer hardening.
+2. Keep future live passes focused on host-loss and confirmed disconnect cases now that the near-term terminal host-loss policy is explicit.
+3. Reopen the stronger authoritative service decision when ranked, spectate, or broader release targets enter scope, or when live telemetry shows the current policy is not enough.
+4. Reopen audio/mobile polish only if the next live multiplayer pass shows a real regression.
