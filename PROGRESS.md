@@ -3,7 +3,7 @@
 > **Version**: `shape_strikers_web` (vanilla HTML/CSS/JS — NO framework/engine)
 > **Repo**: `games/shape_strikers_web/`
 > **Live**: [Play Now](https://bytesower.github.io/ShapeStrikers-no-phaser-/)
-> **Last Updated**: November 9, 2026
+> **Last Updated**: November 17, 2026
 
 ---
 
@@ -22,6 +22,15 @@
 | Waves | 15 (Normal) / 25 (Void Campaign) |
 | Bosses | 5 (W5, W10, W15, W20, W25) |
 | Multiplayer | ✅ Live 1v1, best-of-5, seeded shops |
+
+---
+
+## Multiplayer Audit Follow-up — November 17, 2026
+
+- [x] Revalidated guest battle recovery under forced one-way heartbeat loss; the guest resolved from the cached host result and advanced to the next prep round.
+- [x] Fixed and live-verified rematch acceptance so both clients return to title after both requests, without relying on a local room-state echo.
+- [x] Focused and full local regression passed: 163 tests, 162 passed, one opt-in staging test skipped.
+- [x] Before closing the active multiplayer hardening gate, reran fresh-build prep, battle-start, and result-show reload cases and confirmed recovery events in centralized telemetry.
 
 ---
 

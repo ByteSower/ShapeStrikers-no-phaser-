@@ -1092,6 +1092,15 @@ function createUnitCanvas(def, isEnemy = false, size = 62) {
 // Add new entries at the TOP of the array. Each patch = { version, date, notes[] }
 const PATCH_NOTES = [
   {
+    version: '1.0.27',
+    date: 'November 17, 2026',
+    title: 'Multiplayer Reconnect & Rematch Reliability',
+    notes: [
+      'Battle reconnects now honor a matching authoritative round result even when a late pause event arrives.',
+      'Both players return cleanly after each agrees to a rematch.',
+    ],
+  },
+  {
     version: '1.0.26',
     date: 'November 13, 2026',
     title: 'Luxury Grid Challenges',
