@@ -10,6 +10,18 @@
  *   - Each client maintains a local state object updated on every broadcast
  *   - The host owns authoritative state (seeds, round number, results)
  *   - The non-host sends purchases and ready flags; host reads them
+ *   - Values whose JSON exceeds STATE_CHUNK_THRESHOLD_CHARS (e.g. battle
+ *     replays, authoritative_state bundles) are gzip+base64 encoded when the
+ *     browser supports CompressionStream and split into `state_chunk`
+ *     broadcasts that stay well below the Realtime message-size limit.
+ *     Outbound and inbound messages are processed in order, so a small
+ *     message sent after a large one is never delivered before it.
+ *   - Each client advertises `caps` in room presence ({ gzip, replayPack }).
+ *     Senders skip gzip for a peer that can't decompress it (Safari < 16.4)
+ *     and pack replay snapshots (ReplayCodec) only for peers that can unpack
+ *     them. Peers without `caps` (older clients) get gzip and no packing.
+ *   - The room channel uses broadcast ack; state sends that time out are
+ *     retried, and receivers drop duplicates by seq / transferId.
  *
  * Synced state keys (by convention — Room is key-agnostic):
  *   round_number   (host)  current round 1-5
@@ -48,6 +60,7 @@
  *   Room.getOpponentId()               → string | null
  *   Room.getSavedSession()             → { roomId, isHost, opponentId, playerId, seatId, sessionId, reconnectToken, resumeContext, savedAt } | null
  *   Room.discardSavedSession(reason?)  → boolean
+ *   Room.retireSavedSession(reason?)   → boolean  (clear + stop persisting until the next join)
  *   Room.reconnect()                   → boolean
  *   Room.destroy()                     → void
  *
@@ -57,6 +70,8 @@
 
 const Room = (() => {
   let _accountSuspended = false;
+  // False once the match is over, so late state messages cannot re-save a resumable session.
+  let _sessionPersistEnabled = true;
 
   // ── State ─────────────────────────────────────────────────────────────────
 
@@ -98,6 +113,7 @@ const Room = (() => {
     RESYNCING: 'RESYNCING',
   });
   let _opponentPresent    = false;
+  let _opponentCaps       = null;  // { gzip, replayPack } from opponent presence; null = unknown/legacy
   let _hasSeenOpponentActivity = false;
   let _disconnectTimer    = null;
   let _staleTimer         = null;
@@ -106,6 +122,23 @@ const Room = (() => {
   let _lifecycleState     = CONNECTION_LIFECYCLE.CLOSED;
   let _hasEverSubscribed  = false;
   let _lastRemoteActivityAt = 0;
+
+  // Large-payload transport. Supabase Realtime rejects oversized broadcasts
+  // (256 KB on the free tier) and multiplayer replays can exceed 1 MB raw.
+  const STATE_CHUNK_THRESHOLD_CHARS = 48 * 1024;
+  const STATE_CHUNK_SIZE_CHARS      = 32 * 1024;
+  const STATE_CHUNK_MAX_PARTS       = 256;
+  const STATE_CHUNK_TRANSFER_TTL_MS = 30_000;
+  const STATE_CHUNK_SEND_GAP_MS     = 10;
+  // Realtime can deliver a large frame after smaller frames sent just after it,
+  // so state messages carry a per-sender seq and are released in order. A gap
+  // that doesn't fill within this window is treated as lost.
+  const STATE_SEQ_GAP_TIMEOUT_MS    = 2500;
+  let _transport = _createTransportState();
+  let _transferCounter = 0;
+  const STATE_SEND_TIMEOUT_MS = 4000;
+  const STATE_SEND_MAX_ATTEMPTS = 3;
+  const COMPLETED_TRANSFER_MEMORY = 32;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -363,6 +396,7 @@ const Room = (() => {
   }
 
   function _saveSession() {
+    if (!_sessionPersistEnabled) return false;
     const storage = _getSessionStorage();
     if (!storage || !_roomId) return false;
 
@@ -395,6 +429,359 @@ const Room = (() => {
     const snapshot = _cloneSerializable(value);
     _state[key] = snapshot;
     return snapshot;
+  }
+
+  // ── Large-payload transport ───────────────────────────────────────────────
+
+  function _createTransportState() {
+    return {
+      outboundTail: null,
+      outboundPending: 0,
+      inboundQueue: [],
+      inboundBusy: false,
+      transfers: new Map(),
+      completedTransfers: [],
+      outSeq: 0,
+      outEpoch: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+      inSeq: { stream: null, expected: 0, held: new Map(), lastKeySeq: new Map(), gapTimer: null },
+    };
+  }
+
+  function _resetTransport() {
+    clearTimeout(_transport.inSeq.gapTimer);
+    // Replacing the object (rather than mutating it) lets in-flight async work
+    // from a previous room detect that it is stale and bail out.
+    _transport = _createTransportState();
+  }
+
+  function _canCompress() {
+    return typeof CompressionStream === 'function' && typeof Blob === 'function' && typeof Response === 'function';
+  }
+
+  function _canDecompress() {
+    return typeof DecompressionStream === 'function' && typeof Blob === 'function' && typeof Response === 'function';
+  }
+
+  function _hasReplayCodec() {
+    return typeof ReplayCodec !== 'undefined' && typeof ReplayCodec.pack === 'function';
+  }
+
+  function _localCaps() {
+    return { gzip: _canDecompress(), replayPack: _hasReplayCodec() ? 1 : 0 };
+  }
+
+  function _peerAcceptsGzip() {
+    return !_opponentCaps || _opponentCaps.gzip !== false;
+  }
+
+  function _peerAcceptsReplayPack() {
+    return !!(_opponentCaps && Number(_opponentCaps.replayPack) >= 1 && _hasReplayCodec());
+  }
+
+  // Broadcasts acked by the server; retries on timeout. Receivers dedupe by seq/transferId.
+  async function _sendStateMessage(transport, channelName, event, payload) {
+    let result = null;
+    for (let attempt = 1; attempt <= STATE_SEND_MAX_ATTEMPTS; attempt++) {
+      if (transport !== _transport) return { ok: false, error: 'Room changed during send' };
+      result = await SupabaseClient.broadcast(channelName, event, payload, { timeout: STATE_SEND_TIMEOUT_MS });
+      if (result?.ok) return result;
+      if (result?.error !== 'timed out' && result?.error !== 'error') return result || { ok: false, error: 'Broadcast failed' };
+      if (attempt < STATE_SEND_MAX_ATTEMPTS) {
+        _recordTelemetry('room.state_send_retry', { event, key: payload?.key || null, attempt, error: result?.error || null }, 'warn');
+        await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+      }
+    }
+    return result || { ok: false, error: 'Broadcast failed' };
+  }
+
+  function _bytesToBase64(bytes) {
+    let binary = '';
+    const STEP = 0x8000;
+    for (let i = 0; i < bytes.length; i += STEP) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + STEP));
+    }
+    return btoa(binary);
+  }
+
+  function _base64ToBytes(text) {
+    const binary = atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function _encodeStatePayload(json) {
+    if (_canCompress() && _peerAcceptsGzip()) {
+      try {
+        const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+        const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+        return { encoding: 'gzip-base64', data: _bytesToBase64(bytes) };
+      } catch (err) {
+        console.warn('[Room] State compression failed — sending uncompressed chunks:', err);
+      }
+    }
+    return { encoding: 'json', data: json };
+  }
+
+  async function _decodeStatePayload(encoding, data) {
+    if (encoding === 'json') return JSON.parse(data);
+    if (encoding === 'gzip-base64') {
+      if (typeof DecompressionStream !== 'function') {
+        throw new Error('DecompressionStream unavailable in this browser');
+      }
+      const stream = new Blob([_base64ToBytes(data)]).stream().pipeThrough(new DecompressionStream('gzip'));
+      return JSON.parse(await new Response(stream).text());
+    }
+    throw new Error(`Unknown state chunk encoding: ${encoding}`);
+  }
+
+  function _enqueueOutbound(task) {
+    const transport = _transport;
+    transport.outboundPending++;
+    const run = async () => {
+      if (transport !== _transport) return { ok: false, error: 'Room changed before send' };
+      try {
+        return await task();
+      } catch (err) {
+        return { ok: false, error: err?.message || 'Send failed' };
+      }
+    };
+    const next = (transport.outboundTail || Promise.resolve()).then(run, run);
+    transport.outboundTail = next;
+    next.then(() => {
+      transport.outboundPending--;
+      if (transport.outboundTail === next) transport.outboundTail = null;
+    });
+    return next;
+  }
+
+  function _broadcastStateSync(channelName, key, value, seq) {
+    return _sendStateMessage(_transport, channelName, 'state_sync', {
+      key,
+      value,
+      seq,
+      seqEpoch: _transport.outEpoch,
+      from: _getPlayerId(),
+      seatId: _seatId,
+      sessionId: _sessionId,
+    });
+  }
+
+  async function _broadcastStateChunks(channelName, key, value, json, seq) {
+    const transport = _transport;
+    let packed = null;
+    if (_peerAcceptsReplayPack()) {
+      try {
+        const packedJson = JSON.stringify(ReplayCodec.pack(value));
+        if (packedJson.length < json.length) { json = packedJson; packed = 'rp1'; }
+      } catch (err) {
+        console.warn('[Room] Replay packing failed — sending unpacked:', err);
+      }
+    }
+    const { encoding, data } = await _encodeStatePayload(json);
+    const total = Math.max(1, Math.ceil(data.length / STATE_CHUNK_SIZE_CHARS));
+    if (total > STATE_CHUNK_MAX_PARTS) {
+      _recordTelemetry('room.state_chunk_rejected', { key, chars: json.length, total }, 'error');
+      return { ok: false, error: `State "${key}" is too large to sync (${total} chunks)` };
+    }
+    _transferCounter = (_transferCounter + 1) % Number.MAX_SAFE_INTEGER;
+    const transferId = `${_sessionId || 'room'}:${Date.now().toString(36)}:${_transferCounter}`;
+    for (let index = 0; index < total; index++) {
+      if (transport !== _transport) return { ok: false, error: 'Room changed during send' };
+      if (index > 0) await new Promise(resolve => setTimeout(resolve, STATE_CHUNK_SEND_GAP_MS));
+      const chunk = {
+        transferId,
+        key,
+        seq,
+        seqEpoch: transport.outEpoch,
+        index,
+        total,
+        encoding,
+        data: data.slice(index * STATE_CHUNK_SIZE_CHARS, (index + 1) * STATE_CHUNK_SIZE_CHARS),
+        from: _getPlayerId(),
+        seatId: _seatId,
+        sessionId: _sessionId,
+      };
+      if (packed) chunk.packed = packed;
+      const result = await _sendStateMessage(transport, channelName, 'state_chunk', chunk);
+      if (!result?.ok) {
+        _recordTelemetry('room.state_chunk_send_failed', { key, index, total, error: result?.error || null }, 'warn');
+        return result || { ok: false, error: 'Chunk send failed' };
+      }
+    }
+    return { ok: true, chunks: total, encoding, packed };
+  }
+
+  function _drainInbound(transport = _transport) {
+    while (transport === _transport && !transport.inboundBusy && transport.inboundQueue.length) {
+      const task = transport.inboundQueue.shift();
+      let result;
+      try {
+        result = task();
+      } catch (err) {
+        console.error('[Room] Inbound state handler failed:', err);
+        continue;
+      }
+      if (result && typeof result.then === 'function') {
+        transport.inboundBusy = true;
+        result
+          .catch(err => console.error('[Room] Inbound state handler failed:', err))
+          .then(() => {
+            transport.inboundBusy = false;
+            _drainInbound(transport);
+          });
+        return;
+      }
+    }
+  }
+
+  function _enqueueInbound(task) {
+    _transport.inboundQueue.push(task);
+    _drainInbound();
+  }
+
+  function _armSeqGapTimer(restart = false) {
+    const transport = _transport;
+    const seqState = transport.inSeq;
+    if (restart) { clearTimeout(seqState.gapTimer); seqState.gapTimer = null; }
+    if (seqState.gapTimer || !seqState.held.size) return;
+    seqState.gapTimer = setTimeout(() => {
+      seqState.gapTimer = null;
+      if (transport !== _transport || !seqState.held.size) return;
+      const skipTo = Math.min(...seqState.held.keys());
+      _recordTelemetry('room.state_seq_gap_skipped', { from: seqState.expected, to: skipTo }, 'warn');
+      seqState.expected = skipTo;
+      _flushSequenced();
+    }, STATE_SEQ_GAP_TIMEOUT_MS);
+  }
+
+  function _deliverSequenced(key, seq, task) {
+    const lastKeySeq = _transport.inSeq.lastKeySeq;
+    lastKeySeq.set(key, Math.max(lastKeySeq.get(key) || 0, seq));
+    _enqueueInbound(task);
+  }
+
+  function _flushSequenced() {
+    const seqState = _transport.inSeq;
+    while (seqState.held.has(seqState.expected)) {
+      const { key, task } = seqState.held.get(seqState.expected);
+      seqState.held.delete(seqState.expected);
+      _deliverSequenced(key, seqState.expected, task);
+      seqState.expected++;
+    }
+    if (seqState.held.size) _armSeqGapTimer();
+    else { clearTimeout(seqState.gapTimer); seqState.gapTimer = null; }
+  }
+
+  // Releases opponent state messages in the order they were sent. Payloads
+  // without a seq (older clients) are applied immediately, as before.
+  function _receiveSequenced(payload, key, task) {
+    const seq = Number(payload?.seq);
+    if (!Number.isInteger(seq) || seq < 1) { _enqueueInbound(task); return; }
+    const seqState = _transport.inSeq;
+    const stream = `${payload.sessionId || payload.from || 'remote'}:${payload.seqEpoch || ''}`;
+    if (seqState.stream !== stream) {
+      // First message from this sender session (join, or the opponent reloaded).
+      clearTimeout(seqState.gapTimer);
+      seqState.stream = stream;
+      seqState.expected = seq;
+      seqState.held.clear();
+      seqState.lastKeySeq.clear();
+      seqState.gapTimer = null;
+    }
+    if (seq < seqState.expected) {
+      // Arrived after its gap was skipped; apply unless a newer value for the key already landed.
+      if ((seqState.lastKeySeq.get(key) || 0) < seq) _deliverSequenced(key, seq, task);
+      return;
+    }
+    if (!seqState.held.has(seq)) seqState.held.set(seq, { key, task });
+    _flushSequenced();
+  }
+
+  function _applyIncomingState(key, value, from) {
+    const snapshot = _storeStateValue(key, value);
+    _updateResumeContext(key, snapshot);
+    _emitState(key, snapshot, from || null);
+  }
+
+  function _pruneStaleTransfers(now = Date.now()) {
+    for (const [id, transfer] of _transport.transfers) {
+      if (now - transfer.startedAt > STATE_CHUNK_TRANSFER_TTL_MS) {
+        _transport.transfers.delete(id);
+        _recordTelemetry('room.state_chunk_expired', {
+          key: transfer.key,
+          received: transfer.received,
+          total: transfer.total,
+        }, 'warn');
+      }
+    }
+  }
+
+  function _onStateChunk(payload) {
+    if (!payload || typeof payload.transferId !== 'string' || typeof payload.key !== 'string') return;
+    if (typeof payload.data !== 'string') return;
+    const total = Number(payload.total);
+    const index = Number(payload.index);
+    if (!Number.isInteger(total) || total < 1 || total > STATE_CHUNK_MAX_PARTS) return;
+    if (!Number.isInteger(index) || index < 0 || index >= total) return;
+    if (payload.data.length > STATE_CHUNK_SIZE_CHARS) return;
+    if (!_isExpectedOpponentPayload(payload)) return;
+
+    _noteRemoteActivity('state_chunk', {
+      key: payload.key,
+      from: payload.from || null,
+      seatId: payload.seatId || null,
+      sessionId: payload.sessionId || null,
+    });
+
+    const now = Date.now();
+    _pruneStaleTransfers(now);
+    if (_transport.completedTransfers.includes(payload.transferId)) return;  // retried chunk of a finished transfer
+
+    let transfer = _transport.transfers.get(payload.transferId);
+    if (!transfer) {
+      transfer = {
+        key: payload.key,
+        total,
+        encoding: payload.encoding,
+        packed: payload.packed || null,
+        parts: new Array(total),
+        received: 0,
+        startedAt: now,
+      };
+      _transport.transfers.set(payload.transferId, transfer);
+    }
+    if (transfer.total !== total || transfer.key !== payload.key || transfer.encoding !== payload.encoding) return;
+    if (transfer.packed !== (payload.packed || null)) return;
+    if (transfer.parts[index] === undefined) {
+      transfer.parts[index] = payload.data;
+      transfer.received++;
+    }
+    if (transfer.received < transfer.total) {
+      // A transfer still arriving is progress, not a lost message.
+      if (Number(payload.seq) === _transport.inSeq.expected) _armSeqGapTimer(true);
+      return;
+    }
+
+    _transport.transfers.delete(payload.transferId);
+    _transport.completedTransfers.push(payload.transferId);
+    if (_transport.completedTransfers.length > COMPLETED_TRANSFER_MEMORY) _transport.completedTransfers.shift();
+    const transport = _transport;
+    const { key, encoding, packed } = transfer;
+    const data = transfer.parts.join('');
+    const from = payload.from || null;
+    _receiveSequenced(payload, key, () => _decodeStatePayload(encoding, data).then((decoded) => {
+      if (transport !== _transport) return;
+      let value = decoded;
+      if (packed) {
+        if (packed !== 'rp1' || !_hasReplayCodec()) throw new Error(`Unsupported packing: ${packed}`);
+        value = ReplayCodec.unpack(decoded);
+      }
+      _applyIncomingState(key, value, from);
+    }).catch((err) => {
+      console.error(`[Room] Failed to decode chunked state "${key}":`, err);
+      _recordTelemetry('room.state_chunk_decode_failed', { key, encoding, error: err?.message || null }, 'error');
+    }));
   }
 
   function _emitDisconnect() {
@@ -613,6 +1000,17 @@ const Room = (() => {
 
   // ── Presence / heartbeat handling ─────────────────────────────────────────
 
+  function _readOpponentCaps(presenceState) {
+    for (const slots of Object.values(presenceState)) {
+      for (const slot of slots) {
+        if (slot.playerId === _opponentId && slot.caps && typeof slot.caps === 'object') {
+          return { gzip: slot.caps.gzip !== false, replayPack: Number(slot.caps.replayPack) || 0 };
+        }
+      }
+    }
+    return null;
+  }
+
   function _syncPresence() {
     const ch = _channelName && (typeof SupabaseClient !== 'undefined') &&
                SupabaseClient.getChannel(_channelName);
@@ -631,6 +1029,7 @@ const Room = (() => {
     );
 
     if (opponentOnline) {
+      _opponentCaps = _readOpponentCaps(presenceState) || _opponentCaps;
       _noteRemoteActivity('presence_sync', { via: 'presence' });
     } else if (!opponentOnline && _opponentPresent) {
       _opponentPresent = false;
@@ -655,10 +1054,10 @@ const Room = (() => {
         seatId: payload.seatId || null,
         sessionId: payload.sessionId || null,
       });
-      const snapshot = _storeStateValue(key, value);
-      _updateResumeContext(key, snapshot);
-      _emitState(key, snapshot, from || null);
+      _receiveSequenced(payload, key, () => _applyIncomingState(key, value, from));
     });
+
+    ch.on('broadcast', { event: 'state_chunk' }, ({ payload }) => _onStateChunk(payload));
 
     ch.on('broadcast', { event: 'room_heartbeat' }, ({ payload }) => {
       if (!payload || !_isExpectedOpponentPayload(payload)) return;
@@ -686,6 +1085,7 @@ const Room = (() => {
       sessionId: _sessionId,
       roomId:    _roomId,
       resumed:   !!_resumeContext,
+      caps:      _localCaps(),
       joinedAt:  Date.now(),
     });
     _syncPresence();
@@ -741,18 +1141,21 @@ const Room = (() => {
     _resumeContext = _normalizeResumeContext(options?.resumeContext) || null;
     _channelStatus = 'pending';
     _hasEverSubscribed = false;
+    _sessionPersistEnabled = true;
     _saveSession();
 
     // Clear state from any previous session.
     Object.keys(_state).forEach(k => delete _state[k]);
+    _resetTransport();
     _opponentPresent = false;
+    _opponentCaps = null;
     _hasSeenOpponentActivity = false;
     _lastRemoteActivityAt = 0;
     _clearHeartbeatTimer();
     _clearLivenessTimers();
     _setLifecycleState('CONNECTING', { reason: 'join' });
 
-    SupabaseClient.joinChannel(_channelName, _setupChannel, _onSubscribed);
+    SupabaseClient.joinChannel(_channelName, _setupChannel, _onSubscribed, { ack: true });
     console.info(`[Room] Joining room: ${roomId.slice(0, 8)}… (isHost: ${host})`);
     return true;
   }
@@ -777,10 +1180,12 @@ const Room = (() => {
     _channelStatus = 'closed';
     _hasEverSubscribed = false;
     _opponentPresent = false;
+    _opponentCaps = null;
     _hasSeenOpponentActivity = false;
     _lastRemoteActivityAt = 0;
     _clearSavedSession();
     Object.keys(_state).forEach(k => delete _state[k]);
+    _resetTransport();
     _setLifecycleState('CLOSED', { reason: 'leave' });
     console.info('[Room] Left room.');
   }
@@ -799,13 +1204,23 @@ const Room = (() => {
     const snapshot = _storeStateValue(key, value);
     _updateResumeContext(key, snapshot);
 
-    return SupabaseClient.broadcast(_channelName, 'state_sync', {
-      key,
-      value,
-      from: _getPlayerId(),
-      seatId: _seatId,
-      sessionId: _sessionId,
-    });
+    const channelName = _channelName;
+    let json;
+    try {
+      json = JSON.stringify(value === undefined ? null : value);
+    } catch (err) {
+      return { ok: false, error: err?.message || 'State is not serialisable' };
+    }
+    const isLarge = typeof json === 'string' && json.length > STATE_CHUNK_THRESHOLD_CHARS;
+    const seq = ++_transport.outSeq;
+
+    // Fast path keeps small messages synchronous when nothing is queued ahead of them.
+    if (!isLarge && _transport.outboundPending === 0) {
+      return _broadcastStateSync(channelName, key, value, seq);
+    }
+    return _enqueueOutbound(() => (isLarge
+      ? _broadcastStateChunks(channelName, key, value, json, seq)
+      : _broadcastStateSync(channelName, key, value, seq)));
   }
 
   /** Apply a state value locally and emit state listeners without broadcasting. */
@@ -907,6 +1322,12 @@ const Room = (() => {
 
   /** Clears any persisted room session without touching the active channel state. */
   function discardSavedSession(reason) { return _discardSavedSession(reason); }
+
+  /** Clears the persisted session and keeps it cleared until the next join() (e.g. once the match is over). */
+  function retireSavedSession(reason = 'match_over') {
+    _sessionPersistEnabled = false;
+    return _discardSavedSession(reason);
+  }
 
   /** Force an immediate reconnect attempt for the current room channel. */
   function reconnect() {
@@ -1013,6 +1434,7 @@ const Room = (() => {
     isHost,
     getOpponentId,
     getSavedSession,
+    retireSavedSession,
     clearSavedSession: _clearSavedSession,
     suspendOutgoing,
     discardSavedSession,

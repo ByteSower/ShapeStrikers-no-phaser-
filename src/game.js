@@ -49,6 +49,9 @@ const Game = (() => {
   let _mpPausedPlaybackState = null;
   let _mpQuitFlowActive = false;
   let _mpMatchEndAutoReturnTimer = null;
+  let _mpRematchSession = null;
+  let _mpRematchStateFn = null;
+  let _mpMatchOver = false;
   let _mpGuestResumeReplay = () => false;
   let _mpGuestBattleSessionCleanup = () => {};
   let _mpGuestBattleSessionRound = -1;
@@ -4307,6 +4310,7 @@ const Game = (() => {
   function _mpEnterBattleMode() {
     _finishHistory('abandoned');
     _mpMode = true;
+    if (typeof Backend !== 'undefined' && typeof Backend.holdRealtime === 'function') Backend.holdRealtime();
     GridStyles.beginRun();
 
     // Multiplayer bypasses startGame(), so switch away from the title track here.
@@ -5258,6 +5262,9 @@ const Game = (() => {
 
   // ── Match end — show proper end screen (MP-5) ────────────────────────
   function _mpEndMatch(winner, meta = null) {
+    _mpMatchOver = true;
+    // A reload from the results screen must not try to "rejoin" a finished match.
+    if (typeof Room !== 'undefined' && typeof Room.retireSavedSession === 'function') Room.retireSavedSession('match_over');
     // Hide round result if still visible
     document.getElementById('mp-round-result')?.classList.add('hidden');
     _clearMPMatchEndAutoReturnTimer();
@@ -5305,50 +5312,67 @@ const Game = (() => {
     _mpRefreshBo5Dots('mp-match-end-dots');
     overlay.classList.remove('hidden');
 
-    // Rematch flow — hoist handler ref so returnBtn can de-register it
-    let _wantRematch = false;
-    let _opponentWantsRematch = false;
-    let _rematchHandler = null;
-    const _finishRematch = () => {
-      overlay.classList.add('hidden');
-      if (_rematchHandler && typeof Room !== 'undefined') Room.offStateChange(_rematchHandler);
-      _mpCleanupAndReturnToLobby();
-    };
-
-    if (rematchBtn) {
-      rematchBtn.disabled = false;
-      rematchBtn.textContent = '🔁 Rematch';
-      rematchBtn.style.display = isImmediateExitFlow ? 'none' : '';
-      rematchBtn.onclick = () => {
-        _wantRematch = true;
+    _mpDetachRematch();
+    const renderRematch = (status) => {
+      if (!rematchBtn) return;
+      if (status.started) {
+        rematchBtn.disabled = true;
+        rematchBtn.textContent = '🔁 Starting…';
+        if (statusEl) statusEl.textContent = 'Starting rematch…';
+        if (returnBtn) returnBtn.disabled = true;
+      } else if (status.declined && !status.localWants) {
+        rematchBtn.disabled = true;
+        rematchBtn.textContent = '🔁 Rematch';
+        if (statusEl) statusEl.textContent = 'Opponent returned to the lobby.';
+      } else if (status.declined) {
+        rematchBtn.disabled = true;
+        if (statusEl) statusEl.textContent = 'Opponent returned to the lobby — rematch unavailable.';
+      } else if (status.localWants) {
         rematchBtn.disabled = true;
         if (statusEl) statusEl.textContent = 'Waiting for opponent…';
-        if (typeof Room !== 'undefined') Room.syncState('mp_rematch_request', true);
-          if (_opponentWantsRematch) _finishRematch();
-      };
+      } else if (status.remoteWants) {
+        rematchBtn.disabled = false;
+        rematchBtn.textContent = '🔁 Accept Rematch';
+        if (statusEl) statusEl.textContent = 'Opponent wants a rematch!';
+      }
+    };
+
+    const canRematch = !isImmediateExitFlow &&
+      typeof Room !== 'undefined' && typeof MultiplayerRematch !== 'undefined' && !!Room.getRoomId?.();
+    if (canRematch) {
+      const session = MultiplayerRematch.createSession({
+        roomId: Room.getRoomId(),
+        send: (key, value) => Room.syncState(key, value),
+        onChange: renderRematch,
+        onStart: (nextRoomId, pendingSend) => _mpStartRematch(nextRoomId, pendingSend),
+      });
+      _mpRematchSession = session;
+      _mpRematchStateFn = (key, value) => session.handleState(key, value);
+      Room.onStateChange(_mpRematchStateFn);
+    }
+
+    if (rematchBtn) {
+      rematchBtn.disabled = !canRematch;
+      rematchBtn.textContent = '🔁 Rematch';
+      rematchBtn.style.display = isImmediateExitFlow ? 'none' : '';
+      rematchBtn.onclick = () => { _mpRematchSession?.requestLocal(); };
     }
     if (returnBtn) {
       returnBtn.disabled = false;
       returnBtn.textContent = '🏠 Return to Lobby';
       returnBtn.onclick = () => {
         overlay.classList.add('hidden');
-        if (_rematchHandler && typeof Room !== 'undefined') Room.offStateChange(_rematchHandler);
+        _mpRematchSession?.declineLocal();
         _mpCleanupAndReturnToLobby();
       };
     }
 
-    // Listen for opponent's rematch agreement
-    _rematchHandler = (key, value) => {
-      if (key !== 'mp_rematch_request' || value !== true) return;
-      if (_wantRematch) {
-        _finishRematch();
-      } else {
-        _opponentWantsRematch = true;
-        if (statusEl) statusEl.textContent = 'Opponent wants a rematch!';
-        if (rematchBtn) rematchBtn.textContent = '🔁 Accept Rematch';
-      }
-    };
-    if (typeof Room !== 'undefined') Room.onStateChange(_rematchHandler);
+    // The opponent may have answered before this overlay opened; Room caches the latest values.
+    if (_mpRematchSession) {
+      const cached = Room.getState?.() || {};
+      if (cached[MultiplayerRematch.DECLINE_KEY]) _mpRematchSession.handleState(MultiplayerRematch.DECLINE_KEY, cached[MultiplayerRematch.DECLINE_KEY]);
+      if (cached[MultiplayerRematch.REQUEST_KEY]) _mpRematchSession.handleState(MultiplayerRematch.REQUEST_KEY, cached[MultiplayerRematch.REQUEST_KEY]);
+    }
 
     if (isImmediateExitFlow) {
       if (returnBtn) {
@@ -5357,10 +5381,46 @@ const Game = (() => {
       }
       _mpMatchEndAutoReturnTimer = setTimeout(() => {
         overlay.classList.add('hidden');
-        if (_rematchHandler && typeof Room !== 'undefined') Room.offStateChange(_rematchHandler);
         _mpCleanupAndReturnToLobby();
       }, 2200);
     }
+  }
+
+  function _mpDetachRematch() {
+    if (_mpRematchStateFn && typeof Room !== 'undefined') Room.offStateChange(_mpRematchStateFn);
+    _mpRematchStateFn = null;
+    _mpRematchSession = null;
+  }
+
+  // Both players agreed: move into a fresh room (same host/guest roles) and run the
+  // normal versus → prep flow so no per-match state leaks into the new match.
+  function _mpStartRematch(nextRoomId, pendingSend = null) {
+    if (typeof Room === 'undefined') return;
+    const isHost = Room.isHost();
+    const opponentId = Room.getOpponentId();
+    _mpDetachRematch();
+
+    // Let our last rematch message flush before leaving the old channel.
+    const SEND_FLUSH_CAP_MS = 1500;
+    Promise.race([
+      Promise.resolve(pendingSend).catch(() => null),
+      new Promise(resolve => setTimeout(resolve, SEND_FLUSH_CAP_MS)),
+    ]).then(() => {
+      if (!_mpMode) return; // player left the match-end screen meanwhile
+      document.getElementById('mp-match-end-overlay')?.classList.add('hidden');
+      _mpTeardownMatchSession();
+      _mpExitBattleMode();
+
+      if (!opponentId || Room.join(nextRoomId, isHost, opponentId) === false) {
+        console.warn('[MP] Rematch could not join the next room — returning to title.');
+        _returnToTitle();
+        UI.showMessage('Rematch unavailable — please find a new match.', 2500);
+        return;
+      }
+      console.info(`[MP] Rematch starting — roomId: ${nextRoomId.slice(0, 8)}…, isHost: ${isHost}`);
+      _mpBindRoomLifecycleHandlers(isHost);
+      _mpShowVersusScreen(opponentId, () => _mpEnterBattleMode());
+    });
   }
 
   function _mpHandleDisconnect() {
@@ -5369,6 +5429,14 @@ const Game = (() => {
         ? Room.getLifecycleState()
         : 'disconnected'
     );
+
+    // After the match ends there is nothing to pause or forfeit; the opponent leaving just rules out a rematch.
+    if (_mpMatchOver) {
+      if (_mpRematchSession && typeof MultiplayerRematch !== 'undefined') {
+        _mpRematchSession.handleState(MultiplayerRematch.DECLINE_KEY, { roomId: Room.getRoomId?.() });
+      }
+      return;
+    }
 
     const shouldForceHostDisconnectEnd = typeof MultiplayerGame !== 'undefined' && MultiplayerGame.isActive() && (
       typeof MultiplayerGame.shouldForceMatchEndOnOpponentDisconnect === 'function'
@@ -5472,8 +5540,17 @@ const Game = (() => {
 
   // ── Clean up MP session and return to title ───────────────────────────
   function _mpCleanupAndReturnToLobby() {
+    _mpTeardownMatchSession();
+    _mpExitBattleMode();
+    _returnToTitle();
+  }
+
+  // Tears down all per-match state and leaves the room, without changing screens.
+  function _mpTeardownMatchSession() {
     _mpMode = false;
+    _mpMatchOver = false;
     _mpQuitFlowActive = false;
+    _mpDetachRematch();
     _clearMPMatchEndAutoReturnTimer();
     _mpDisconnectReconnectFn = null;
     _mpClearOwnPrepSnapshot();
@@ -5521,6 +5598,8 @@ const Game = (() => {
     document.getElementById('mp-reconnect-banner')?.classList.add('hidden');
     if (typeof MultiplayerGame !== 'undefined') MultiplayerGame.destroy();
     if (typeof Room !== 'undefined') Room.destroy(); // destroy clears all listeners
+    // Applies any account change deferred during the match (may suspend realtime and reload).
+    if (typeof Backend !== 'undefined' && typeof Backend.releaseRealtime === 'function') Backend.releaseRealtime();
 
     // Reset lobby UI so it opens fresh next time (no stale "Match found!" status etc.)
     const statusEl  = document.getElementById('mp-status');
@@ -5529,9 +5608,6 @@ const Game = (() => {
     if (statusEl)  { statusEl.textContent = 'Ready to search'; statusEl.className = 'mp-status'; }
     if (findBtn)   findBtn.style.display  = '';
     if (cancelBtn) cancelBtn.style.display = 'none';
-
-    _mpExitBattleMode();
-    _returnToTitle();
   }
 
   // ── Ready countdown timer ─────────────────────────────────────────────

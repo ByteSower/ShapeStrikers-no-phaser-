@@ -247,3 +247,23 @@ test('Sign-out without pending verification safely suspends the client', async (
   assert.equal(backend.getClient(), null);
   assert.equal(backend.isReady(), false);
 });
+
+test('Sign-out during a held match pauses REST but defers realtime teardown until release', async () => {
+  const { backend, calls, change } = harness();
+  await backend.init();
+  backend.holdRealtime();
+  let released = false;
+  backend.whenRealtimeReleased().then(() => { released = true; });
+  change(null);
+  await drainNotifications();
+  assert.equal(backend.isReady(), false);
+  assert.equal(backend.isRealtimeSuspendDeferred(), true);
+  assert.equal(calls.left + calls.cleared, 0);
+  assert.equal(released, false);
+  backend.releaseRealtime();
+  await drainNotifications();
+  assert.equal(calls.left, 1);
+  assert.equal(calls.cleared, 1);
+  assert.equal(backend.isRealtimeSuspendDeferred(), false);
+  assert.equal(released, true);
+});
