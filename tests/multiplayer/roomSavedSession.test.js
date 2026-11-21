@@ -252,6 +252,19 @@ test('discardSavedSession clears a saved room session without joining a room', (
   assert.equal(calls.joined.length, 0);
 });
 
+test('retireSavedSession keeps late state updates from re-saving a finished match until the next join', () => {
+  const { Room, sessionStorage } = loadRoomContext();
+
+  Room.join('room-done', false, 'opp-13');
+  assert.equal(Room.retireSavedSession('match_over'), true);
+  Room.applyState('playback_checkpoint', { roundNumber: 5, seq: 30, turn: 9, boardHash: 'late' }, 'opp-13');
+  assert.equal(sessionStorage.getItem(ROOM_SESSION_KEY), null);
+
+  Room.leave();
+  Room.join('room-next', false, 'opp-13');
+  assert.equal(JSON.parse(sessionStorage.getItem(ROOM_SESSION_KEY)).roomId, 'room-next');
+});
+
 test('resume context persists latest round and checkpoint metadata for reload recovery', () => {
   const { Room, sessionStorage } = loadRoomContext();
 

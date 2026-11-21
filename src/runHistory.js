@@ -289,6 +289,8 @@ const RunHistory = (() => {
           report('History account checkpoint could not be stored', error);
         }
         await _writes;
+        // A live multiplayer match keeps running on the old seat; reload once it ends.
+        if (typeof Backend.whenRealtimeReleased === 'function') await Backend.whenRealtimeReleased();
         window.location.reload();
         return;
       }

@@ -48,11 +48,18 @@ const broadcasts   = [];
 let _channelStatus = 'SUBSCRIBED';
 let _reconnectCount = 0;
 
+const channelHandlers = {};
+const presenceHandlers = {};
+const queuedBroadcastResults = [];
 const fakeChannel = {
   _presenceState: {},
   presenceState() { return this._presenceState; },
   async track(payload) { return { ok: true }; },
-  on() { return this; }, // fluent no-op for event registration
+  on(type, filter, cb) { // records broadcast handlers so tests can simulate inbound messages
+    if (type === 'broadcast' && filter?.event) channelHandlers[filter.event] = cb;
+    if (type === 'presence' && filter?.event) presenceHandlers[filter.event] = cb;
+    return this;
+  },
 };
 
 global.SupabaseClient = {
@@ -63,7 +70,7 @@ global.SupabaseClient = {
   leaveChannel(name) {},
   async broadcast(name, event, payload) {
     broadcasts.push({ name, event, payload });
-    return { ok: true };
+    return queuedBroadcastResults.shift() || { ok: true };
   },
   getChannel(name) {
     return _channelStatus !== 'closed' ? fakeChannel : null;
@@ -101,6 +108,7 @@ function loadModule(rel) {
 }
 
 loadModule('utils/secureIds.js');
+loadModule('multiplayer/replayCodec.js');
 loadModule('room.js');
 
 // ── Sequential test runner ────────────────────────────────────────────────────
@@ -463,6 +471,187 @@ async function test(name, fn) {
     assert.equal(Room.getRoomId(), 'room-B');
     assert.equal(Room.isHost(), false);
     assert.equal(Room.getOpponentId(), 'new-opp');
+    Room.destroy();
+  });
+
+  // ── Large-state chunked transport ───────────────────────────────────────────
+
+  const crypto = require('crypto');
+  const bigValue = () => ({ events: Array.from({ length: 400 }, (_, i) => ({ i, blob: crypto.randomBytes(128).toString('hex') })) });
+  // Replays what this client broadcast as if it came from the opponent.
+  const asOpponent = (payload) => ({ payload: { ...payload, from: 'opp-xyz', seatId: undefined, sessionId: 'opp-session' } });
+  const flush = () => new Promise(resolve => setTimeout(resolve, 50));
+
+  await test('syncState: large values are sent as ordered state_chunk messages under the size cap', async () => {
+    joinRoom();
+    broadcasts.length = 0;
+    const value = bigValue();
+    const pending = Room.syncState('battle_replay', value);
+    const small = Room.syncState('battle_phase', { phase: 'start' });
+    assert.deepEqual(Room.getState().battle_replay, value, 'Local mirror updates optimistically');
+    const result = await pending;
+    await small;
+
+    assert.equal(result.ok, true);
+    const chunks = broadcasts.filter(b => b.event === 'state_chunk');
+    assert.ok(chunks.length > 1, `expected multiple chunks, got ${chunks.length}`);
+    assert.ok(chunks.every(c => c.payload.data.length <= 32 * 1024), 'Every chunk stays within the size cap');
+    assert.ok(chunks.every(c => c.payload.encoding === 'gzip-base64'));
+    assert.deepEqual(chunks.map(c => c.payload.index), chunks.map((_, i) => i));
+    assert.equal(broadcasts[broadcasts.length - 1].event, 'state_sync', 'Later small state waits behind the chunks');
+    assert.equal(broadcasts[broadcasts.length - 1].payload.key, 'battle_phase');
+    Room.destroy();
+  });
+
+  await test('state_chunk: reassembles the value and keeps order with later state_sync', async () => {
+    joinRoom();
+    broadcasts.length = 0;
+    const value = bigValue();
+    await Room.syncState('battle_replay', value);
+    await Room.syncState('battle_phase', { phase: 'start' });
+    const sent = broadcasts.slice();
+    Room.destroy();
+
+    joinRoom();
+    const received = [];
+    Room.onStateChange((key, val) => received.push({ key, val }));
+    // Deliver chunks out of order to prove reassembly uses the index.
+    const chunks = sent.filter(b => b.event === 'state_chunk').reverse();
+    chunks.forEach(c => channelHandlers.state_chunk(asOpponent(c.payload)));
+    channelHandlers.state_chunk(asOpponent(chunks[0].payload)); // duplicate is ignored
+    channelHandlers.state_sync(asOpponent(sent.find(b => b.event === 'state_sync').payload));
+    await flush();
+
+    assert.deepEqual(received.map(r => r.key), ['battle_replay', 'battle_phase']);
+    assert.deepEqual(received[0].val, value);
+    assert.deepEqual(Room.getState().battle_replay, value);
+    Room.destroy();
+  });
+
+  await test('state_chunk: partial transfers are discarded when the room is left', async () => {
+    joinRoom();
+    broadcasts.length = 0;
+    await Room.syncState('battle_replay', bigValue());
+    const chunks = broadcasts.filter(b => b.event === 'state_chunk');
+    Room.destroy();
+
+    joinRoom();
+    chunks.slice(0, -1).forEach(c => channelHandlers.state_chunk(asOpponent(c.payload)));
+    Room.leave();
+    resetMock();
+    Room.join('room-abc', true, 'opp-xyz');
+    const received = [];
+    Room.onStateChange((key) => received.push(key));
+    channelHandlers.state_chunk(asOpponent(chunks[chunks.length - 1].payload));
+    await flush();
+    assert.deepEqual(received, [], 'A stale partial transfer must not complete in the new room');
+    Room.destroy();
+  });
+
+  await test('sequencing: a small message that overtakes a chunked transfer is held until the transfer lands', async () => {
+    joinRoom();
+    broadcasts.length = 0;
+    const value = bigValue();
+    await Room.syncState('prep_p1', { units: 1 });
+    await Room.syncState('battle_replay', value);
+    await Room.syncState('phase_event', { type: 'playback_start' });
+    await Room.syncState('round_result', { hostWon: true });
+    const sent = broadcasts.slice();
+    Room.destroy();
+
+    joinRoom();
+    const received = [];
+    Room.onStateChange((key) => received.push(key));
+    const syncs = sent.filter(b => b.event === 'state_sync');
+    syncs.forEach(s => channelHandlers.state_sync(asOpponent(s.payload)));
+    await flush();
+    assert.deepEqual(received, ['prep_p1'], 'Later messages wait for the earlier replay');
+    sent.filter(b => b.event === 'state_chunk').forEach(c => channelHandlers.state_chunk(asOpponent(c.payload)));
+    await flush();
+    assert.deepEqual(received, ['prep_p1', 'battle_replay', 'phase_event', 'round_result']);
+    Room.destroy();
+  });
+
+  await test('sequencing: a lost message is skipped after the gap timeout; a stale straggler is dropped', async () => {
+    joinRoom();
+    broadcasts.length = 0;
+    await Room.syncState('phase_event', { n: 1 });
+    await Room.syncState('phase_event', { n: 2 });
+    await Room.syncState('phase_event', { n: 3 });
+    const [m1, m2, m3] = broadcasts.filter(b => b.event === 'state_sync');
+    Room.destroy();
+
+    joinRoom();
+    const received = [];
+    Room.onStateChange((key, val) => received.push(val.n));
+    channelHandlers.state_sync(asOpponent(m1.payload));
+    channelHandlers.state_sync(asOpponent(m3.payload));
+    await flush();
+    assert.deepEqual(received, [1]);
+    await new Promise(resolve => setTimeout(resolve, 2700));
+    assert.deepEqual(received, [1, 3], 'Gap skipped after timeout');
+    channelHandlers.state_sync(asOpponent(m2.payload));
+    await flush();
+    assert.deepEqual(received, [1, 3], 'Older value for the same key must not overwrite the newer one');
+    assert.equal(Room.getState().phase_event.n, 3);
+    Room.destroy();
+  });
+
+  const replayValue = () => {
+    const units = Array.from({ length: 10 }, (_, i) => ({ id: `u${i}`, hp: 100, stats: { attack: 10 + i }, statusEffects: [] }));
+    const events = [];
+    for (let turn = 1; turn <= 150; turn++) {
+      units[turn % 10].hp -= 1;
+      const snap = units.map(u => JSON.parse(JSON.stringify(u)));
+      events.push({ seq: turn, turn, type: 'turn_start', unit: snap[turn % 10], playerUnits: snap.slice(0, 5), enemyUnits: snap.slice(5) });
+    }
+    return { round: 2, replay: { version: 1, seed: 7, events } };
+  };
+  const advertiseOpponentCaps = (caps) => {
+    fakeChannel._presenceState = { k: [{ playerId: 'opp-xyz', caps }] };
+    presenceHandlers.sync();
+  };
+
+  await test('transport: peer without DecompressionStream gets uncompressed, replay-packed chunks that round-trip exactly', async () => {
+    joinRoom();
+    advertiseOpponentCaps({ gzip: false, replayPack: 1 });
+    broadcasts.length = 0;
+    const value = replayValue();
+    await Room.syncState('battle_replay', value);
+    const chunks = broadcasts.filter(b => b.event === 'state_chunk');
+    assert.ok(chunks.length > 0);
+    assert.ok(chunks.every(c => c.payload.encoding === 'json' && c.payload.packed === 'rp1'));
+    const sentChars = chunks.reduce((n, c) => n + c.payload.data.length, 0);
+    assert.ok(sentChars < JSON.stringify(value).length / 2, `packing should shrink the replay (${sentChars} chars)`);
+    Room.destroy();
+
+    joinRoom();
+    const received = [];
+    Room.onStateChange((key, val) => received.push(val));
+    chunks.forEach(c => channelHandlers.state_chunk(asOpponent(c.payload)));
+    await flush();
+    assert.deepEqual(received, [value]);
+    Room.destroy();
+  });
+
+  await test('transport: peers without caps (older clients) still get gzip and no packing', async () => {
+    joinRoom();
+    broadcasts.length = 0;
+    await Room.syncState('battle_replay', replayValue());
+    const chunks = broadcasts.filter(b => b.event === 'state_chunk');
+    assert.ok(chunks.every(c => c.payload.encoding === 'gzip-base64' && c.payload.packed === undefined));
+    Room.destroy();
+  });
+
+  await test('transport: a state send that times out is retried with the same seq', async () => {
+    joinRoom();
+    broadcasts.length = 0;
+    queuedBroadcastResults.push({ ok: false, error: 'timed out' });
+    const result = await Room.syncState('phase_event', { n: 1 });
+    assert.equal(result.ok, true);
+    const sends = broadcasts.filter(b => b.event === 'state_sync');
+    assert.equal(sends.length, 2);
+    assert.equal(sends[0].payload.seq, sends[1].payload.seq);
     Room.destroy();
   });
 

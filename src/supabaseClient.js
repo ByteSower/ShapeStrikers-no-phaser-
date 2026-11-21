@@ -58,15 +58,22 @@ const SupabaseClient = (() => {
 
   let _ready = false;
   let _suspended = false;
+  let _client = null;
 
   const MAX_RETRIES    = 6;
   const BASE_RETRY_MS  = 2000;   // first retry after 2 s; doubles each time, cap 30 s
 
   // ── Client access ─────────────────────────────────────────────────────────
 
-  /** Returns the Supabase JS client singleton, or null if Backend not yet ready. */
+  /**
+   * Returns the Supabase JS client singleton, or null if Backend not yet ready.
+   * The client is pinned once realtime is ready so channels can still reconnect while
+   * Backend pauses REST traffic for a mid-match account change.
+   */
   function getClient() {
-    return !_suspended && (typeof Backend !== 'undefined') ? Backend.getClient() : null;
+    if (_suspended) return null;
+    if (_client) return _client;
+    return (typeof Backend !== 'undefined') ? Backend.getClient() : null;
   }
 
   // ── Connect / reconnect ───────────────────────────────────────────────────
@@ -81,7 +88,9 @@ const SupabaseClient = (() => {
       try { entry.channel.unsubscribe(); } catch (_) {}
     }
 
-    const ch = client.channel(name);
+    const ch = entry.options?.ack
+      ? client.channel(name, { config: { broadcast: { ack: true, self: false } } })
+      : client.channel(name);
     entry.channel = ch;
     entry.status  = 'pending';
 
@@ -89,6 +98,8 @@ const SupabaseClient = (() => {
     if (entry.setupFn) entry.setupFn(ch);
 
     ch.subscribe((status) => {
+      // Ignore late callbacks (e.g. CLOSED) from a channel this entry has already replaced.
+      if (_channels.get(name) !== entry || entry.channel !== ch) return;
       entry.status = status;
       if (status === 'SUBSCRIBED') {
         entry.retryCount = 0;
@@ -147,6 +158,7 @@ const SupabaseClient = (() => {
     while (waited < MAX_WAIT_MS) {
       if (_suspended) return false;
       if (typeof Backend !== 'undefined' && Backend.isReady() && Backend.getClient()) {
+        _client = Backend.getClient();
         _ready = true;
         break;
       }
@@ -161,8 +173,8 @@ const SupabaseClient = (() => {
     }
 
     // Drain channels that were registered before we were ready.
-    for (const [name, { setupFn, onSubscribed }] of _pending) {
-      const entry = { channel: null, status: 'pending', retryCount: 0, retryTimer: null, setupFn, onSubscribed };
+    for (const [name, { setupFn, onSubscribed, options }] of _pending) {
+      const entry = { channel: null, status: 'pending', retryCount: 0, retryTimer: null, setupFn, onSubscribed, options };
       _channels.set(name, entry);
       _connect(name);
     }
@@ -178,15 +190,16 @@ const SupabaseClient = (() => {
    * @param {string}   name          — Channel name, e.g. "presence:online"
    * @param {function} setupFn       — Called with (channel) to attach .on() listeners
    * @param {function} [onSubscribed]— Called with (channel) each time SUBSCRIBED fires
+   * @param {object}   [options]     — { ack: true } makes broadcast() wait for the server's ack
    */
-  function joinChannel(name, setupFn, onSubscribed) {
+  function joinChannel(name, setupFn, onSubscribed, options = null) {
     if (_suspended) return;
     if (_channels.has(name)) return; // already tracked
     if (!_ready) {
-      _pending.set(name, { setupFn, onSubscribed: onSubscribed || null });
+      _pending.set(name, { setupFn, onSubscribed: onSubscribed || null, options });
       return;
     }
-    const entry = { channel: null, status: 'pending', retryCount: 0, retryTimer: null, setupFn, onSubscribed: onSubscribed || null };
+    const entry = { channel: null, status: 'pending', retryCount: 0, retryTimer: null, setupFn, onSubscribed: onSubscribed || null, options };
     _channels.set(name, entry);
     _connect(name);
   }
@@ -214,6 +227,7 @@ const SupabaseClient = (() => {
     if (_suspended) return;
     _suspended = true;
     _ready = false;
+    _client = null;
     leaveAll();
     console.warn('[SupabaseClient] Account changed; realtime is paused until reload.');
   }
@@ -251,12 +265,16 @@ const SupabaseClient = (() => {
    * @param {object} payload
    * @returns {Promise<{ok: boolean, error?: string}>}
    */
-  async function broadcast(channelName, event, payload) {
+  async function broadcast(channelName, event, payload, opts = undefined) {
     const entry = _channels.get(channelName);
     if (!entry?.channel) return { ok: false, error: 'Channel not found' };
     if (entry.status !== 'SUBSCRIBED') return { ok: false, error: 'Channel not ready' };
     try {
-      await entry.channel.send({ type: 'broadcast', event, payload });
+      // realtime-js resolves (never rejects) with 'ok' | 'timed out' | 'error'.
+      const status = await entry.channel.send({ type: 'broadcast', event, payload }, opts);
+      if (status !== undefined && status !== 'ok') {
+        return { ok: false, error: typeof status === 'string' ? status : 'Broadcast failed' };
+      }
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e?.message || 'Broadcast failed' };

@@ -256,4 +256,78 @@ console.log('\nMatchmaking queue tests\n');
       backendClient = null;
     }
   });
+
+  await test('v2 host waits for match_accept, and re-queues when an offer goes unanswered', async () => {
+    Matchmaking.destroy();
+    supabaseMock.reset();
+    Matchmaking.init();
+    supabaseMock.setStatus('SUBSCRIBED');
+    const matches = [];
+    const onMatch = detail => matches.push(detail);
+    Matchmaking.onMatchFound(onMatch);
+    const timers = [];
+    const realSetTimeout = global.setTimeout;
+    global.setTimeout = (fn) => { timers.push(fn); return timers.length; };
+    const flush = () => new Promise(resolve => setImmediate(resolve));
+    try {
+      Matchmaking.joinQueue();
+      await flush();
+      supabaseMock.fireBroadcast('join', { playerId: 'zzzz-stale', v: 2 });
+      await flush();
+      let offers = supabaseMock.getBroadcasts().filter(b => b.event === 'match_found');
+      assert.equal(offers.length, 1);
+      assert.equal(offers[0].payload.confirm, true);
+      assert.equal(matches.length, 0, 'Host must not enter the room before the guest confirms');
+
+      while (timers.length) timers.shift()();
+      await flush();
+      offers = supabaseMock.getBroadcasts().filter(b => b.event === 'match_found');
+      assert.equal(offers.length, 3, 'Offer is resent before giving up');
+      assert.equal(Matchmaking.isSearching(), true, 'Unanswered offer puts the host back in the queue');
+      assert.equal(supabaseMock.getBroadcasts().filter(b => b.event === 'join').length, 2);
+
+      supabaseMock.fireBroadcast('join_ack', { playerId: 'zzzz-stale', v: 2 });
+      await flush();
+      assert.equal(supabaseMock.getBroadcasts().filter(b => b.event === 'match_found').length, 3, 'Stale peer is skipped for a while');
+
+      supabaseMock.fireBroadcast('join', { playerId: 'zzzz-live', v: 2 });
+      await flush();
+      const liveOffer = supabaseMock.getBroadcasts().filter(b => b.event === 'match_found').pop();
+      assert.equal(liveOffer.payload.player2Id, 'zzzz-live');
+      supabaseMock.fireBroadcast('match_accept', { roomId: liveOffer.payload.roomId, playerId: 'zzzz-live' });
+      assert.equal(matches.length, 1);
+      assert.equal(matches[0].isHost, true);
+      assert.equal(matches[0].opponentId, 'zzzz-live');
+    } finally {
+      global.setTimeout = realSetTimeout;
+      Matchmaking.offMatchFound(onMatch);
+    }
+  });
+
+  await test('v2 guest accepts an offer while searching and declines one when not', async () => {
+    Matchmaking.destroy();
+    supabaseMock.reset();
+    Matchmaking.init();
+    supabaseMock.setStatus('SUBSCRIBED');
+    const matches = [];
+    const onMatch = detail => matches.push(detail);
+    Matchmaking.onMatchFound(onMatch);
+    try {
+      const offer = { roomId: 'room-1', player1Id: 'aaaa-host', player2Id: 'player-local', confirm: true, v: 2 };
+      supabaseMock.fireBroadcast('match_found', offer);
+      assert.equal(supabaseMock.getBroadcasts().pop().event, 'match_decline', 'Not searching → decline');
+      assert.equal(matches.length, 0);
+
+      Matchmaking.joinQueue();
+      supabaseMock.fireBroadcast('match_found', offer);
+      assert.equal(supabaseMock.getBroadcasts().pop().event, 'match_accept');
+      assert.deepEqual(matches, [{ roomId: 'room-1', opponentId: 'aaaa-host', isHost: false }]);
+
+      supabaseMock.fireBroadcast('match_found', offer);
+      assert.equal(supabaseMock.getBroadcasts().pop().event, 'match_accept', 'Duplicate offer is re-acked');
+      assert.equal(matches.length, 1);
+    } finally {
+      Matchmaking.offMatchFound(onMatch);
+    }
+  });
 })();

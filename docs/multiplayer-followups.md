@@ -12,6 +12,21 @@ For current priority order, use `docs/current-roadmap.md`. This file is detailed
 - Re-test desktop and mobile separately after each future fix.
 - Prefer improving existing UI/help surfaces over inventing new one-off controls unless needed.
 
+## Stability Pass: Replay Transport + Rematch (done)
+
+- **Missing guest battle animation / disconnects:** the `battle_replay` payload is ~0.7–1.5 MB (mostly `turn_start` board snapshots), well over Supabase Realtime's 256 KB broadcast limit, so it was silently dropped. `Room.syncState` now gzips large values and sends them as ordered `state_chunk` messages (≤32 KB each); later small messages queue behind them on both sides. Gzip is only used when the receiver supports `DecompressionStream` (see the gzip fallback below).
+- **Ordering:** Realtime can deliver a large frame after smaller frames sent just after it, so `PLAYBACK_START` could arrive before its replay and trigger a needless authoritative fetch. State messages now carry per-sender `seq`/`seqEpoch`; receivers release them in order, and skip a gap after 2.5 s so a lost message can't stall the stream.
+- **Post-match disconnect:** once the match has ended, an opponent disconnect counts as a rematch decline. It no longer triggers the mid-battle pause or forfeit path.
+- `SupabaseClient.broadcast` now reports `'timed out'` / `'error'` send statuses as failures instead of success.
+- **Rematch:** `src/multiplayer/rematch.js` handshake. Both players' requests start a new match in a derived room id (`<room>~rematch-N`) with the same roles; returning to the lobby sends a decline so the other player isn't left waiting.
+- **Auth change mid-match:** a `SIGNED_OUT` or account switch during a match (e.g. a failed token refresh after sleep) now pauses REST writes right away. Realtime and the Room stay up until match teardown (`Backend.holdRealtime`/`releaseRealtime`), and then the page reloads (through RunHistory, or Backend's own fallback when RunHistory isn't loaded). SupabaseClient pins its client so channel reconnects keep working while Backend is paused, and it ignores subscribe callbacks from replaced channels.
+- **Finished-match reload:** `_mpEndMatch` retires the saved room session (`Room.retireSavedSession`), so reloading from the results screen no longer tries to "rejoin" a dead room.
+- **Matchmaking confirmation (protocol v2):** `join`/`join_ack` carry `v:2`. A v2 host sends `match_found` with `confirm:true` and only starts the match after the guest's `match_accept`. It resends the offer every 1.5 s (up to 3 sends). On a decline or no reply, it re-queues and skips that peer for 15 s. Peers without `v` keep the legacy flow.
+- **Broadcast ack + retry:** room channels use `broadcast: { ack: true }`. State messages that fail or time out are resent (4 s timeout, up to 3 attempts) with the same `seq`. Receivers ignore duplicate chunks from transfers they already completed.
+- **Gzip fallback:** presence advertises `caps: { gzip, replayPack }`. Senders skip gzip when the peer can't decompress (older Safari) and send plain JSON chunks instead. Peers that advertise no caps get the legacy gzip path.
+- **Smaller replays:** `src/multiplayer/replayCodec.js` losslessly replaces unchanged unit snapshots with `{ "=": id }` references (~600 KB → ~210 KB raw on real battles). It only runs on the chunked path, and only for peers that advertise `replayPack`.
+- Still open: two tabs in one browser share the anonymous user id, so they can't play each other.
+
 ## Priority 0: Long-Term Release Architecture Hardening
 
 ### Why This Matters

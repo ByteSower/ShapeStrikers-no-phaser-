@@ -91,9 +91,54 @@ const Backend = (() => {
     _codeVerification?.controller.abort();
   }
 
+  // An account change mid-match (e.g. SIGNED_OUT after a failed token refresh) must not tear down
+  // the live room: the reload that follows would mint a new anonymous id and the seat could not resume.
+  // REST traffic stops immediately; realtime teardown waits until the match releases its hold.
+  let _realtimeHold = null;
+  let _realtimeSuspendDeferred = false;
+
+  function holdRealtime() {
+    if (_realtimeHold) return;
+    let release;
+    const promise = new Promise(resolve => { release = resolve; });
+    _realtimeHold = { promise, release };
+  }
+
+  function releaseRealtime() {
+    const hold = _realtimeHold;
+    if (!hold) return;
+    _realtimeHold = null;
+    if (_realtimeSuspendDeferred) {
+      _realtimeSuspendDeferred = false;
+      _suspendRealtime();
+      // RunHistory (when loaded) reloads on its own; otherwise nothing would ever restore realtime.
+      if (typeof RunHistory === 'undefined' && typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+        setTimeout(() => window.location.reload(), 0);
+      }
+    }
+    hold.release();
+  }
+
+  function whenRealtimeReleased() {
+    return _realtimeHold ? _realtimeHold.promise : Promise.resolve();
+  }
+
+  function isRealtimeSuspendDeferred() {
+    return _realtimeSuspendDeferred;
+  }
+
   function suspendOutgoing() {
     _ready = false;
     cancelCodeVerification();
+    if (_realtimeHold) {
+      if (!_realtimeSuspendDeferred) console.warn('[Backend] Account changed mid-match; realtime stays up until the match ends.');
+      _realtimeSuspendDeferred = true;
+      return;
+    }
+    _suspendRealtime();
+  }
+
+  function _suspendRealtime() {
     if (typeof SupabaseClient !== 'undefined') {
       if (typeof SupabaseClient.suspendOutgoing === 'function') SupabaseClient.suspendOutgoing();
       else SupabaseClient.leaveAll();
@@ -551,6 +596,10 @@ const Backend = (() => {
     fetchPersonal,
     subscribeAuth,
     suspendOutgoing,
+    holdRealtime,
+    releaseRealtime,
+    whenRealtimeReleased,
+    isRealtimeSuspendDeferred,
     saveHistory,
     fetchHistoryGeneration,
     fetchHistory,

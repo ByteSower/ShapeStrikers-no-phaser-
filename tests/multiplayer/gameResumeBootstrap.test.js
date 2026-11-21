@@ -7,6 +7,7 @@ const vm = require('vm');
 
 const GAME_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/game.js'), 'utf8');
 const GRID_STYLES_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/gridStyles.js'), 'utf8');
+const REMATCH_SOURCE = fs.readFileSync(path.resolve(__dirname, '../../src/multiplayer/rematch.js'), 'utf8');
 
 async function test(name, fn) {
   try {
@@ -17,6 +18,10 @@ async function test(name, fn) {
     console.error(`     ${err.message}`);
     process.exitCode = 1;
   }
+}
+
+function flushMicrotasks() {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function plain(value) {
@@ -931,6 +936,7 @@ function loadGameContext({
 
   vm.createContext(context);
   vm.runInContext(GRID_STYLES_SOURCE, context, { filename: 'gridStyles.js' });
+  vm.runInContext(REMATCH_SOURCE, context, { filename: 'rematch.js' });
   vm.runInContext(GAME_SOURCE, context, { filename: 'game.js' });
 
   return {
@@ -1299,7 +1305,7 @@ await test('Quit button ends the active match and clears the saved room session 
   assert.deepEqual(musicCalls, ['ss_title_music_full.wav']);
 });
 
-await test('Match-end rematch initiator waits for the opponent and returns to title once the room confirms both agreed', async () => {
+await test('Match-end rematch initiator waits for the opponent and then joins the rematch room', async () => {
   const {
     Game,
     document,
@@ -1335,28 +1341,31 @@ await test('Match-end rematch initiator waits for the opponent and returns to ti
   });
 
   fireMultiplayerCallback('onMatchEnd', 'me', null);
+  const screensBefore = screenCalls.length;
 
   const overlay = document.getElementById('mp-match-end-overlay');
   const rematchBtn = document.getElementById('btn-mp-rematch');
   const statusEl = document.getElementById('mp-match-end-rematch-status');
 
   rematchBtn.click();
-  await Promise.resolve();
+  await flushMicrotasks();
 
   assert.equal(rematchBtn.disabled, true, 'Rematch should disable immediately after the local player requests it');
   assert.equal(statusEl.textContent, 'Waiting for opponent…', 'Rematch should show the waiting status after the local request');
-  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'mp_rematch_request' && entry.value === true), true, 'Rematch should publish mp_rematch_request when the local player opts in');
+  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'mp_rematch_request' && entry.value?.roomId === 'room-rematch-init'), true, 'Rematch should publish mp_rematch_request for this room when the local player opts in');
+  assert.equal(roomEvents.joinCalls.length, 1, 'Rematch should wait for the opponent before joining a new room');
 
-  emitRoomStateChange('mp_rematch_request', true);
+  emitRoomStateChange('mp_rematch_request', { roomId: 'room-rematch-init', at: 1 });
+  await flushMicrotasks();
 
-  assert.equal(overlay.classList.contains('hidden'), true, 'Rematch overlay should close once the room confirms the opponent agreed');
-  assert.equal(multiplayerEvents.destroyCalls, 1, 'Successful rematch agreement should tear down the ended match state');
-  assert.equal(roomEvents.destroyCalls, 1, 'Successful rematch agreement should destroy the room session before returning to title');
-  assert.equal(screenCalls.at(-1), 'screen-title', 'Successful rematch agreement should return to the title screen for a fresh queue');
-  assert.deepEqual(musicCalls, ['ss_title_music_full.wav']);
+  assert.equal(overlay.classList.contains('hidden'), true, 'Rematch overlay should close once the opponent agreed');
+  assert.equal(multiplayerEvents.destroyCalls, 1, 'Rematch should tear down the ended match state');
+  assert.deepEqual(roomEvents.joinCalls.at(-1), { roomId: 'room-rematch-init~rematch-1', isHost: false, opponentId: 'opp-rematch-init' }, 'Rematch should join the derived room with the same roles');
+  assert.equal(screenCalls.length, screensBefore, 'Rematch should not return to the title screen');
+  assert.deepEqual(musicCalls, []);
 });
 
-await test('Match-end rematch acceptor updates the CTA before agreeing and then returns to title on confirmation', async () => {
+await test('Match-end rematch acceptor updates the CTA before agreeing and then joins the rematch room', async () => {
   const {
     Game,
     document,
@@ -1392,28 +1401,29 @@ await test('Match-end rematch acceptor updates the CTA before agreeing and then 
   });
 
   fireMultiplayerCallback('onMatchEnd', 'opponent', null);
+  const screensBefore = screenCalls.length;
 
   const overlay = document.getElementById('mp-match-end-overlay');
   const rematchBtn = document.getElementById('btn-mp-rematch');
   const statusEl = document.getElementById('mp-match-end-rematch-status');
 
-  emitRoomStateChange('mp_rematch_request', true);
+  emitRoomStateChange('mp_rematch_request', { roomId: 'room-rematch-accept', at: 1 });
 
   assert.equal(overlay.classList.contains('hidden'), false, 'Opponent rematch intent should keep the match-end overlay open for the local acceptance choice');
   assert.equal(statusEl.textContent, 'Opponent wants a rematch!', 'Opponent rematch intent should surface the accept prompt');
   assert.equal(rematchBtn.textContent, '🔁 Accept Rematch', 'Opponent rematch intent should retitle the CTA as an acceptance action');
 
   rematchBtn.click();
-  await Promise.resolve();
-
   assert.equal(rematchBtn.disabled, true, 'Accepting a rematch should disable the CTA immediately');
-  assert.equal(statusEl.textContent, 'Waiting for opponent…', 'Accepting a rematch should reuse the waiting status while the room confirms both players');
-  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'mp_rematch_request' && entry.value === true), true, 'Accepting a rematch should publish the local rematch agreement');
+  assert.equal(statusEl.textContent, 'Starting rematch…', 'Accepting a rematch should show that it is starting');
+  assert.equal(roomEvents.syncCalls.some((entry) => entry.key === 'mp_rematch_request' && entry.value?.roomId === 'room-rematch-accept'), true, 'Accepting a rematch should publish the local rematch agreement');
+  await flushMicrotasks();
+
   assert.equal(overlay.classList.contains('hidden'), true, 'Accepted rematch should close without relying on a local state-change echo');
   assert.equal(multiplayerEvents.destroyCalls, 1, 'Accepted rematch should tear down the ended match state');
-  assert.equal(roomEvents.destroyCalls, 1, 'Accepted rematch should destroy the room session before returning to title');
-  assert.equal(screenCalls.at(-1), 'screen-title', 'Accepted rematch should return to the title screen for a fresh queue');
-  assert.deepEqual(musicCalls, ['ss_title_music_full.wav']);
+  assert.deepEqual(roomEvents.joinCalls.at(-1), { roomId: 'room-rematch-accept~rematch-1', isHost: true, opponentId: 'opp-rematch-accept' }, 'Accepted rematch should join the derived room with the same roles');
+  assert.equal(screenCalls.length, screensBefore, 'Accepted rematch should not return to the title screen');
+  assert.deepEqual(musicCalls, []);
 });
 
 await test('Game.init binds pagehide realtime release once and ignores persisted exits', () => {

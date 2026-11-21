@@ -9,7 +9,7 @@ const vm = require('node:vm');
 const source = readFileSync(resolve(__dirname, '../../src/runHistory.js'), 'utf8');
 const clone = value => JSON.parse(JSON.stringify(value));
 
-function harness({ owner = null, seed = [], storageFails = false, navigation = 'navigate', exitRun = null, saveResult = null, deleteResult = null, generationResult = null, reconnectUser = null, deferReconnectAuth = false } = {}) {
+function harness({ owner = null, seed = [], storageFails = false, navigation = 'navigate', exitRun = null, saveResult = null, deleteResult = null, generationResult = null, reconnectUser = null, deferReconnectAuth = false, realtimeHold = null } = {}) {
   let user = owner ? { id: owner, is_anonymous: true } : null;
   let ready = Boolean(owner);
   let authListener;
@@ -39,6 +39,7 @@ function harness({ owner = null, seed = [], storageFails = false, navigation = '
       getUserId: () => user?.id || null, getUser: () => user, isReady: () => ready,
       subscribeAuth(listener) { authListener = listener; },
       suspendOutgoing() { ready = false; calls.suspended++; },
+      ...(realtimeHold ? { whenRealtimeReleased: () => realtimeHold } : {}),
       async saveHistory(payload, ownerId) {
         calls.sent.push({ payload: clone(payload), ownerId });
         if (typeof saveResult === 'function') return saveResult(payload, ownerId);
@@ -151,6 +152,19 @@ test('Initial null auth does not interrupt an owned offline run; sign-out does e
   assert.equal([...rows.values()][0].ownerId, 'guest-a');
   assert.equal([...rows.values()][0].payload.status, 'interrupted');
   assert.equal(storage.has('shape_strikers_history_owner'), false);
+});
+
+test('Account-change reload waits for a live multiplayer match to release realtime', async () => {
+  let release;
+  const realtimeHold = new Promise(resolve => { release = resolve; });
+  const { change, calls } = harness({ owner: 'guest-a', realtimeHold });
+  const changing = change('guest-a', null);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.suspended, 1);
+  assert.equal(calls.reloads, 0);
+  release();
+  await changing;
+  assert.equal(calls.reloads, 1);
 });
 
 test('Terminal snapshots freeze once, and a replacement does not overwrite victory', async () => {

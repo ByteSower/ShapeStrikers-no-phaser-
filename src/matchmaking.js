@@ -14,6 +14,12 @@
  *        localId > remoteId → wait for match_found from them
  *   4. match_found { roomId, player1Id, player2Id } → matched players fire
  *      onMatchFound callbacks; all others ignore it.
+ *   5. Confirmed pairing (protocol v2, advertised as `v` on join/join_ack):
+ *      the host's match_found carries `confirm:true` and the host only enters
+ *      the room after the guest replies match_accept. A guest that is no longer
+ *      searching replies match_decline. The host resends the offer a few times,
+ *      then drops it and re-queues, so a stale queue entry can't strand it.
+ *      Peers that don't advertise v2 get the legacy unconfirmed flow.
  *
  * Public API:
  *   Matchmaking.init()                  → void, fire-and-forget safe
@@ -31,6 +37,10 @@
 const Matchmaking = (() => {
 
   const CHANNEL_NAME = 'matchmaking:queue';
+  const PROTOCOL_VERSION = 2;
+  const OFFER_RETRY_MS = 1500;
+  const OFFER_MAX_SENDS = 3;
+  const SKIP_PEER_MS = 15_000;
 
   // ── State ─────────────────────────────────────────────────────────────────
 
@@ -39,6 +49,10 @@ const Matchmaking = (() => {
   let _matched   = false;
   let _listeners = [];
   let _roomRecordUnsupported = false;
+  let _peerVersions = new Map();   // remoteId → advertised protocol version
+  let _skipPeers = new Map();      // remoteId → until timestamp (offer declined / unanswered)
+  let _pendingOffer = null;        // host: { roomId, remoteId, sends, timer }
+  let _acceptedRoomId = null;      // guest: room we accepted, to re-ack duplicate offers
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -85,6 +99,7 @@ const Matchmaking = (() => {
     const result = await SupabaseClient.broadcast(CHANNEL_NAME, 'join', {
       playerId: localId,
       joinedAt: Date.now(),
+      v: PROTOCOL_VERSION,
     });
 
     if (!result?.ok) {
@@ -111,6 +126,7 @@ const Matchmaking = (() => {
     const localId = _getPlayerId();
     if (!remoteId || localId === remoteId) return;
     if (localId > remoteId) return;  // not host — wait for their match_found
+    if ((_skipPeers.get(remoteId) || 0) > Date.now()) return;
 
     // Mark matched immediately to prevent double-pairing.
     _matched   = true;
@@ -148,6 +164,12 @@ const Matchmaking = (() => {
     }
 
     // Broadcast to both players.
+    if ((_peerVersions.get(remoteId) || 1) >= PROTOCOL_VERSION) {
+      _pendingOffer = { roomId, remoteId, sends: 0, timer: null };
+      _sendOffer();
+      return;
+    }
+
     await SupabaseClient.broadcast(CHANNEL_NAME, 'match_found', {
       roomId,
       player1Id: localId,
@@ -158,16 +180,77 @@ const Matchmaking = (() => {
     _emit({ roomId, opponentId: remoteId, isHost: true });
   }
 
+  function _sendOffer() {
+    const offer = _pendingOffer;
+    if (!offer) return;
+    if (offer.sends >= OFFER_MAX_SENDS) {
+      console.info(`[Matchmaking] Offer to ${offer.remoteId.slice(0, 8)}… unanswered — re-queueing.`);
+      _abandonOffer();
+      return;
+    }
+    offer.sends++;
+    SupabaseClient.broadcast(CHANNEL_NAME, 'match_found', {
+      roomId: offer.roomId,
+      player1Id: _getPlayerId(),
+      player2Id: offer.remoteId,
+      confirm: true,
+      v: PROTOCOL_VERSION,
+    }).catch(() => {});
+    offer.timer = setTimeout(_sendOffer, OFFER_RETRY_MS);
+  }
+
+  function _clearOffer() {
+    if (_pendingOffer) clearTimeout(_pendingOffer.timer);
+    _pendingOffer = null;
+  }
+
+  function _abandonOffer() {
+    const offer = _pendingOffer;
+    _clearOffer();
+    if (offer) _skipPeers.set(offer.remoteId, Date.now() + SKIP_PEER_MS);
+    _matched = false;
+    _searching = true;
+    _broadcastJoin('offer_unconfirmed').catch(() => {});
+  }
+
+  function _isOfferReply(payload) {
+    return !!(_pendingOffer && payload &&
+      payload.roomId === _pendingOffer.roomId &&
+      payload.playerId === _pendingOffer.remoteId);
+  }
+
+  function _onMatchAccept(payload) {
+    if (!_isOfferReply(payload)) return;
+    const { roomId, remoteId } = _pendingOffer;
+    _clearOffer();
+    console.info(`[Matchmaking] Paired as HOST — roomId: ${roomId.slice(0, 8)}… (confirmed)`);
+    _emit({ roomId, opponentId: remoteId, isHost: true });
+  }
+
+  function _onMatchDecline(payload) {
+    if (!_isOfferReply(payload)) return;
+    console.info(`[Matchmaking] Offer declined by ${payload.playerId.slice(0, 8)}… — re-queueing.`);
+    _abandonOffer();
+  }
+
+  function _noteVersion(payload) {
+    if (typeof payload?.playerId !== 'string') return;
+    const v = Number(payload.v);
+    _peerVersions.set(payload.playerId, Number.isFinite(v) ? v : 1);
+  }
+
   // ── Broadcast event handlers ──────────────────────────────────────────────
 
   function _onJoin(payload) {
     if (!payload || typeof payload.playerId !== 'string') return;
+    _noteVersion(payload);
 
     // Reply so the new arrival learns we are in the queue.
     // (Supabase broadcast has no history — they won't see our original join.)
     if (_searching && !_matched) {
       SupabaseClient.broadcast(CHANNEL_NAME, 'join_ack', {
         playerId: _getPlayerId(),
+        v: PROTOCOL_VERSION,
       }).catch(() => {});
     }
 
@@ -176,6 +259,7 @@ const Matchmaking = (() => {
 
   function _onJoinAck(payload) {
     if (!payload || typeof payload.playerId !== 'string') return;
+    _noteVersion(payload);
     _tryPair(payload.playerId);
   }
 
@@ -187,6 +271,20 @@ const Matchmaking = (() => {
     const localId = _getPlayerId();
     // Ignore if this match doesn't involve us.
     if (player1Id !== localId && player2Id !== localId) return;
+
+    if (payload.confirm === true && player2Id === localId) {
+      const reply = (event) => SupabaseClient.broadcast(CHANNEL_NAME, event, { roomId, playerId: localId }).catch(() => {});
+      if (_acceptedRoomId === roomId) { reply('match_accept'); return; }  // host missed our accept
+      if (!_searching || _matched) { reply('match_decline'); return; }
+      _matched = true;
+      _searching = false;
+      _acceptedRoomId = roomId;
+      reply('match_accept');
+      console.info(`[Matchmaking] Match accepted — roomId: ${roomId.slice(0, 8)}… isHost: false`);
+      _emit({ roomId, opponentId: player1Id, isHost: false });
+      return;
+    }
+
     if (_matched) return;  // already handled (host fires this too)
 
     _matched   = true;
@@ -211,6 +309,8 @@ const Matchmaking = (() => {
     ch.on('broadcast', { event: 'join' },        ({ payload }) => _onJoin(payload))
       .on('broadcast', { event: 'join_ack' },    ({ payload }) => _onJoinAck(payload))
       .on('broadcast', { event: 'match_found' }, ({ payload }) => _onMatchFound(payload))
+      .on('broadcast', { event: 'match_accept' }, ({ payload }) => _onMatchAccept(payload))
+      .on('broadcast', { event: 'match_decline' }, ({ payload }) => _onMatchDecline(payload))
       .on('broadcast', { event: 'leave' },       ({ payload }) => _onLeave(payload));
   }
 
@@ -247,6 +347,8 @@ const Matchmaking = (() => {
     }
     _searching = true;
     _matched   = false;
+    _acceptedRoomId = null;
+    _clearOffer();
 
     const status = _getChannelStatus();
     if (status !== 'SUBSCRIBED') {
@@ -264,6 +366,10 @@ const Matchmaking = (() => {
    * Leave the matchmaking queue. Broadcasts departure and clears local state.
    */
   function leaveQueue() {
+    if (_pendingOffer) {
+      _clearOffer();
+      _matched = false;
+    }
     if (!_searching) return;
     _searching = false;
     _matched   = false;
@@ -293,6 +399,9 @@ const Matchmaking = (() => {
     _listeners = [];
     _playerId  = null;
     _matched   = false;
+    _acceptedRoomId = null;
+    _peerVersions = new Map();
+    _skipPeers = new Map();
     console.info('[Matchmaking] Destroyed.');
   }
 
