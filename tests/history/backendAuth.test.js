@@ -9,22 +9,22 @@ const vm = require('node:vm');
 const source = readFileSync(resolve(__dirname, '../../src/backend.js'), 'utf8');
 const staging = { url: 'https://history-test-only.supabase.co', publishableKey: 'sb_publishable_test_only' };
 
-function harness({ configured = true, active = false, verifyThroughFetch = false, sessionFailures = 0 } = {}) {
+function harness({ configured = true, active = false, verifyThroughFetch = false, sessionFailures = 0, runHistory = true } = {}) {
   let session = { user: { id: 'guest-a', is_anonymous: true }, access_token: 'test-token-a' };
   let authListener;
   let fetchImpl = async url => ({
     ok: true, json: async () => url.endsWith('/auth/v1/user') ? { id: session.user.id } : { records: [] },
   });
-  const calls = { clients: [], requests: [], otp: [], updates: [], verified: [], cleared: 0, left: 0 };
+  const calls = { clients: [], requests: [], otp: [], updates: [], verified: [], cleared: 0, left: 0, reloads: 0 };
   const context = {
     console: { log() {}, warn() {}, error() {} },
     URL, URLSearchParams, AbortSignal, AbortController, DOMException, setTimeout, clearTimeout,
     localStorage: { getItem: () => null },
     window: {
-      location: { hostname: '127.0.0.1', search: '?staging=1' },
+      location: { hostname: '127.0.0.1', search: '?staging=1', reload() { calls.reloads++; } },
       ...(configured ? { SHAPE_STRIKERS_STAGING_CONFIG: staging } : {}),
     },
-    RunHistory: { getStatus: () => ({ active }) },
+    ...(runHistory ? { RunHistory: { getStatus: () => ({ active }) } } : {}),
     Room: { clearSavedSession() { calls.cleared++; } },
     SupabaseClient: { leaveAll() { calls.left++; } },
     fetch: async (url, options) => {
@@ -266,4 +266,20 @@ test('Sign-out during a held match pauses REST but defers realtime teardown unti
   assert.equal(calls.cleared, 1);
   assert.equal(backend.isRealtimeSuspendDeferred(), false);
   assert.equal(released, true);
+});
+
+test('Sign-out outside a match reloads when RunHistory is not loaded, so realtime is restored', async () => {
+  const withHistory = harness();
+  await withHistory.backend.init();
+  withHistory.change(null);
+  await drainNotifications();
+  assert.equal(withHistory.calls.left, 1);
+  assert.equal(withHistory.calls.reloads, 0, 'RunHistory owns the reload when it is loaded');
+
+  const { backend, calls, change } = harness({ runHistory: false });
+  await backend.init();
+  change(null);
+  await drainNotifications();
+  assert.equal(calls.left, 1);
+  assert.equal(calls.reloads, 1);
 });
