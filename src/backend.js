@@ -111,12 +111,16 @@ const Backend = (() => {
     if (_realtimeSuspendDeferred) {
       _realtimeSuspendDeferred = false;
       _suspendRealtime();
-      // RunHistory (when loaded) reloads on its own; otherwise nothing would ever restore realtime.
-      if (typeof RunHistory === 'undefined' && typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
-        setTimeout(() => window.location.reload(), 0);
-      }
+      _reloadIfUnmanaged();
     }
     hold.release();
+  }
+
+  // RunHistory (when loaded) reloads on its own; otherwise nothing would ever restore realtime.
+  function _reloadIfUnmanaged() {
+    if (typeof RunHistory === 'undefined' && typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+      setTimeout(() => window.location.reload(), 0);
+    }
   }
 
   function whenRealtimeReleased() {
@@ -136,6 +140,7 @@ const Backend = (() => {
       return;
     }
     _suspendRealtime();
+    _reloadIfUnmanaged();
   }
 
   function _suspendRealtime() {
